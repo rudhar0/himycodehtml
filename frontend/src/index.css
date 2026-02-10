@@ -1,0 +1,169 @@
+@import 'allotment/dist/style.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Colors */
+  --color-global: #2DD4BF;
+  --color-stack: #3B82F6;
+  --color-heap: #10B981;
+  --color-pointer: #EF4444;
+  --color-control: #A855F7;
+  --color-optimized: #F59E0B;
+  
+  /* Durations */
+  --duration-fast: 200ms;
+  --duration-normal: 500ms;
+  --duration-slow: 800ms;
+  
+  /* Z-index layers */
+  --z-canvas-base: 1;
+  --z-canvas-arrows: 10;
+  --z-canvas-overlay: 20;
+  --z-ui-controls: 100;
+  --z-modal: 1000;
+  
+  /* Light theme variables - Soft, layered design */
+  --bg-primary: #e8ecef;      /* App background - soft gray */
+  --bg-secondary: #f5f7f9;    /* Cards/panels - off-white */
+  --bg-tertiary: #dde3e8;     /* Navbar/headers - slightly darker */
+  --bg-elevated: #ffffff;     /* Elevated elements like modals */
+  --text-primary: #1a2332;    /* Near-black for primary text */
+  --text-secondary: #5a6a7a;  /* Muted gray for secondary text */
+  --text-muted: #8a9aaa;      /* Even more muted */
+  --border-color: #c8d0d8;    /* Subtle gray borders */
+  --border-light: #d8e0e8;    /* Lighter borders */
+}
+
+.dark {
+  /* Dark theme variables - Blue-themed */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --bg-elevated: #1e293b;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #334155;
+  --border-light: #475569;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Scrollbar styling - Light mode */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #dde3e8;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #b0bac4;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8a9aaa;
+}
+
+/* Scrollbar styling - Dark mode */
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Allotment customization */
+.split-view-view {
+  background: var(--bg-primary);
+}
+
+.sash {
+  background: var(--border-color) !important;
+}
+
+.sash:hover {
+  background: #8a9aaa !important;
+}
+
+.dark .sash:hover {
+  background: #475569 !important;
+}
+
+/* Animation utilities */
+@keyframes pulse-highlight {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-highlight {
+  animation: pulse-highlight 1s ease-in-out infinite;
+}
+
+/* Monaco Editor theme override - Light mode */
+.monaco-editor {
+  background: #f5f7f9 !important;
+}
+
+.monaco-editor .margin {
+  background: #e8ecef !important;
+}
+
+/* Monaco Editor theme override - Dark mode */
+.dark .monaco-editor {
+  background: #0f172a !important;
+}
+
+.dark .monaco-editor .margin {
+  background: #1e293b !important;
+}
+
+/* Konva canvas container */
+.konva-canvas-container {
+  cursor: grab;
+}
+
+.konva-canvas-container:active {
+  cursor: grabbing;
+}

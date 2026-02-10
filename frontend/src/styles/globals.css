@@ -1,0 +1,34 @@
+/* frontend/src/styles/globals.css */
+
+/* Execution line highlighting */
+.current-execution-line {
+    background-color: #fefcbf !important; /* yellow-200 */
+}
+
+.current-execution-line-inline {
+    background-color: #fefcbf !important;
+}
+
+.executed-line {
+    background-color: #dcfce7 !important; /* green-200 */
+}
+
+.executed-line-inline {
+    background-color: #dcfce7 !important;
+}
+
+.current-line-glyph::before {
+    content: '▶';
+    color: #facc15 !important; /* yellow-400 */
+    font-size: 14px;
+    margin-left: 4px;
+}
+
+/* Ensure Monaco editor respects these styles */
+.monaco-editor .current-execution-line {
+    background-color: #fefcbf !important;
+}
+
+.monaco-editor .executed-line {
+    background-color: #dcfce7 !important;
+}

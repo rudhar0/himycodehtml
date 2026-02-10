@@ -1,0 +1,10 @@
+{"version":"1.0","functions":[],"events":[
+  {"id":0,"type":"heap_alloc","addr":"009b17a0","func":"operator new","depth":0,"ts":1445867792,"size":40,"isHeap":true},
+  {"id":1,"type":"heap_alloc","addr":"009b17d0","func":"operator new","depth":0,"ts":1445877176,"size":84,"isHeap":true},
+  {"id":2,"type":"func_enter","addr":"00401460","func":"unknown","depth":0,"ts":1445884993,"caller":"00401288"},
+  {"id":3,"type":"heap_alloc","addr":"009b1830","func":"operator new","depth":1,"ts":1445892829,"size":168,"isHeap":true},
+  {"id":4,"type":"heap_free","addr":"009b17d0","func":"operator delete","depth":1,"ts":1445901189},
+  {"id":5,"type":"func_enter","addr":"00418bf0","func":"unknown","depth":1,"ts":1445907246,"caller":"0040148e"},
+  {"id":6,"type":"func_exit","addr":"00418bf0","func":"unknown","depth":1,"ts":1445909219},
+  {"id":7,"type":"func_exit","addr":"00401460","func":"unknown","depth":0,"ts":1445910954}
+],"tracked_functions":["unknown"],"total_events":8}
