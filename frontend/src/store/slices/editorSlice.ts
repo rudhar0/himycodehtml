@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { Language } from '@types/index';
+import type { Language } from '../../types';
 
 export interface EditorState {
   // State

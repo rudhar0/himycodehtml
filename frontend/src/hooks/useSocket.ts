@@ -8,11 +8,12 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { socketService, type SocketEventCallback } from '@services/socket.service';
+import { socketService } from '@services/socket.service';
+import type { SocketEventCallback } from '../api/socket.service';
 import { useExecutionStore } from '@store/slices/executionSlice';
 import { useGCCStore } from '@store/slices/gccSlice';
 import toast from 'react-hot-toast';
-import { ExecutionTrace, ExecutionStep, Variable } from '@types/index';
+import { ExecutionTrace, ExecutionStep, Variable } from '../types';
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -562,6 +563,14 @@ export function useSocket() {
     socketService.requestCompilerStatus();
   }, [isConnected]);
 
+  const provideInput = useCallback((input: string) => {
+    if (!isConnected) {
+      toast.error('Not connected to server');
+      return;
+    }
+    socketService.emit('send_input', { input });
+  }, [isConnected]);
+
   return {
     isConnected,
     isConnecting,
@@ -569,6 +578,7 @@ export function useSocket() {
     disconnect,
     generateTrace,
     requestGCCStatus,
+    provideInput,
   };
 }
 

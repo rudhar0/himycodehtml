@@ -164,7 +164,7 @@ export const useAnimationController = (stage: Konva.Stage | null) => {
 
       // heap_alloc: Heap allocation animation
       case 'heap_alloc': {
-        const address = currentExecutionStep.addr;
+        const address = (currentExecutionStep as any).addr || currentExecutionStep.address;
         if (address) {
           console.log(`[AnimationController] Heap allocated at: ${address}`);
           animations.push({
@@ -178,14 +178,14 @@ export const useAnimationController = (stage: Konva.Stage | null) => {
 
       // heap_free: Heap deallocation (memory shrink)
       case 'heap_free': {
-        const address = currentExecutionStep.addr;
+        const address = (currentExecutionStep as any).addr || currentExecutionStep.address;
         if (address) {
           console.log(`[AnimationController] Heap freed at: ${address}`);
           animations.push({
             type: 'element_destroy',
             target: `heap-${address}`,
             duration: 500,
-          } as ElementDestroyAnimation);
+          } as any);
         }
         break;
       }
@@ -204,12 +204,12 @@ export const useAnimationController = (stage: Konva.Stage | null) => {
         if (outputText) {
           console.log(`[Program Output] ${outputText}`);
           animations.push({
-            type: 'output_display',
+            type: 'line_execution',
             target: 'output-console',
             duration: 1500, // Visible for 1.5 seconds
             text: String(outputText),
             id: `output-${currentStep}`,
-          });
+          } as any);
         }
         break;
       }

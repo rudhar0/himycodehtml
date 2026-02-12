@@ -1,5 +1,5 @@
 // frontend/src/canvas/renderers/VerticalFlowRenderer.ts
-import { MemoryState, Variable as VariableData } from '@types/index';
+import { MemoryState, Variable as VariableData } from '../../types';
 import Konva from 'konva';
 import { ProgramRoot } from '../elements/ProgramRoot';
 import { MainFunction } from '../elements/MainFunction';

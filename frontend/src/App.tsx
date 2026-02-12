@@ -12,6 +12,22 @@ function App() {
   const { language } = useEditorStore();
 
   useEffect(() => {
+    // Keep the window/tab title branded in both browser + Neutralino.
+    try {
+      document.title = APP_CONFIG.name;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const Neutralino = (globalThis as any).Neutralino;
+      Neutralino?.window?.setTitle?.(APP_CONFIG.name);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
     // Connect to Socket.io on mount
     connect();
 
@@ -32,9 +48,6 @@ function App() {
 
   return (
     <>
-      {/* Set page title */}
-      <title>{APP_CONFIG.fullName}</title>
-      
       <MainLayout />
       
       {/* Modals */}

@@ -31,14 +31,14 @@ export default function KonvaWrapper() {
     prevStep,
     setSpeed
   } = useStepController({ 
-    totalSteps: executionTrace.length,
+    totalSteps: executionTrace.totalSteps,
     initialSpeed: 800 
   });
 
   // 4. Render Logic: Use RenderRegistry to get visual elements for the current step.
   const elements = useMemo(() => {
     // Pass canvas width to the registry for responsive layouts.
-    return RenderRegistry.getElementsForStep(executionTrace, currentStep, width);
+    return RenderRegistry.getElementsForStep(executionTrace.steps, currentStep, width);
   }, [executionTrace, currentStep, width]);
 
   // 5. Animation Trigger: Animate nodes when the step changes.
@@ -62,7 +62,7 @@ export default function KonvaWrapper() {
           <SkipForward size={20} />
         </button>
         <span className="text-xs text-slate-500 font-mono">
-          Step: {currentStep + 1} / {executionTrace.length}
+          Step: {currentStep + 1} / {executionTrace.totalSteps}
         </span>
         <select 
           className="ml-auto bg-slate-800 text-xs text-slate-300 rounded p-1 border border-slate-700"

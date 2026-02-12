@@ -3,17 +3,18 @@ import * as Parser from 'web-tree-sitter';
 import { Language } from '../types';
 
 class AstService {
-  private parser: Parser.Parser | null = null;
+  private parser: any = null;
 
   async initialize(language: Language) {
     try {
-      // web-tree-sitter might not have init() in all versions
-      if (typeof Parser.init === 'function') {
-        await Parser.init();
+      // web-tree-sitter initialization
+      const P = Parser as any;
+      if (typeof P.init === 'function') {
+        await P.init();
       }
-      const parser = new Parser.Parser();
-      const langUrl = `/${language === 'c' ? 'tree-sitter-c.wasm' : 'tree-sitter-cpp.wasm'}`;
-      const lang = await Parser.Language.load(langUrl);
+      const parser = new P.Parser();
+      const langUrl = `./${language === 'c' ? 'tree-sitter-c.wasm' : 'tree-sitter-cpp.wasm'}`;
+      const lang = await P.Language.load(langUrl);
       parser.setLanguage(lang);
       this.parser = parser;
     } catch (error) {
@@ -23,7 +24,7 @@ class AstService {
     }
   }
 
-  parse(code: string): Parser.Tree | null {
+  parse(code: string): any | null {
     if (!this.parser) {
       console.error('AST parser has not been initialized.');
       return null;

@@ -7,7 +7,7 @@ import Parser from 'web-tree-sitter';
 export const useExecutionAst = () => {
   const ast = useAst();
   const { getCurrentStep } = useExecutionStore();
-  const [activeNode, setActiveNode] = useState<Parser.SyntaxNode | null>(null);
+  const [activeNode, setActiveNode] = useState<any | null>(null);
 
   const currentStep = getCurrentStep();
 
@@ -15,9 +15,9 @@ export const useExecutionAst = () => {
     if (ast && currentStep) {
       const { line } = currentStep;
       const rootNode = ast.rootNode;
-      let smallestNode: Parser.SyntaxNode | null = null;
+      let smallestNode: any | null = null;
 
-      const findNode = (node: Parser.SyntaxNode) => {
+      const findNode = (node: any) => {
         const startLine = node.startPosition.row + 1;
         const endLine = node.endPosition.row + 1;
 

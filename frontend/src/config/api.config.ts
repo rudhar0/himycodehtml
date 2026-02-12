@@ -3,14 +3,41 @@
  * Central configuration for all API endpoints and settings
  */
 
-// Environment variables with fallbacks
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+function runtimeApiUrl(): string | undefined {
+  return (globalThis as any).__NEUTRALA_API_URL as string | undefined;
+}
+
+function runtimeSocketUrl(): string | undefined {
+  return (globalThis as any).__NEUTRALA_SOCKET_URL as string | undefined;
+}
+
+function fallbackBaseUrl(): string {
+  const url = (import.meta as any).env?.VITE_API_URL;
+  if (!url) {
+    // In production/desktop, we MUST rely on the injected runtime URL. 
+    // If it's missing, we should fail fast or retry, not guess localhost:5000.
+    if ((import.meta as any).env?.PROD) {
+      console.warn('API URL missing in production build. Waiting for injection...');
+      return ''; 
+    }
+    return 'http://127.0.0.1:5000'; // Only for local dev (vite)
+  }
+  return url;
+}
+
+function fallbackSocketUrl(): string {
+  return (import.meta as any).env?.VITE_SOCKET_URL || fallbackBaseUrl();
+}
 
 export const API_CONFIG = {
   // Base URLs
-  baseURL: API_BASE_URL,
-  socketURL: SOCKET_URL,
+  // Use getters so values are resolved AFTER `__NEUTRALA_BOOTSTRAP__` sets runtime globals.
+  get baseURL() {
+    return runtimeApiUrl() || fallbackBaseUrl();
+  },
+  get socketURL() {
+    return runtimeSocketUrl() || fallbackSocketUrl();
+  },
   
   // API Endpoints
   endpoints: {

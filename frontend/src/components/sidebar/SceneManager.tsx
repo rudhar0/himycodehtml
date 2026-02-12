@@ -31,19 +31,20 @@ export default function SceneManager() {
     prevStep,
     setSpeed
   } = useStepController({ 
-    totalSteps: executionTrace.length,
+    totalSteps: executionTrace.totalSteps,
     initialSpeed: 800 
   });
 
   // 4. Render Logic (Registry)
   const elements = useMemo(() => {
-    return RenderRegistry.getElementsForStep(executionTrace, currentStep);
+    const canvasWidth = stageRef.current?.getAttr?.('width') || 800;
+    return RenderRegistry.getElementsForStep(executionTrace.steps, currentStep, canvasWidth);
   }, [executionTrace, currentStep]);
 
   // 5. Animation Trigger
   useEffect(() => {
-    if (stageRef.current && executionTrace[currentStep]) {
-      animateStepChange(stageRef.current, executionTrace[currentStep]);
+    if (stageRef.current && executionTrace.steps[currentStep]) {
+      animateStepChange(stageRef.current, executionTrace.steps[currentStep]);
     }
   }, [currentStep, executionTrace]);
 
@@ -61,7 +62,7 @@ export default function SceneManager() {
           <SkipForward size={20} />
         </button>
         <span className="text-xs text-slate-500 font-mono">
-          Step: {currentStep} / {executionTrace.length}
+          Step: {currentStep} / {executionTrace.totalSteps}
         </span>
         <select 
           className="ml-auto bg-slate-800 text-xs text-slate-300 rounded p-1 border border-slate-700"

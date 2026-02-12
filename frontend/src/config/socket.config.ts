@@ -1,5 +1,5 @@
 export const SOCKET_CONFIG = {
-  url: import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000',
+  url: ((globalThis as any).__NEUTRALA_SOCKET_URL as string | undefined) ||  'http://localhost:5000',
   options: {
     transports: ['websocket', 'polling'],
     reconnection: true,

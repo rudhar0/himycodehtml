@@ -1,15 +1,14 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Group, Rect, Text } from 'react-konva';
-import { SyntaxNode } from 'web-tree-sitter';
-import type { ExecutionStep } from '@types/index';
+import type { ExecutionStep } from '../../../types';
 import gsap from 'gsap'; // Import gsap
 
 interface AstNodeProps {
-  node: SyntaxNode;
+  node: any;
   x: number;
   y: number;
-  activeNode?: SyntaxNode | null;
+  activeNode?: any | null;
   currentStep?: ExecutionStep | null; // New prop
 }
 

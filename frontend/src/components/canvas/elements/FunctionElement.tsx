@@ -73,10 +73,12 @@ const COLORS = {
   },
   active: {
     primary: '#10B981',
+    light: '#6EE7B7',
     glow: 'rgba(16, 185, 129, 0.7)'
   },
   returning: {
     primary: '#EF4444',
+    light: '#F87171',
     glow: 'rgba(239, 68, 68, 0.6)'
   }
 };

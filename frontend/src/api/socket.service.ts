@@ -6,7 +6,7 @@
 import { io, Socket } from 'socket.io-client';
 import { API_CONFIG } from '@config/api.config';
 import { SOCKET_EVENTS } from '@constants/index';
-import type { GCCStatus } from '@types/index';
+import type { GCCStatus } from '../types';
 
 export type SocketEventCallback = (data: any) => void;
 

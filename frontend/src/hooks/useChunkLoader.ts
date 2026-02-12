@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import ChunkManager from '../services/chunk-manager';
+import { ChunkManager } from '../services/chunk-manager';
 
 const useChunkLoader = () => {
   const [chunkManager] = useState(() => new ChunkManager());

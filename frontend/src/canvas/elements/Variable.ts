@@ -2,7 +2,7 @@
 import { CanvasElement } from "../core/CanvasElement";
 import Konva from 'konva';
 import { COLORS } from '../../config/theme.config';
-import { Variable as VariableData } from '@types/execution.types';
+import { Variable as VariableData } from '../../types/execution.types';
 
 export class Variable extends CanvasElement {
     private textNode: Konva.Text;

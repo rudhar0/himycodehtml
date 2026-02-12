@@ -78,11 +78,17 @@ const COLORS = {
   },
   active: {
     primary: '#10B981',
-    glow: 'rgba(16, 185, 129, 0.7)'
+    light: '#6EE7B7',
+    bg: 'rgba(16, 185, 129, 0.12)',
+    glow: 'rgba(16, 185, 129, 0.7)',
+    accent: '#6EE7B7'
   },
   complete: {
     primary: '#64748B',
-    glow: 'rgba(100, 116, 139, 0.5)'
+    light: '#94A3B8',
+    bg: 'rgba(100, 116, 139, 0.12)',
+    glow: 'rgba(100, 116, 139, 0.5)',
+    accent: '#94A3B8'
   }
 };
 

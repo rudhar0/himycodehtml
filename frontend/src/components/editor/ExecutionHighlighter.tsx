@@ -61,7 +61,7 @@ const ExecutionHighlighter: React.FC<ExecutionHighlighterProps> = ({ editor, cur
           },
           overviewRuler: {
             color: '#facc15',
-            position: 3,
+            position: 2, // 2 = Right edge (1=Left, 2=Center/Right, 3=Full)
           },
         },
       });

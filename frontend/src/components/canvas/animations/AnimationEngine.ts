@@ -6,7 +6,7 @@ import {
   ElementDestroyAnimation,
   FunctionCallAnimation,
   LoopIterationAnimation,
-} from '../types/animation.types';
+} from '../../../types/animation.types';
 
 type Animation =
   | VariableCreateAnimation

@@ -1,0 +1,42 @@
+{
+  "applicationId": "com.codeviz.desktop",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "port": 0,
+  "url": "/index.html",
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "nativeAllowList": [
+    "app.",
+    "os.",
+    "filesystem.",
+    "debug.log",
+    "window.",
+    "events."
+  ],
+  "modes": {
+    "window": {
+      "title": "CodeViz",
+      "width": 1280,
+      "height": 800,
+      "minWidth": 1024,
+      "minHeight": 700,
+      "resizable": true,
+      "fullScreen": false,
+      "alwaysOnTop": false,
+      "enableInspector": true,
+      "icon": "/app.png"
+    }
+  },
+  "cli": {
+    "resourcesPath": "resources",
+    "extensionsPath": "extensions",
+    "binaryVersion": "6.5.0"
+  },
+  "window": {
+    "webView2": {
+      "useFixedVersion": true,
+      "fixedVersionPath": "resources/webview2"
+    }
+  }
+}

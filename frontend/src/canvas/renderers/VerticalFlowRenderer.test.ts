@@ -1,6 +1,6 @@
 
 import { VerticalFlowRenderer } from '../VerticalFlowRenderer';
-import { ExecutionStep } from '@types/index';
+import { ExecutionStep } from '../../types';
 import Konva from 'konva';
 
 describe('VerticalFlowRenderer', () => {
@@ -18,8 +18,13 @@ describe('VerticalFlowRenderer', () => {
       id: 1,
       type: 'line_execution',
       line: 1,
-      scope: 'main',
-      timestamp: 0,
+      scope: 'local',
+      explanation: 'Line execution',
+      state: {
+        globals: {},
+        heap: {},
+        callStack: [],
+      },
     };
 
     const animations = await renderer.processStep(step, true);

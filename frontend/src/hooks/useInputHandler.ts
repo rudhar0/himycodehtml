@@ -29,7 +29,7 @@ export const useInputHandler = () => {
         const inputValues = inputRequest.requests.map(req => values[req.variable]);
         
         // Send the formatted input string to the backend via socket
-        socketService.sendInput(inputValues.join(' '));
+        socketService.provideInput(inputValues.join(' '));
 
         // The backend will eventually send a 'TRACE_COMPLETE' or new 'EXECUTION_STEP',
         // which should trigger the input dialog to close.

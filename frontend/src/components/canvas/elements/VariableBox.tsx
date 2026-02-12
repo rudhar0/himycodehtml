@@ -2,10 +2,13 @@ import React, { useRef, useEffect, useState } from 'react';
 import { Group, Rect, Text, Circle, Line } from 'react-konva';
 import Konva from 'konva';
 
-type VariableState = 
+export type VariableState = 
   | 'declared'
   | 'initialized'
-  | 'updated';
+  | 'updated'
+  | 'multiple-init'
+  | 'accessed'
+  | 'accessed_write';
 
 interface VariableBoxProps {
   id: string;

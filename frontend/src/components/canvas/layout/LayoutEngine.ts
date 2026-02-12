@@ -793,7 +793,8 @@ export class LayoutEngine {
       // Look for function exit in previous steps
       const isFunctionReturnAssignment = 
         stepIndex > 0 && 
-        executionTrace.steps[stepIndex - 1]?.eventType === 'func_exit';
+        ((executionTrace.steps[stepIndex - 1] as any)?.eventType === 'func_exit' || 
+         executionTrace.steps[stepIndex - 1]?.type === 'function_return');
 
       // If the variable element does not exist yet, create it. Use the "variable_load" subtype to indicate
       // that this is the initial value being loaded onto the canvas.
@@ -1242,14 +1243,6 @@ export class LayoutEngine {
                  id: switchId,
                  type: 'condition', // Generic type
                  subtype: 'switch',
-                 x: activeLoop ? 20 : relativeX, // If in loop, relative coords handled by renderer? 
-                 // Wait, LayoutEngine calculates ABSOLUTE x/y usually, unless renderer handles relativity.
-                 // Just sticking to absolute X/Y logic or simple relative if parented.
-                 // Existing generic logic: `x: ownerFrame.x + indent`.
-                 // If activeLoop, we use `this.elementHistory.get(activeLoop.elementId!)!.x + 20`.
-                 
-                 // Let's rely on standard positioning logic used for variables:
-                 // "x: activeLoop ? this.elementHistory.get(activeLoop.elementId!)!.x + 20 : ownerFrame.x + indent"
                  
                  y: activeLoop 
                     ? (activeLoop.currentIterationElementId 

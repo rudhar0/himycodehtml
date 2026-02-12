@@ -13,8 +13,11 @@ export interface MultiInputRequest {
   export interface InputState {
     inputRequest: MultiInputRequest | null;
     isSubmitting: boolean;
+    isWaitingForInput?: boolean;
+    prompt?: string;
     setInputRequest: (request: MultiInputRequest) => void;
     clearInputRequest: () => void;
+    clearInputRequired?: () => void;
     setIsSubmitting: (isSubmitting: boolean) => void;
   }
   
@@ -23,6 +26,8 @@ export interface MultiInputRequest {
       // Initial state
       inputRequest: null,
       isSubmitting: false,
+      isWaitingForInput: false,
+      prompt: '',
   
       // Actions
       setInputRequest: (request) =>
@@ -35,6 +40,12 @@ export interface MultiInputRequest {
         set((state) => {
           state.inputRequest = null;
           state.isSubmitting = false;
+        }),
+      
+      clearInputRequired: () =>
+        set((state) => {
+          state.isWaitingForInput = false;
+          state.prompt = '';
         }),
     
       setIsSubmitting: (isSubmitting) =>

@@ -2,10 +2,93 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="./codeviz.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="C/C++ Program Execution Visualizer" />
-    <title>C/C++ Visualizer</title>
+    <title>CodeViz</title>
+    <style>
+      /* Minimal early styles so the app never shows a blank/purple window while JS loads. */
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans',
+          'Droid Sans', 'Helvetica Neue', sans-serif;
+      }
+      #root {
+        height: 100%;
+      }
+      #neutrala-splash {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(1200px 800px at 10% 10%, rgba(168, 85, 247, 0.35), transparent 60%),
+          radial-gradient(1200px 800px at 90% 20%, rgba(59, 130, 246, 0.25), transparent 60%),
+          radial-gradient(1200px 800px at 50% 90%, rgba(45, 212, 191, 0.18), transparent 60%),
+          #0b1220;
+      }
+      #neutrala-splash-inner {
+        width: min(720px, 92vw);
+        padding: 28px 24px;
+        border-radius: 16px;
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(15, 23, 42, 0.65);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+      }
+      #neutrala-splash-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+      #neutrala-splash-subtitle {
+        margin-top: 8px;
+        color: rgba(226, 232, 240, 0.75);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      #neutrala-splash-status {
+        margin-top: 16px;
+        font-size: 12px;
+        color: rgba(226, 232, 240, 0.85);
+      }
+      #neutrala-splash-status code {
+        color: rgba(226, 232, 240, 0.95);
+      }
+      #neutrala-splash-error {
+        display: none;
+        margin-top: 14px;
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(248, 113, 113, 0.3);
+        background: rgba(127, 29, 29, 0.25);
+        color: rgba(254, 226, 226, 0.92);
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+      #neutrala-splash-spinner {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        border: 2px solid rgba(226, 232, 240, 0.28);
+        border-top-color: rgba(226, 232, 240, 0.95);
+        animation: neutralaSpin 0.9s linear infinite;
+      }
+      @keyframes neutralaSpin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <script>
       // Prevent theme flicker by applying theme before React renders
       (function() {
@@ -21,9 +104,51 @@
         }
       })();
     </script>
+    <script>
+      // Surface early boot errors directly in the splash UI (helps diagnose "purple screen" / blank loads).
+      (function () {
+        function showError(msg) {
+          try {
+            var el = document.getElementById('neutrala-splash-error');
+            if (!el) return;
+            el.style.display = 'block';
+            el.textContent = String(msg || 'Unknown error');
+          } catch {
+            // ignore
+          }
+        }
+        window.addEventListener('error', function (e) {
+          showError('[window.error] ' + (e && e.message ? e.message : String(e)));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          showError('[unhandledrejection] ' + (e && e.reason ? (e.reason.stack || e.reason.message || String(e.reason)) : 'Unknown'));
+        });
+      })();
+    </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="root">
+      <div id="neutrala-splash">
+        <div id="neutrala-splash-inner">
+          <div id="neutrala-splash-title">
+            <div id="neutrala-splash-spinner"></div>
+            <div>CodeViz</div>
+          </div>
+          <div id="neutrala-splash-subtitle">
+            Starting the desktop shell and connecting to the backend…
+          </div>
+          <div id="neutrala-splash-status">
+            If this stays here, open DevTools and look for <code>[neutrala]</code> logs.
+          </div>
+          <div id="neutrala-splash-error"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Neutralino (desktop) support: safe no-op in normal browser dev. -->
+    <script src="./runtime-config.js"></script>
+    <script src="./neutralino-loader.js"></script>
+    <script src="./neutrala-bootstrap.js"></script>
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

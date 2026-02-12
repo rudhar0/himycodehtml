@@ -28,6 +28,9 @@ class APIService {
     // Request interceptor
     this.requestInterceptor = this.client.interceptors.request.use(
       (config) => {
+        // Ensure baseURL is always current (runtime bootstrap sets it after module evaluation).
+        config.baseURL = API_CONFIG.baseURL;
+
         // Add timestamp to requests
         config.headers['X-Request-Time'] = new Date().toISOString();
         

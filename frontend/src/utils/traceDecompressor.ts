@@ -3,7 +3,7 @@
 // frontend/src/utils/traceDecompressor.ts
 // COMPLETE IMPLEMENTATION
 // ============================================
-import type { ExecutionStep, MemoryState, AnimationConfig } from '@types/index';
+import type { ExecutionStep, MemoryState, AnimationConfig } from '../types';
 
 class TraceDecompressor {
   decompressChunks(chunks: any[]): ExecutionStep[] {

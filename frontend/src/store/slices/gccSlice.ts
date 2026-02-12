@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { GCCStatus } from '@types/index';
+import type { GCCStatus } from '../../types';
 
 export interface GCCState extends GCCStatus {
   // Additional UI state

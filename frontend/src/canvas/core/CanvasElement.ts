@@ -1,7 +1,7 @@
 // frontend/src/canvas/core/CanvasElement.ts
 import Konva from 'konva';
 import AnimationEngine from '../../animations/AnimationEngine';
-import { ElementDestroyAnimation } from '../../types/animation.types';
+import { ElementDestroyAnimation, Animation } from '../../types/animation.types';
 
 export interface LayoutInfo {
   x: number;

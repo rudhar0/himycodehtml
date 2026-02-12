@@ -282,3 +282,34 @@ export interface GCCStatus {
   stage: 'idle' | 'downloading' | 'extracting' | 'ready' | 'failed';
   gccPath: string | null;
 }
+
+// ============================================
+// DEBUG STATE TYPES
+// ============================================
+
+export interface ProgramState {
+  trace: ExecutionTrace | null;
+  currentStep: number;
+  isRunning: boolean;
+  isPaused: boolean;
+  error: string | null;
+}
+
+export interface VariableChange {
+  name: string;
+  oldValue: any;
+  newValue: any;
+  type: string;
+  step: number;
+}
+
+export interface Progress {
+  current: number;
+  total: number;
+  stage: string;
+}
+
+export interface SocketIOError extends Error {
+  code?: string;
+  status?: number;
+}

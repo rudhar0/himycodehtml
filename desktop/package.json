@@ -1,0 +1,13 @@
+{
+  "name": "neutrala-desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "neu:update": "neu update",
+    "neu:run": "neu run",
+    "dev:sync-neutralino": "node scripts/sync-neutralino-js.mjs",
+    "sync:assets": "node scripts/sync-assets.mjs",
+    "dev:desktop": "npm run dev:sync-neutralino && npm run sync:assets && neu update && neu run"
+  }
+}
+

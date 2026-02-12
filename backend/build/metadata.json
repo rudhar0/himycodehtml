@@ -1,0 +1,21 @@
+{
+  "appName": "CodeViz",
+  "safeName": "codeviz",
+  "author": "Rud",
+  "license": "MIT",
+  "version": "1.0.0",
+  "targetOs": "windows",
+  "outputFormat": "exe",
+  "appIcon": null,
+  "appIconPng": null,
+  "appIconIco": null,
+  "uninstallIcon": null,
+  "buildDesktop": true,
+  "buildWindowsInstaller": true,
+  "buildId": "36623a54cf66",
+  "builtAt": "2026-02-12T16:42:09.010Z",
+  "nodeRuntime": {
+    "version": "18.20.8",
+    "distBase": "https://nodejs.org/download/release/"
+  }
+}

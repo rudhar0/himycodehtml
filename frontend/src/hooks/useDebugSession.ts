@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import ProtocolAdapter from '../services/protocol-adapter';
+import { ProtocolAdapter } from '../services/protocol-adapter';
 import { ProgramState, VariableChange, Progress } from '../types';
 
 const useDebugSession = (url: string) => {

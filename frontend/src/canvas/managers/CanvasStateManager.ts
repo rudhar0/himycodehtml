@@ -17,7 +17,7 @@ import { Pointer } from '../elements/Pointer';
 import { Loop } from '../elements/Loop';
 import { Condition } from '../elements/Condition';
 import { Output } from '../elements/Output';
-import { ExecutionStep } from '@types/index';
+import { ExecutionStep } from '../../types';
 import Konva from 'konva';
 
 const elementFactory: Record<string, any> = {
@@ -92,7 +92,7 @@ export class CanvasStateManager {
     this.clearNonRootElements();
 
     // Process each step from 0 to targetStep
-    for (let stepIndex = 0; stepIndex <= targetStep && stepIndex < executionTrace.length; stepIndex++) {
+    for (let stepIndex = 0; stepIndex <= targetStep && stepIndex < executionTrace.steps.length; stepIndex++) {
       const step = executionTrace[stepIndex];
       await this.processStep(step, false); // false = skip animations during rebuild
     }

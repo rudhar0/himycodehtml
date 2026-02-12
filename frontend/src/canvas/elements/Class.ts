@@ -2,7 +2,7 @@
 import { CanvasElement } from '../core/CanvasElement';
 import Konva from 'konva';
 import { COLORS } from '../../config/theme.config';
-import { Variable as VariableData, MemberVariable } from '@types/execution.types';
+import { Variable as VariableData, MemberVariable } from '../../types/execution.types';
 import { Variable as VariableElement } from './Variable';
 import { VerticalFlowLayout } from '../managers/VerticalFlowLayout';
 

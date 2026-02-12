@@ -6,14 +6,15 @@ import { Arrow } from 'react-konva';
 export type ArrowType = 'call' | 'return' | 'loop' | 'branch';
 
 interface FlowArrowProps {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
   type: ArrowType;
+  id?: string;
 }
 
-const FlowArrow: React.FC<FlowArrowProps> = ({ x1, y1, x2, y2, type }) => {
+const FlowArrow: React.FC<FlowArrowProps> = ({ x1 = 0, y1 = 0, x2 = 100, y2 = 100, type, id }) => {
   const commonProps = {
     points: [x1, y1, x2, y2],
     pointerLength: 10,

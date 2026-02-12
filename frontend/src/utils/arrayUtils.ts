@@ -3,7 +3,7 @@
  * Helper functions for array detection, parsing, and manipulation
  */
 
-import { ExecutionStep, Variable } from '@types/index';
+import { ExecutionStep, Variable } from '../types';
 
 // ============================================
 // TYPE DEFINITIONS

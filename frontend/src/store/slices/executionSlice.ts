@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { ExecutionStep, ExecutionTrace, MemoryState } from '@types/index';
+import type { ExecutionStep, ExecutionTrace, MemoryState } from '../../types';
 import { DEFAULTS } from '@constants/index';
 import AnimationEngine from '../../animations/AnimationEngine';
 
