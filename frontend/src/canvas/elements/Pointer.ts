@@ -68,15 +68,17 @@ export class Pointer extends CanvasElement {
         this.update(payload); // Apply final state for text
         const newValue = this.textNode.text();
 
-        const animation: VariableUpdateAnimation = { // Re-using VariableUpdateAnimation for now
+        const animation: VariableUpdateAnimation = {
             type: 'variable_update',
             target: this.id,
             duration: 600,
             from: oldValue,
             to: newValue,
-            konvaContainer: this.container,
+            konvaObject: this.container,
             valueTextNode: this.textNode,
         };
         return animation;
     }
 }
+    
+

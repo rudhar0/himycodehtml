@@ -115,7 +115,7 @@ export class CanvasArray extends CanvasElement {
                 duration: 0,
                 from: '',
                 to: String(payload.newValue),
-                konvaContainer: this.container,
+                konvaObject: this.container,
                 valueTextNode: this.cellTexts[index] || null,
                 backgroundRect: this.cellRects[index] || null,
             };

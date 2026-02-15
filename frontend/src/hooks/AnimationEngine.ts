@@ -10,7 +10,6 @@ export default class AnimationEngine {
    */
   public static initialize(stage: Konva.Stage) {
     this.stage = stage;
-    console.log('[AnimationEngine] Initialized');
   }
 
   /**
@@ -28,7 +27,6 @@ export default class AnimationEngine {
    */
   public static addSequence(sequence: any) {
     this.queue.push(sequence);
-    console.log('[AnimationEngine] Sequence added:', sequence);
     this.play();
   }
 
@@ -47,7 +45,6 @@ export default class AnimationEngine {
    */
   public static pause() {
     this.isPlaying = false;
-    console.log('[AnimationEngine] Paused');
   }
 
   private static processQueue() {
@@ -57,7 +54,6 @@ export default class AnimationEngine {
     }
 
     const currentSequence = this.queue.shift();
-    console.log('[AnimationEngine] Processing sequence:', currentSequence);
 
     // Placeholder for actual animation logic (e.g., GSAP or Konva tweens)
     // For now, we just simulate a delay to mimic animation duration

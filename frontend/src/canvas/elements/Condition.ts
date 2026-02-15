@@ -1,7 +1,7 @@
 // frontend/src/canvas/elements/Condition.ts
 import { CanvasElement } from "../core/CanvasElement";
 import Konva from 'konva';
-import { Animation, VariableCreateAnimation, LoopIterationAnimation } from "../../types/animation.types";
+import type { Animation, VariableCreateAnimation, LoopIterationAnimation } from "../../types/animation.types";
 import { COLORS } from '../../config/theme.config';
 
 export class Condition extends CanvasElement {
@@ -68,7 +68,7 @@ export class Condition extends CanvasElement {
         this.container.scaleY(0.8);
         this.create(payload); // Apply final state for text
 
-        const animation: VariableCreateAnimation = { // Re-using VariableCreateAnimation for now
+        const animation: VariableCreateAnimation = {
             type: 'variable_create', 
             target: this.id,
             duration: 500,
@@ -78,15 +78,15 @@ export class Condition extends CanvasElement {
     }
 
     getUpdateAnimation(payload: any): Animation {
-        this.update(payload); // Apply final state for text
+        this.update(payload);
 
-        const animation: LoopIterationAnimation = { // Re-using LoopIterationAnimation for now for highlighting
+        const animation: LoopIterationAnimation = {
             type: 'loop_iteration', 
             target: this.id,
             duration: 300,
-            konvaObject: this.background, // Animate the background rect
-            iteration: 0, // Not directly applicable, but required by type
-            totalIterations: 0, // Not directly applicable, but required by type
+            konvaObject: this.background,
+            iteration: 0,
+            totalIterations: 1,
         };
         return animation;
     }

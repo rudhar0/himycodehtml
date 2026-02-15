@@ -30,4 +30,12 @@ export class ProgramRoot extends CanvasElement {
         // No animations for the root itself
         return Promise.resolve();
     }
+
+    getCreateAnimation(data: any): any {
+        return null;
+    }
+
+    getUpdateAnimation(data: any): any {
+        return null;
+    }
 }

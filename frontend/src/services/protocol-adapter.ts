@@ -2,10 +2,11 @@
 import { io, Socket } from 'socket.io-client';
 import { ChunkManager } from './chunk-manager';
 import { SOCKET_EVENTS } from '../constants/events';
+import { ProgramState, StepExecutionState, Progress } from '../types';
 
 // Define the callbacks the UI will use
-type StateUpdateCallback = (steps: any[]) => void;
-type ProgressCallback = (progress: { loaded: number, total: number }) => void;
+type StateUpdateCallback = (state: StepExecutionState) => void;
+type ProgressCallback = (progress: Progress) => void;
 type ErrorCallback = (error: Error) => void;
 
 /**
@@ -28,7 +29,7 @@ export class ProtocolAdapter {
       this.socket = io(url, { transports: ['websocket'] });
 
       this.socket.on('connect', () => {
-        console.log('ProtocolAdapter connected.');
+
         resolve();
       });
 
@@ -39,7 +40,7 @@ export class ProtocolAdapter {
 
       // Legacy/new session hook: if backend emits session info
       this.socket.on('session:created', ({ sessionId }) => {
-        console.log('Session created:', sessionId);
+
         // If backend supports encrypted chunks it should provide a short-lived clientSecret.
         // For legacy unencrypted traces, serverSecret may be null.
         const serverSecret = null;
@@ -76,25 +77,35 @@ export class ProtocolAdapter {
     if (!this.chunkManager) return;
     
     this.chunkManager.on('chunkLoaded', (chunkId, steps) => {
-      console.log(`Chunk ${chunkId} loaded with ${steps.length} steps.`);
+
       // For backward compatibility, we emit one state update per step.
       for (const step of steps) {
         if (this.onStateUpdateCallback) {
-          const programState: ProgramState = {
+          const stepState: StepExecutionState = {
               location: { file: '', line: step.line, function: step.state?.callStack[0]?.function || ''},
               callStack: step.state.callStack,
               variables: step.state,
               changes: step.changes,
           };
-          this.onStateUpdateCallback(programState);
+          this.onStateUpdateCallback(stepState);
+
+          if (this.onVariableChangeCallback && step.changes) {
+            for (const change of step.changes) {
+              this.onVariableChangeCallback(change);
+            }
+          }
         }
       }
     });
 
-    this.chunkManager.on('loadProgress', (progress) => {
+    this.chunkManager.on('loadProgress', (progress: { loaded: number, total: number }) => {
       this.totalChunks = progress.total;
       if (this.onProgressCallback) {
-        this.onProgressCallback(progress);
+        this.onProgressCallback({
+          current: progress.loaded,
+          total: progress.total,
+          stage: 'loading_chunks'
+        });
       }
     });
     
@@ -133,8 +144,15 @@ export class ProtocolAdapter {
     }
     if (this.socket) {
       this.socket.disconnect();
-      console.log('ProtocolAdapter disconnected.');
+
     }
+  }
+
+
+  private onVariableChangeCallback: ((change: any) => void) | null = null;
+
+  public onVariableChange(callback: (change: any) => void): void {
+    this.onVariableChangeCallback = callback;
   }
 
   // --- Debugger Controls ---

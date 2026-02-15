@@ -10,7 +10,7 @@ export default class AnimationEngine {
   public play(onFrame?: () => void) {
     if (this.isPlaying) return;
     this.isPlaying = true;
-    console.log('AnimationEngine: play');
+
 
     const loop = () => {
       if (!this.isPlaying) return;
@@ -26,6 +26,6 @@ export default class AnimationEngine {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
-    console.log('AnimationEngine: pause');
+
   }
 }

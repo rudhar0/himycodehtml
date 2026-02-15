@@ -2,7 +2,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Group, Rect, Text } from 'react-konva';
 import type { ExecutionStep } from '../../../types';
-import gsap from 'gsap'; // Import gsap
+import gsap from 'gsap'; 
+import Konva from 'konva';
 
 interface AstNodeProps {
   node: any;
@@ -18,7 +19,7 @@ const VERTICAL_SPACING = 20;
 const CHILD_INDENT = 30;
 
 // Helper function to determine node text and style
-const getNodeTextAndStyle = (node: SyntaxNode) => {
+const getNodeTextAndStyle = (node: any) => {
   let text = node.type;
   let color = '#9CA3AF';
   let isBold = false;

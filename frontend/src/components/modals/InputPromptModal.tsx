@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useInputStore } from '@store/slices/inputSlice';
 import useSocket from '@hooks/useSocket';
-import Dialog from '@components/ui/Dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@components/ui/Dialog';
 import Input from '@components/ui/Input';
 import Button from '@components/ui/Button';
 
@@ -28,11 +28,11 @@ export function InputPromptModal() {
 
   return (
     <Dialog open={isWaitingForInput} onOpenChange={(isOpen) => !isOpen && clearInputRequired()}>
-      <Dialog.Content>
-        <Dialog.Header>
-          <Dialog.Title>Input Required</Dialog.Title>
-          <Dialog.Description>{prompt}</Dialog.Description>
-        </Dialog.Header>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Input Required</DialogTitle>
+          <DialogDescription>{prompt}</DialogDescription>
+        </DialogHeader>
         <div className="grid gap-4 py-4">
           <Input
             value={inputValue}
@@ -42,10 +42,10 @@ export function InputPromptModal() {
             autoFocus
           />
         </div>
-        <Dialog.Footer>
+        <DialogFooter>
           <Button onClick={handleSubmit}>Submit</Button>
-        </Dialog.Footer>
-      </Dialog.Content>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

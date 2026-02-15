@@ -92,7 +92,7 @@ export class CanvasStateManager {
     this.clearNonRootElements();
 
     // Process each step from 0 to targetStep
-    for (let stepIndex = 0; stepIndex <= targetStep && stepIndex < executionTrace.steps.length; stepIndex++) {
+    for (let stepIndex = 0; stepIndex <= targetStep && stepIndex < executionTrace.length; stepIndex++) {
       const step = executionTrace[stepIndex];
       await this.processStep(step, false); // false = skip animations during rebuild
     }

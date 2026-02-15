@@ -1,6 +1,7 @@
 // frontend/src/services/chunk-manager.ts
-import { EventEmitter } from 'events';
+import { EventEmitter } from '../utils/EventEmitter';
 import { Socket } from 'socket.io-client';
+
 import { decryptAndDecompressChunk } from './crypto-helper';
 
 const MAX_CACHE_SIZE = 50;
@@ -11,6 +12,8 @@ export class ChunkManager extends EventEmitter {
   private cache = new Map<number, Step[]>();
   private totalChunks = -1;
   private preloaded = new Set<number>();
+
+  // EventEmitter methods are inherited from ../utils/EventEmitter
 
   constructor(
     private sessionId: string,
@@ -84,7 +87,7 @@ export class ChunkManager extends EventEmitter {
     if (this.totalChunks !== -1 && chunkId >= this.totalChunks) return; // Don't preload past the end
     if (this.cache.has(chunkId) || this.preloaded.has(chunkId)) return;
 
-    console.log(`Preloading chunk ${chunkId}...`);
+
     this.preloaded.add(chunkId);
     this.socket.emit('chunk:request', { chunkId });
   }

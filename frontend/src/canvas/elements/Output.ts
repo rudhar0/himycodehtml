@@ -133,7 +133,7 @@ export class Output extends CanvasElement {
       duration: 300,
       from: oldValue,
       to: newValue,
-      konvaContainer: this.container,
+      konvaObject: this.container,
       valueTextNode: this.textNode,
     };
     return animation;

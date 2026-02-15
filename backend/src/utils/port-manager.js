@@ -68,12 +68,32 @@ function readJsonSync(filePath) {
 async function writeJsonAtomic(filePath, data) {
   const tmpPath = `${filePath}.${process.pid}.tmp`;
   await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-  try {
-    await fs.unlink(filePath);
-  } catch {
-    // ignore
+
+  // Fix: Add retry logic for rename operation on Windows to handle race conditions
+  // with the frontend polling the same file.
+  let retries = 5;
+  let lastErr = null;
+
+  while (retries-- > 0) {
+    try {
+      try {
+        await fs.unlink(filePath);
+      } catch (e) {
+        // ignore if doesn't exist
+      }
+      await fs.rename(tmpPath, filePath);
+      return; // Success
+    } catch (err) {
+      lastErr = err;
+      if (err.code === 'EPERM' || err.code === 'EBUSY') {
+        await new Promise(r => setTimeout(r, 50));
+        continue;
+      }
+      throw err; // Non-locking error
+    }
   }
-  await fs.rename(tmpPath, filePath);
+
+  throw new Error(`Failed to atomically write ${filePath} after 5 retries: ${lastErr?.message}`);
 }
 
 function safeUnlinkSync(filePath) {

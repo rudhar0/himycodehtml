@@ -33,16 +33,25 @@ export class GlobalFunction extends CanvasElement {
         this.container.add(rect, text);
     }
 
-    async create(payload: any): Promise<void> {
-        const animation: VariableCreateAnimation = { // Re-using for generic element creation
-            type: 'variable_create', 
+
+    create(payload: any): void {}
+    update(payload: any): void {}
+    
+    getCreateAnimation(data: any): any {
+        return {
+            type: 'fade_in',
             target: this.id,
             konvaObject: this.container,
             duration: 500,
         };
-        const timeline = AnimationEngine.createSequence([animation]);
-        AnimationEngine.addSequence(timeline);
     }
-    async update(payload: any): Promise<void> {}
-    async animate(type: any, payload?: any): Promise<void> {}
+
+    getUpdateAnimation(data: any): any {
+        return {
+            type: 'update',
+            target: this.id,
+            konvaObject: this.container,
+            duration: 300,
+        };
+    }
 }

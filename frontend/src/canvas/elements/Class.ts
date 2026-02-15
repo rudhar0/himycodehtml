@@ -2,7 +2,7 @@
 import { CanvasElement } from '../core/CanvasElement';
 import Konva from 'konva';
 import { COLORS } from '../../config/theme.config';
-import { Variable as VariableData, MemberVariable } from '../../types/execution.types';
+import { Variable as VariableData, ClassMember as MemberVariable } from '../../types';
 import { Variable as VariableElement } from './Variable';
 import { VerticalFlowLayout } from '../managers/VerticalFlowLayout';
 
@@ -65,7 +65,17 @@ export class Class extends CanvasElement {
         // Create and position member variables
         for (const memberData of data.value as MemberVariable[]) {
             const memberId = `var-${memberData.address}`;
-            const memberPayload = { ...memberData, isMember: true };
+            const memberPayload = { 
+                ...memberData, 
+                address: memberData.address || '', 
+                isMember: true, 
+                birthStep: 0,
+                scope: 'local' as const,
+                primitive: memberData.type,
+                isInitialized: true,
+                isAlive: true,
+                declarationType: 'with_value' as const
+            };
             
             const memberElement = new VariableElement(memberId, this.id, this.layer, memberPayload);
 
@@ -98,5 +108,26 @@ export class Class extends CanvasElement {
                 memberElement.update(memberData);
             }
         }
+    }
+    create(data: VariableData): void {
+        this.renderMembers(data);
+    }
+
+    getCreateAnimation(data: VariableData): any {
+        return {
+            type: 'fade_in',
+            target: this.id,
+            konvaObject: this.container,
+            duration: 500,
+        };
+    }
+
+    getUpdateAnimation(data: VariableData): any {
+        return {
+            type: 'update', // generic update
+            target: this.id,
+            konvaObject: this.container,
+            duration: 300,
+        };
     }
 }

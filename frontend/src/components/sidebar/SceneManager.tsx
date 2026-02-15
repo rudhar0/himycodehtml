@@ -43,8 +43,8 @@ export default function SceneManager() {
 
   // 5. Animation Trigger
   useEffect(() => {
-    if (stageRef.current && executionTrace.steps[currentStep]) {
-      animateStepChange(stageRef.current, executionTrace.steps[currentStep]);
+    if (stageRef.current && elements.length > 0) {
+      animateStepChange(stageRef.current, elements);
     }
   }, [currentStep, executionTrace]);
 

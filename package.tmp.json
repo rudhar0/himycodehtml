@@ -1,0 +1,7 @@
+
+{
+  "scripts": {
+    "test:runtime": "node reproduce_runtime_issue.js"
+  },
+  "type": "module"
+}

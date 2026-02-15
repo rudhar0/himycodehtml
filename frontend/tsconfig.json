@@ -20,6 +20,8 @@
     "noImplicitAny": false,
     "strictNullChecks": false,
 
+    "types": ["vite/client", "jest", "node"],
+
     /* Path Aliases */
     "baseUrl": ".",
     "paths": {

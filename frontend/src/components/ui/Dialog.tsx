@@ -64,6 +64,15 @@ export const DialogTitle: React.FC<{
   </h2>
 );
 
+export const DialogDescription: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = "" }) => (
+  <p className={`text-sm text-gray-500 ${className}`}>
+    {children}
+  </p>
+);
+
 export const DialogFooter: React.FC<{
   children: React.ReactNode;
   className?: string;

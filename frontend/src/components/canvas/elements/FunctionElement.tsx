@@ -79,6 +79,7 @@ const COLORS = {
   returning: {
     primary: '#EF4444',
     light: '#F87171',
+    bg: 'rgba(239, 68, 68, 0.12)',
     glow: 'rgba(239, 68, 68, 0.6)'
   }
 };

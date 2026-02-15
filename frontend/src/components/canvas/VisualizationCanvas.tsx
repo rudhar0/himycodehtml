@@ -224,7 +224,7 @@ export default function VisualizationCanvas() {
     visibleLayout.elements.forEach((el) => {
       map.set(el.id, {
         id: el.id,
-        data: el.data ? JSON.parse(JSON.stringify(el.data)) : undefined,
+        data: el.data ? structuredClone(el.data) : undefined,
       });
     });
     prevElementsRef.current = map;
@@ -239,7 +239,8 @@ export default function VisualizationCanvas() {
 
     visibleLayout.elements.forEach((el) => {
         if (el.type === 'function_call' && el.metadata?.stackIndex !== undefined) {
-            const node = layer.findOne(`#${el.id}`);
+            // Use predicate to avoid selector parsing errors with special characters in IDs
+            const node = layer.findOne((node: Konva.Node) => node.id() === el.id);
             if (node) {
                 const zIndex = BASE_FUNCTION_Z + (el.metadata.stackIndex * STACK_Z_STEP);
                 node.zIndex(zIndex);
@@ -428,10 +429,6 @@ export default function VisualizationCanvas() {
   }, [dragMode, handleZoomIn, handleZoomOut, handleFitToScreen]);
   useEffect(() => {
     const handleInputRequired = (data: any) => {
-      console.log(
-        "[VisualizationCanvas] Input required during analysis:",
-        data,
-      );
       useExecutionStore.getState().pause();
       setInputDialogProps({
         prompt: data.prompt || `Enter value for ${data.varName || "variable"}:`,
@@ -450,7 +447,6 @@ export default function VisualizationCanvas() {
     };
   }, [isAnalyzing]);
   const handleInputSubmit = (value: string | number) => {
-    console.log("[VisualizationCanvas] Submitting input:", value);
     socketService.provideInput(value);
     if (visibleLayout) {
       const inputElements = visibleLayout.elements.filter(

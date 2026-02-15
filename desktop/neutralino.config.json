@@ -7,12 +7,12 @@
   "enableServer": true,
   "enableNativeAPI": true,
   "nativeAllowList": [
-    "app.",
-    "os.",
-    "filesystem.",
+    "app.*",
+    "os.*",
+    "filesystem.*",
     "debug.log",
-    "window.",
-    "events."
+    "window.*",
+    "events.*"
   ],
   "modes": {
     "window": {
@@ -25,13 +25,14 @@
       "fullScreen": false,
       "alwaysOnTop": false,
       "enableInspector": true,
-      "icon": "/app.png"
+      "icon": "/resources/app.png"
     }
   },
   "cli": {
     "resourcesPath": "resources",
     "extensionsPath": "extensions",
-    "binaryVersion": "6.5.0"
+    "binaryVersion": "5.3.0",
+    "clientVersion": "5.3.0"
   },
   "window": {
     "webView2": {

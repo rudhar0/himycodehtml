@@ -17,12 +17,11 @@ export const useExecutionTrace = () => {
 
   useEffect(() => {
     const handleTraceProgress = (data: { progress: number; stage: string }) => {
-      console.log(`Frontend: Analysis progress: ${data.stage} (${data.progress}%)`);
       setAnalysisProgress(data.progress, data.stage);
     };
 
     const handleTraceChunk = (trace: ExecutionTrace) => {
-      console.log('Frontend: Received execution trace chunk', trace);
+
       // Normalize steps to ensure locals is a record and populate birthStep when missing.
       if (trace.steps && Array.isArray(trace.steps)) {
         // Ensure locals are objects and collect first-seen birthStep per variable
@@ -87,7 +86,6 @@ export const useExecutionTrace = () => {
     };
 
     const handleTraceComplete = (data: { totalSteps: number }) => {
-      console.log(`Frontend: Trace generation complete. Total steps: ${data.totalSteps}`);
       setAnalysisProgress(100, 'complete');
       setAnalyzing(false);
     };

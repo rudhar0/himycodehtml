@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ProtocolAdapter } from '../services/protocol-adapter';
-import { ProgramState, VariableChange, Progress } from '../types';
+import { ProgramState, VariableChange, Progress, StepExecutionState } from '../types';
 
 const useDebugSession = (url: string) => {
   const [adapter] = useState(() => new ProtocolAdapter());
   const [isConnected, setIsConnected] = useState(false);
-  const [programState, setProgramState] = useState<ProgramState | null>(null);
+  const [programState, setProgramState] = useState<StepExecutionState | null>(null);
   const [variableChanges, setVariableChanges] = useState<VariableChange[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
 

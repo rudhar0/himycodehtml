@@ -37,17 +37,17 @@ export const OutputElement: React.FC<OutputElementProps> = ({
   const groupRef = useRef<any>(null);
   const [showingExplanation, setShowingExplanation] = useState(!!explanation);
 
-  console.log('[OutputElement] render attempt:', { id, x, y, width, height, value, isNew, subtype });
+
 
   useEffect(() => {
     const node = groupRef.current as any;
-    console.debug('[OutputElement] render props:', { id, x, y, width, height, value, isNew, subtype });
+
     if (!node || !node.getLayer()) return;
 
     let tween: Konva.Tween | null = null;
 
     if (isNew) {
-      console.log(`[OutputElement] Animating new output: ${value}`);
+
       node.setAttrs({ opacity: 0 });
       const currentX = typeof node.x === 'function' ? node.x() : node.attrs?.x ?? 0;
       const startX = currentX - 20;

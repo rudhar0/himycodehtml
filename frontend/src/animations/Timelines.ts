@@ -88,12 +88,12 @@ export const createVariableAnimation = (animation: VariableCreateAnimation) => {
 };
 
 export const createVariableUpdateAnimation = (animation: VariableUpdateAnimation) => {
-    const { konvaContainer, valueTextNode, backgroundRect, duration, from, to } = animation;
-    console.log('[Timelines] createVariableUpdateAnimation - konvaContainer:', konvaContainer, 'valueTextNode:', valueTextNode, 'backgroundRect:', backgroundRect);
+    const { konvaObject, valueTextNode, backgroundRect, duration, from, to } = animation;
+    console.log('[Timelines] createVariableUpdateAnimation - konvaObject:', konvaObject, 'valueTextNode:', valueTextNode, 'backgroundRect:', backgroundRect);
     const tl = gsap.timeline();
     
     // Get layer for redrawing
-    const layer = konvaContainer?.getLayer();
+    const layer = konvaObject?.getLayer();
     
     // Use GSAP ticker to continuously redraw during animation
     const ticker = layer ? gsap.ticker.add(() => {

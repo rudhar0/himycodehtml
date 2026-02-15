@@ -49,10 +49,30 @@ export class GlobalPanel extends CanvasElement {
                 target: this.id,
                 konvaObject: this.background,
                 duration: 300,
+                iteration: 0,
+                totalIterations: 1,
             }
         ]);
         AnimationEngine.addSequence(timeline);
     }
 
     async animate(type: any, payload?: any): Promise<void> {}
+
+    getCreateAnimation(data: any): any {
+        return {
+            type: 'fade_in',
+            target: this.id,
+            konvaObject: this.container,
+            duration: 500,
+        };
+    }
+
+    getUpdateAnimation(data: any): any {
+        return {
+            type: 'update',
+            target: this.id,
+            konvaObject: this.container,
+            duration: 300,
+        };
+    }
 }

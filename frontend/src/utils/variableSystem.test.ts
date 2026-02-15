@@ -3,6 +3,7 @@
 // Tests all the new variable visualization features
 // ============================================
 
+
 import { VariableProcessor } from './variableProcessor';
 
 describe('Variable Visualization System', () => {

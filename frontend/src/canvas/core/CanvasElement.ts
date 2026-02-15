@@ -10,6 +10,7 @@ export interface LayoutInfo {
   height: number;
   cursorY?: number; // Current Y position for next child (for vertical flow)
   indent?: number; // Indentation level for nested blocks
+  padding?: number;
 }
 
 export type AnimationType = 'create' | 'update' | 'destroy';

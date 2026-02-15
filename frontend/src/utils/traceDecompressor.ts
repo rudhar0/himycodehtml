@@ -8,18 +8,17 @@ import type { ExecutionStep, MemoryState, AnimationConfig } from '../types';
 class TraceDecompressor {
   decompressChunks(chunks: any[]): ExecutionStep[] {
     if (!chunks || chunks.length === 0) {
-      console.warn('No chunks to decompress');
       return [];
     }
 
     const sortedChunks = [...chunks].sort((a, b) => a.chunkId - b.chunkId);
     const allSteps = sortedChunks.flatMap(chunk => chunk.steps || []);
     
-    console.log(`🔄 Decompressing ${allSteps.length} steps from ${chunks.length} chunks...`);
+
     
     const decompressed = this.reconstructStates(allSteps);
     
-    console.log(`✅ Decompressed ${decompressed.length} steps`);
+
     
     return decompressed;
   }
@@ -154,7 +153,7 @@ class TraceDecompressor {
   }
 
   private cloneState(state: MemoryState): MemoryState {
-    return JSON.parse(JSON.stringify(state));
+    return structuredClone(state);
   }
 }
 

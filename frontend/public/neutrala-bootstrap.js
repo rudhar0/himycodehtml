@@ -57,7 +57,10 @@
   }
 
   function detectSeparator(p) {
-    return String(p || '').includes('\\') ? '\\' : '/';
+    // In Neutralino, NL_OS is injected. If not present, fallback to UA.
+    const os = (typeof globalThis !== 'undefined' && globalThis.NL_OS) ||
+      (navigator.userAgent.includes('Windows') ? 'Windows' : 'Linux');
+    return os.toLowerCase().includes('win') ? '\\' : '/';
   }
 
   function dirname(p) {
@@ -169,7 +172,8 @@
 
   async function startBackend({ backendDir }) {
     const sep = detectSeparator(backendDir);
-    const isWindows = sep === '\\';
+    const os = (typeof globalThis !== 'undefined' && globalThis.NL_OS) || '';
+    const isWindows = os.toLowerCase().includes('win') || (sep === '\\');
 
     // Try multiple backend binary names (in order of preference)
     // The build script produces: <safeName>-backend<.exe>

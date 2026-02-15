@@ -1,10 +1,32 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
+import fs from 'node:fs';
 
 export default defineConfig({
   base: './', // Relative base for file:// compatibility in Neutralino
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'serve-auth-info',
+      configureServer(server) {
+        server.middlewares.use('/auth_info.json', (req, res, next) => {
+          const authInfoPath = path.resolve(__dirname, '../desktop/.tmp/auth_info.json');
+          try {
+            if (fs.existsSync(authInfoPath)) {
+              const content = fs.readFileSync(authInfoPath, 'utf-8');
+              res.setHeader('Content-Type', 'application/json');
+              res.end(content);
+              return;
+            }
+          } catch (e) {
+            console.error('Failed to serve auth_info.json', e);
+          }
+          next();
+        });
+      }
+    }
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -21,14 +43,10 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      external: ['./dockerfile/dockerfile.contribution.js'],
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('monaco-editor')) return 'vendor-monaco';
-            if (id.includes('react')) return 'vendor-react';
-            if (id.includes('tree-sitter')) return 'vendor-treesitter';
-            return 'vendor';
+             return 'vendor';
           }
         },
         assetFileNames: 'assets/[name]-[hash][extname]',

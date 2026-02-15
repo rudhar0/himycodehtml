@@ -187,9 +187,9 @@ class AnimationEngine {
     timeline: gsap.core.Timeline,
     animation: VariableUpdateAnimation
   ): void {
-    const { konvaContainer, backgroundRect, valueTextNode, duration = 600 } = animation;
+    const { konvaObject, backgroundRect, valueTextNode, duration = 600 } = animation;
 
-    if (!konvaContainer || !backgroundRect || !valueTextNode) {
+    if (!konvaObject || !backgroundRect || !valueTextNode) {
       console.warn('[AnimationEngine] Missing objects for variable_update animation');
       return;
     }
@@ -208,7 +208,7 @@ class AnimationEngine {
 
     // Slight scale pulse
     timeline.to(
-      konvaContainer,
+      konvaObject,
       {
         scaleX: 1.05,
         scaleY: 1.05,

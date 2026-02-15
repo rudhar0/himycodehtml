@@ -568,6 +568,10 @@ async function downloadRuntimeViaNeu({ resourcesDir, platform, version } = {}) {
         enableServer: true,
         enableNativeAPI: true,
         nativeAllowList: ['app.', 'os.', 'filesystem.', 'debug.log'],
+        cli: {
+          binaryVersion: version || '6.5.0',
+          resourcesPath: 'resources',
+        },
       },
       null,
       2,
@@ -587,6 +591,7 @@ async function downloadRuntimeViaNeu({ resourcesDir, platform, version } = {}) {
       await runCommand(neuCmd, ['update'], { cwd: tmpDir });
     }
   } catch (err) {
+    if (process.env.DEBUG) console.error(`[runtime-manager] 'neu update' failed in ${tmpDir}:`, err);
     await fs.rm(tmpDir, { recursive: true, force: true });
     throw err;
   }
@@ -756,9 +761,12 @@ export async function downloadRuntime({ resourcesDir, baseUrl, url, sha256, down
   const dlDir = downloadDir || path.join(resourcesDir, 'neutrala-runtime', '_downloads');
   await fs.mkdir(dlDir, { recursive: true });
 
+  console.log(`[runtime-manager] downloadRuntime: NO_NEU=${process.env.NEUTRALA_RUNTIME_NO_NEU}, url=${resolvedUrl}`);
+
   // If no explicit URL is provided, prefer the official `neu update` workflow to fetch runtime binaries.
   if (!resolvedUrl && process.env.NEUTRALA_RUNTIME_NO_NEU !== 'true') {
     try {
+      console.log('[runtime-manager] Attempting download via "neu update"...');
       const result = await downloadRuntimeViaNeu({ resourcesDir, platform: p, version: resolvedVersion || undefined });
       return {
         mode: 'neu',
@@ -770,6 +778,7 @@ export async function downloadRuntime({ resourcesDir, baseUrl, url, sha256, down
         verified: false,
       };
     } catch (err) {
+      if (process.env.DEBUG) console.warn(`[runtime-manager] downloadRuntimeViaNeu failed, falling back to GitHub: ${err.message}`);
       // Fall back to direct URL / GitHub discovery below if neu isn't available.
       if (process.env.NEUTRALA_RUNTIME_NEU_REQUIRED === 'true') throw err;
     }

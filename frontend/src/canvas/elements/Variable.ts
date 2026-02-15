@@ -2,7 +2,7 @@
 import { CanvasElement } from "../core/CanvasElement";
 import Konva from 'konva';
 import { COLORS } from '../../config/theme.config';
-import { Variable as VariableData } from '../../types/execution.types';
+import { Variable as VariableData } from '../../types';
 
 export class Variable extends CanvasElement {
     private textNode: Konva.Text;
@@ -73,5 +73,26 @@ export class Variable extends CanvasElement {
         }
         
         this.textNode.text(`${type} ${name} = ${valueStr};`);
+    }
+    create(data: any): void {
+        this.update(data);
+    }
+
+    getCreateAnimation(data: any): any {
+        return {
+            type: 'variable_create',
+            target: this.id,
+            konvaObject: this.container,
+            duration: 500,
+        };
+    }
+
+    getUpdateAnimation(data: any): any {
+        return {
+            type: 'value_change',
+            target: this.id,
+            konvaObject: this.textNode,
+            duration: 300,
+        };
     }
 }

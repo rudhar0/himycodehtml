@@ -56,7 +56,7 @@ const expandTrace = (steps: ExecutionStep[]): ExecutionStep[] => {
   const expanded: ExecutionStep[] = [];
   
   for (const step of steps) {
-    if (step.type === 'loop_body_summary' && (step as any).events) {
+    if ((step.type as string) === 'loop_body_summary' && (step as any).events) {
        expanded.push(...expandTrace((step as any).events as ExecutionStep[]));
     } else {
        expanded.push(step);
@@ -85,7 +85,6 @@ export const useExecutionStore = create<ExecutionState>()(
    setTrace: (trace: ExecutionTrace) =>
       set((state) => {
         if (!trace || !trace.steps || trace.steps.length === 0) {
-          console.error("Invalid trace received in setTrace");
           return;
         }
 
@@ -111,11 +110,7 @@ export const useExecutionStore = create<ExecutionState>()(
           state.currentState = expandedTrace.steps[0].state;
         }
         
-        console.log('✅ Trace loaded & expanded:', {
-          originalSteps: trace.steps.length,
-          expandedSteps: expandedTrace.totalSteps,
-          startingAtStep: 0,
-        });
+
       }),
 
     clearTrace: () => set(state => {

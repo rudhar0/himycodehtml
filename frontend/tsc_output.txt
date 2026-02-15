@@ -1,0 +1,65 @@
+src/animations/Timelines.ts(91,13): error TS2339: Property 'konvaContainer' does not exist on type 'VariableUpdateAnimation'.
+src/api/api.service.ts(38,25): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/api/api.service.ts(54,25): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/canvas/elements/CanvasArray.ts(118,17): error TS2353: Object literal may only specify known properties, and 'konvaContainer' does not exist in type 'VariableUpdateAnimation'.
+src/canvas/elements/Class.ts(9,14): error TS2654: Non-abstract class 'Class' is missing implementations for the following members of 'CanvasElement': 'create', 'getCreateAnimation', 'getUpdateAnimation'.
+src/canvas/elements/Class.ts(22,13): error TS2353: Object literal may only specify known properties, and 'padding' does not exist in type 'LayoutInfo'.
+src/canvas/elements/Class.ts(45,28): error TS2339: Property 'padding' does not exist on type 'LayoutInfo'.
+src/canvas/elements/Class.ts(46,28): error TS2339: Property 'padding' does not exist on type 'LayoutInfo'.
+src/canvas/elements/Class.ts(70,86): error TS2345: Argument of type '{ isMember: boolean; name: string; type: string; value: any; address: string; }' is not assignable to parameter of type 'Variable & { isMember?: boolean; }'.
+  Property 'birthStep' is missing in type '{ isMember: boolean; name: string; type: string; value: any; address: string; }' but required in type 'Variable'.
+src/canvas/elements/Class.ts(73,50): error TS2339: Property 'padding' does not exist on type 'LayoutInfo'.
+src/canvas/elements/Class.ts(75,63): error TS2339: Property 'padding' does not exist on type 'LayoutInfo'.
+src/canvas/elements/Class.ts(84,53): error TS2339: Property 'padding' does not exist on type 'LayoutInfo'.
+src/canvas/elements/GlobalFunction.ts(7,14): error TS2654: Non-abstract class 'GlobalFunction' is missing implementations for the following members of 'CanvasElement': 'getCreateAnimation', 'getUpdateAnimation'.
+src/canvas/elements/GlobalPanel.ts(7,14): error TS2654: Non-abstract class 'GlobalPanel' is missing implementations for the following members of 'CanvasElement': 'getCreateAnimation', 'getUpdateAnimation'.
+src/canvas/elements/GlobalPanel.ts(47,13): error TS2322: Type '{ type: "loop_iteration"; target: string; konvaObject: Rect; duration: number; }' is not assignable to type 'Animation'.
+  Type '{ type: "loop_iteration"; target: string; konvaObject: Rect; duration: number; }' is missing the following properties from type 'LoopIterationAnimation': iteration, totalIterations
+src/canvas/elements/Input.ts(156,7): error TS2353: Object literal may only specify known properties, and 'konvaContainer' does not exist in type 'VariableUpdateAnimation'.
+src/canvas/elements/MainFunction.ts(7,14): error TS2654: Non-abstract class 'MainFunction' is missing implementations for the following members of 'CanvasElement': 'getCreateAnimation', 'getUpdateAnimation'.
+src/canvas/elements/MainFunction.ts(58,13): error TS2322: Type '{ type: "loop_iteration"; target: string; konvaObject: Rect; duration: number; }' is not assignable to type 'Animation'.
+  Type '{ type: "loop_iteration"; target: string; konvaObject: Rect; duration: number; }' is missing the following properties from type 'LoopIterationAnimation': iteration, totalIterations
+src/canvas/elements/Output.ts(136,7): error TS2353: Object literal may only specify known properties, and 'konvaContainer' does not exist in type 'VariableUpdateAnimation'.
+src/canvas/elements/Pointer.ts(77,13): error TS2353: Object literal may only specify known properties, and 'konvaContainer' does not exist in type 'VariableUpdateAnimation'.
+src/canvas/elements/ProgramRoot.ts(5,14): error TS2654: Non-abstract class 'ProgramRoot' is missing implementations for the following members of 'CanvasElement': 'getCreateAnimation', 'getUpdateAnimation'.
+src/canvas/elements/Variable.ts(7,14): error TS2654: Non-abstract class 'Variable' is missing implementations for the following members of 'CanvasElement': 'create', 'getCreateAnimation', 'getUpdateAnimation'.
+src/canvas/managers/CanvasStateManager.ts(95,83): error TS2339: Property 'steps' does not exist on type 'ExecutionStep[]'.
+src/canvas/renderers/VerticalFlowRenderer.test.ts(2,38): error TS2307: Cannot find module '../VerticalFlowRenderer' or its corresponding type declarations.
+src/canvas/renderers/VerticalFlowRenderer.test.ts(23,7): error TS2741: Property 'stack' is missing in type '{ globals: {}; heap: {}; callStack: undefined[]; }' but required in type 'MemoryState'.
+src/canvas/renderers/VerticalFlowRenderer.ts(122,64): error TS2345: Argument of type 'import("D:/testvicneusof/frontend/src/types/index").Variable' is not assignable to parameter of type 'import("D:/testvicneusof/frontend/src/types/execution.types").Variable'.
+  Property 'birthStep' is optional in type 'Variable' but required in type 'Variable'.
+src/canvas/renderers/VerticalFlowRenderer.ts(124,67): error TS2345: Argument of type 'Variable' is not assignable to parameter of type 'Variable & { isMember?: boolean; }'.
+  Type 'import("D:/testvicneusof/frontend/src/types/index").Variable' is not assignable to type 'import("D:/testvicneusof/frontend/src/types/execution.types").Variable'.
+    Property 'birthStep' is optional in type 'Variable' but required in type 'Variable'.
+src/components/canvas/animations/AnimationEngine.ts(190,13): error TS2339: Property 'konvaContainer' does not exist on type 'VariableUpdateAnimation'.
+src/components/canvas/elements/AstNode.tsx(21,36): error TS2304: Cannot find name 'SyntaxNode'.
+src/components/canvas/elements/AstNode.tsx(133,26): error TS2503: Cannot find namespace 'Konva'.
+src/components/canvas/elements/FunctionElement.tsx(254,27): error TS2339: Property 'bg' does not exist on type '{ primary: string; light: string; glow: string; }'.
+src/components/modals/InputPromptModal.tsx(31,15): error TS2339: Property 'Content' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(32,17): error TS2339: Property 'Header' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(33,19): error TS2339: Property 'Title' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(33,48): error TS2339: Property 'Title' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(34,19): error TS2339: Property 'Description' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(34,48): error TS2339: Property 'Description' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(35,18): error TS2339: Property 'Header' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(45,17): error TS2339: Property 'Footer' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(47,18): error TS2339: Property 'Footer' does not exist on type 'FC<DialogProps>'.
+src/components/modals/InputPromptModal.tsx(48,16): error TS2339: Property 'Content' does not exist on type 'FC<DialogProps>'.
+src/components/sidebar/SceneManager.tsx(47,43): error TS2345: Argument of type 'ExecutionStep' is not assignable to parameter of type 'VisualElement[]'.
+  Type 'ExecutionStep' is missing the following properties from type 'VisualElement[]': length, pop, push, concat, and 28 more.
+src/engine/traceProcessor.ts(30,29): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
+src/hooks/useAnimationController.ts(353,13): error TS2322: Type '"output_display"' is not assignable to type '"function_call" | "function_return" | "loop_iteration" | "line_execution" | "array_access" | "variable_create" | "variable_update" | "variable_access" | "memory_allocation" | "element_destroy"'.
+src/hooks/useChunkLoader.ts(5,41): error TS2554: Expected 3 arguments, but got 0.
+src/hooks/useChunkLoader.ts(11,18): error TS2339: Property 'onChunkLoaded' does not exist on type 'ChunkManager'.
+src/hooks/useChunkLoader.ts(15,18): error TS2339: Property 'onChunkError' does not exist on type 'ChunkManager'.
+src/hooks/useChunkLoader.ts(20,18): error TS2339: Property 'onLoadProgress' does not exist on type 'ChunkManager'.
+src/hooks/useDebugSession.ts(17,27): error TS2345: Argument of type 'Dispatch<SetStateAction<ProgramState>>' is not assignable to parameter of type 'StateUpdateCallback'.
+  Types of parameters 'value' and 'steps' are incompatible.
+    Type 'any[]' is not assignable to type 'SetStateAction<ProgramState>'.
+src/hooks/useDebugSession.ts(18,13): error TS2339: Property 'onVariableChange' does not exist on type 'ProtocolAdapter'.
+src/hooks/useDebugSession.ts(21,24): error TS2345: Argument of type 'Dispatch<SetStateAction<Progress>>' is not assignable to parameter of type 'ProgressCallback'.
+  Types of parameters 'value' and 'progress' are incompatible.
+    Type '{ loaded: number; total: number; }' is not assignable to type 'SetStateAction<Progress>'.
+      Type '{ loaded: number; total: number; }' is missing the following properties from type 'Progress': current, stage
+src/services/protocol-adapter.ts(83,31): error TS2304: Cannot find name 'ProgramState'.
+src/store/slices/executionSlice.ts(59,9): error TS2367: This comparison appears to be unintentional because the types 'StepType' and '"loop_body_summary"' have no overlap.

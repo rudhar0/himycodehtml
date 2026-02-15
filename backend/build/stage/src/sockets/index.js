@@ -96,7 +96,7 @@ export function setupSocketHandlers(io) {
         });
 
         // Send trace in single chunk (can be split if needed)
-        console.log('Backend traceResult:', JSON.stringify(traceResult, null, 2));
+        console.log(`📡 Sending trace to ${socket.id} (${traceResult.steps.length} steps)`);
         socket.emit(SOCKET_EVENTS.CODE_TRACE_CHUNK, {
           chunkId: 0,
           totalChunks: 1,
@@ -123,7 +123,7 @@ export function setupSocketHandlers(io) {
 
       } catch (error) {
         console.error('❌ Trace generation error:', error);
-        
+
         socket.emit(SOCKET_EVENTS.CODE_TRACE_ERROR, {
           message: error.message || 'Failed to generate trace',
           details: process.env.NODE_ENV === 'development' ? error.stack : undefined

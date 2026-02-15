@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import codeInstrumenter from './code-instrumenter.service.js';
 import { toolchainService } from './toolchain.service.js';
 import { tracePlatformAdapter } from './trace-platform-adapter.js';
+import resourceResolver from './resource-resolver.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,9 +32,24 @@ console.log('[TraceService] Trace service active: instrumentation-tracer');
 
 class InstrumentationTracer {
     constructor() {
-        this.tempDir = path.join(process.cwd(), 'temp');
-        this.tracerCpp = path.join(process.cwd(), 'src', 'cpp', 'tracer.cpp');
-        this.traceHeader = path.join(process.cwd(), 'src', 'cpp', 'trace.h');
+        // Use ResourceResolver for portable/packaged paths
+        this.projectRoot = resourceResolver.getProjectRoot();
+        this.resourcesRoot = resourceResolver.getResourcesRoot();
+        this.tempDir = resourceResolver.getTempRoot();
+
+        // Support both dev layout (backend/src/cpp) and prod layout (resources/cpp)
+        // Note: this.projectRoot is typically the repo root in dev
+        const devTracer = path.join(this.projectRoot, 'backend', 'src', 'cpp', 'tracer.cpp');
+        const prodTracer = path.join(this.resourcesRoot, 'cpp', 'tracer.cpp');
+        this.tracerCpp = existsSync(prodTracer) ? prodTracer : devTracer;
+
+        const devHeader = path.join(this.projectRoot, 'backend', 'src', 'cpp', 'trace.h');
+        const prodHeader = path.join(this.resourcesRoot, 'cpp', 'trace.h');
+        this.traceHeader = existsSync(prodHeader) ? prodHeader : devHeader;
+
+        console.log(`[TraceService] Temp directory: ${this.tempDir}`);
+        console.log(`[TraceService] Tracer source: ${this.tracerCpp}`);
+
         this.ensureTempDir();
 
         this.arrayRegistry = new Map();

@@ -37,12 +37,12 @@ async function convertPngToIco(pngPath, icoPath) {
     try {
       const sharp = await import('sharp');
       const sharpModule = sharp.default ?? sharp;
-      
+
       // Resize to 256x256 (standard icon size)
       await sharpModule(pngPath)
         .resize(256, 256, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
         .toFile(icoPath);
-      
+
       console.log(`[icon-converter] ✓ Icon created: ${icoPath}`);
       return true;
     } catch (e) {
@@ -50,11 +50,11 @@ async function convertPngToIco(pngPath, icoPath) {
         // sharp not available, try jimp
         const jimp = await import('jimp');
         const jimpModule = jimp.default ?? jimp;
-        
+
         const image = await jimpModule.read(pngPath);
         image.resize({ w: 256, h: 256 });
         await image.write(icoPath);
-        
+
         console.log(`[icon-converter] ✓ Icon created: ${icoPath}`);
         return true;
       }

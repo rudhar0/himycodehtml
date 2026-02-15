@@ -14,13 +14,10 @@ function runtimeSocketUrl(): string | undefined {
 function fallbackBaseUrl(): string {
   const url = (import.meta as any).env?.VITE_API_URL;
   if (!url) {
-    // In production/desktop, we MUST rely on the injected runtime URL. 
-    // If it's missing, we should fail fast or retry, not guess localhost:5000.
     if ((import.meta as any).env?.PROD) {
-      console.warn('API URL missing in production build. Waiting for injection...');
-      return ''; 
+      console.warn('API URL missing in production. waiting for bootstrap...');
     }
-    return 'http://127.0.0.1:5000'; // Only for local dev (vite)
+    return ''; // Never guess localhost:5000
   }
   return url;
 }

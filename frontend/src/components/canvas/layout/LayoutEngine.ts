@@ -481,6 +481,11 @@ export class LayoutEngine {
     this.updateContainerHeights(layout);
     layout.functionArrows = this.functionArrows;
 
+    // Validate layout in development mode
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
+      this.validateLayout(layout);
+    }
+
     return layout;
   }
 
@@ -1143,8 +1148,12 @@ export class LayoutEngine {
       this.elementHistory.set(loopElementId, loopElement);
       this.createdInStep.set(loopElementId, stepIndex);
       
-      lane.usedHeight += 60;
-      
+      // Update lane height to account for loop element (only if not nested in another loop)
+      const activeLoop = this.getActiveLoopForFrame(frameId);
+      if (!activeLoop) {
+        lane.usedHeight += loopElement.height + ELEMENT_SPACING;
+      }
+
       return;
     }
 
@@ -1270,9 +1279,9 @@ export class LayoutEngine {
              parent.children!.push(switchElement);
              this.elementHistory.set(switchId, switchElement);
              
-             // Update lane used height if not in loop
+             // Update lane height to account for switch element (only if not nested in loop)
              if (!activeLoop) {
-                 lane.usedHeight += 100 + ELEMENT_SPACING;
+                 lane.usedHeight += switchElement.height + ELEMENT_SPACING;
              }
              
              // Add to active conditions stack setup if needed, 
@@ -1574,28 +1583,91 @@ export class LayoutEngine {
   }
 
   private static getNextCursorY(parent: LayoutElement): number {
+    // Check if parent uses lane-based positioning
+    if (parent.metadata?.lanes) {
+      const lanes = parent.metadata.lanes;
+      
+      // Use LOCALS lane for positioning (where most elements go)
+      const localsLane = lanes.LOCALS;
+      
+      // Return absolute Y position based on lane offset
+      return parent.y + localsLane.startY + localsLane.usedHeight;
+    }
+    
+    // Otherwise, position after last child
     if (!parent.children || parent.children.length === 0) {
       return parent.y + HEADER_HEIGHT;
     }
+    
     const lastChild = parent.children[parent.children.length - 1];
     return lastChild.y + lastChild.height + ELEMENT_SPACING;
   }
 
-  private static updateContainerHeights(layout: Layout): void {
-    const updateHeight = (element: LayoutElement): number => {
-      // *** NEW: Sort children by stepId FIRST ***
-      if (element.children && element.children.length > 0) {
-        this.sortChildrenByStep(element.children);
-        
-        // *** NEW: Recalculate Y positions after sorting ***
-        let currentY = element.y + HEADER_HEIGHT;
-        element.children.forEach(child => {
-          child.y = currentY;
-          currentY += child.height + ELEMENT_SPACING;
-        });
+  /**
+   * Validates that all children fit within their parent bounds.
+   * Only runs in development mode.
+   */
+  private static validateLayout(layout: Layout): void {
+    const checkBounds = (element: LayoutElement, depth: number = 0) => {
+      if (!element.children || element.children.length === 0) {
+        return;
       }
       
-      // If has lanes, calculate based on lanes
+      const indent = '  '.repeat(depth);
+      
+      element.children.forEach(child => {
+        // Calculate boundaries
+        const childTop = child.y;
+        const childBottom = child.y + child.height;
+        const parentTop = element.y;
+        const parentBottom = element.y + element.height;
+        
+        // Check vertical bounds
+        if (childTop < parentTop) {
+          console.warn(
+            `${indent}⚠️ LAYOUT: Child "${child.id}" (top: ${childTop}) ` +
+            `starts above parent "${element.id}" (top: ${parentTop})`
+          );
+        }
+        
+        if (childBottom > parentBottom) {
+          const overflow = childBottom - parentBottom;
+          console.warn(
+            `${indent}⚠️ LAYOUT: Child "${child.id}" (bottom: ${childBottom}) ` +
+            `exceeds parent "${element.id}" (bottom: ${parentBottom}) ` +
+            `by ${overflow.toFixed(1)}px`
+          );
+        }
+        
+        // Recurse into grandchildren
+        checkBounds(child, depth + 1);
+      });
+    };
+    
+    // Check all top-level containers
+    console.log('🔍 Validating Layout...');
+    checkBounds(layout.mainFunction, 0);
+    checkBounds(layout.globalPanel, 0);
+    
+    layout.elements.forEach(element => {
+      if (element.type === 'function_call' || 
+          element.type === 'loop' || 
+          element.type === 'condition') {
+        checkBounds(element, 0);
+      }
+    });
+    
+    console.log('✅ Layout validation complete');
+  }
+
+  private static updateContainerHeights(layout: Layout): void {
+    const updateHeight = (element: LayoutElement): number => {
+      // Sort children by step (preserves their calculated positions)
+      if (element.children && element.children.length > 0) {
+        this.sortChildrenByStep(element.children);
+      }
+      
+      // If has lanes, calculate based on lanes (lane-aware elements)
       if (element.metadata && element.metadata.lanes) {
         const lanes = element.metadata.lanes;
         const contentHeight = lanes.HEADER.usedHeight + 
@@ -1607,20 +1679,28 @@ export class LayoutEngine {
         return element.y + newHeight;
       }
       
+      // No children - return current bottom edge
       if (!element.children || element.children.length === 0) {
         return element.y + element.height;
       }
 
+      // Recursively update child heights first
       let maxChildBottom = element.y + HEADER_HEIGHT;
-
+      
       element.children.forEach((child) => {
-        const childBottom = updateHeight(child);
+        const childBottom = updateHeight(child);  // Recurse
         maxChildBottom = Math.max(maxChildBottom, childBottom);
       });
 
+      // Calculate parent height to contain all children
+      // maxChildBottom is the absolute Y of the bottom-most child
+      // element.y is the absolute Y of this element's top
+      // Difference gives us the required height
+      const requiredHeight = maxChildBottom - element.y + ELEMENT_SPACING;
+      
       element.height = Math.max(
-        80,
-        maxChildBottom - element.y + ELEMENT_SPACING,
+        80,  // Minimum height
+        requiredHeight
       );
 
       return element.y + element.height;

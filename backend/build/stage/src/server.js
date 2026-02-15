@@ -73,6 +73,9 @@ let portSelection = null;
 async function startServer() {
   try {
     logger.info('Starting NeutralaJS backend...');
+    logger.info(`Backend Root: ${backendRoot}`);
+    logger.info(`Runtime Dir: ${runtimeDir}`);
+    logger.info(`Process pkg: ${!!process.pkg}`);
 
     if (globalThis.__NEUTRALA_BACKEND_STARTED) {
       throw new Error(
@@ -81,6 +84,13 @@ async function startServer() {
     }
     globalThis.__NEUTRALA_BACKEND_STARTED = true;
 
+    // Ensure runtime directory exists before validation
+    if (!fssync.existsSync(runtimeDir)) {
+      fssync.mkdirSync(runtimeDir, { recursive: true });
+      logger.info(`Created runtime directory: ${runtimeDir}`);
+    }
+
+    logger.info('Validating startup environment...');
     const { warnings } = await validateStartupEnvironment({
       backendRoot,
       runtimeDir,
@@ -92,6 +102,7 @@ async function startServer() {
       process.env.NEUTRALA_RUNTIME_REQUIRED === 'true' || !!process.pkg;
     const runtimeAuto = process.env.NEUTRALA_RUNTIME_AUTO === 'true';
     if (runtimeRequired || runtimeAuto) {
+      logger.info('Registering Neutralino runtime...');
       try {
         const resourcesDir = path.join(backendRoot, 'resources');
         const runtimeInfo = await registerRuntimeEnv({ resourcesDir });
@@ -99,17 +110,17 @@ async function startServer() {
           `Neutrala runtime ready: ${runtimeInfo.binaryPath} (v${runtimeInfo.version})`,
         );
       } catch (err) {
-        logger.error(`Neutrala runtime setup failed: ${err?.message || err}`);
-        if (runtimeRequired) {
-          throw err;
+        // Fix: Make backend startup resilient to runtime registration failures.
+        // Even if the desktop runtime isn't found/valid, the backend should still serve the API.
+        logger.warn(`Neutrala runtime registration skipped/failed: ${err?.message || err}`);
+        if (process.pkg) {
+          logger.info('Running in packaged mode; continuing with internal defaults.');
         }
-        logger.warn(
-          'Continuing without Neutrala runtime (set NEUTRALA_RUNTIME_REQUIRED=true to enforce)',
-        );
       }
     }
 
     // Bind/lock the HTTP + WS port early to avoid restart races.
+    logger.info('Binding port...');
     try {
       portSelection = await listenWithAutoPort(httpServer, {
         host: process.env.HOST || '0.0.0.0',
@@ -130,6 +141,7 @@ async function startServer() {
     );
 
     // Initialize local worker pool (Docker removed)
+    logger.info('Initializing worker pool...');
     try {
       await workerPool.initialize();
       logger.info('Worker pool initialized');
@@ -223,5 +235,41 @@ process.on('SIGUSR2', async () => {
 });
 
 startServer();
+
+// Auto-shutdown Watchdog
+// Prevents orphan processes when the frontend is closed abruptly.
+let idleTimer = null;
+const IDLE_TIMEOUT = 60000; // 60 seconds (increased for dev mode stability)
+
+function startWatchdog() {
+  if (idleTimer) return;
+
+  idleTimer = setInterval(() => {
+    const activeClients = io.engine.clientsCount;
+    if (activeClients === 0) {
+      logger.info(`[Watchdog] No active connections for ${IDLE_TIMEOUT}ms. Shutting down...`);
+      process.emit('SIGTERM');
+    }
+  }, IDLE_TIMEOUT);
+}
+
+function stopWatchdog() {
+  if (idleTimer) {
+    clearInterval(idleTimer);
+    idleTimer = null;
+  }
+}
+
+io.on('connection', (socket) => {
+  stopWatchdog();
+  socket.on('disconnect', () => {
+    if (io.engine.clientsCount === 0) {
+      startWatchdog();
+    }
+  });
+});
+
+// Start initial watchdog in case no one ever connects
+startWatchdog();
 
 export { io };

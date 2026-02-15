@@ -60,10 +60,32 @@ export class MainFunction extends CanvasElement {
                 target: this.id,
                 konvaObject: this.background,
                 duration: 300,
+                iteration: 0,
+                totalIterations: 1,
             }
         ]);
         AnimationEngine.addSequence(timeline);
     }
 
     async animate(type: any, payload?: any): Promise<void> {}
+
+    getCreateAnimation(data: any): any {
+        return {
+            type: 'function_call',
+            target: this.id,
+            konvaObject: this.container,
+            duration: 500,
+        };
+    }
+
+    getUpdateAnimation(data: any): any {
+        return {
+            type: 'loop_iteration', // generic update
+            target: this.id,
+            konvaObject: this.background,
+            duration: 300,
+            iteration: 0,
+            totalIterations: 1,
+        };
+    }
 }

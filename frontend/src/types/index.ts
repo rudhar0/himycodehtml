@@ -313,3 +313,14 @@ export interface SocketIOError extends Error {
   code?: string;
   status?: number;
 }
+
+export interface StepExecutionState {
+  location: {
+    file: string;
+    line: number;
+    function: string;
+  };
+  callStack: any[];
+  variables: any;
+  changes?: any[];
+}
