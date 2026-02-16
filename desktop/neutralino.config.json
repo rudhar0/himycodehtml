@@ -25,7 +25,7 @@
       "fullScreen": false,
       "alwaysOnTop": false,
       "enableInspector": true,
-      "icon": "/resources/app.png"
+      "icon": "/resources/app.ico"
     }
   },
   "cli": {

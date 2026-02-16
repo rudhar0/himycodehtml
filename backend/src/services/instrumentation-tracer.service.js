@@ -62,6 +62,7 @@ class InstrumentationTracer {
         this.frameCounts = new Map();
         this.addressToName = new Map();
         this.addressToFrame = new Map();
+        this.addressResolutionCache = new Map();
     }
 
     async ensureTempDir() {
@@ -195,6 +196,12 @@ class InstrumentationTracer {
     }
 
     async getLineInfo(executable, address) {
+        if (!address) return { function: 'unknown', file: 'unknown', line: 0 };
+        const cacheKey = `${executable}:${address}`;
+        if (this.addressResolutionCache.has(cacheKey)) {
+            return this.addressResolutionCache.get(cacheKey);
+        }
+
         const candidates = [];
         if (process.platform === 'win32' && toolchainService.toolchainPath) {
             candidates.push(
@@ -204,6 +211,7 @@ class InstrumentationTracer {
         }
         candidates.push('addr2line');
 
+        let result = null;
         for (const bin of candidates) {
             try {
                 // eslint-disable-next-line no-await-in-loop
@@ -242,21 +250,23 @@ class InstrumentationTracer {
                         resolve(null);
                     });
                 });
-                if (info) return info;
+                if (info) {
+                    result = info;
+                    break;
+                }
             } catch (err) {
                 console.warn(`[LineInfo] Error running ${bin}: ${err.message}`);
                 // try next candidate
             }
         }
 
-        // PHASE 4 FALLBACK: Windows addr2line failure resilience
-        // Do not drop structural events when addr2line fails
-        // Return best-effort defaults to preserve trace integrity
-        return {
+        const finalInfo = result || {
             function: 'unknown',
             file: 'unknown',
             line: 0
         };
+        this.addressResolutionCache.set(cacheKey, finalInfo);
+        return finalInfo;
     }
 
     shouldFilterEvent(info, event, userSourceFile) {

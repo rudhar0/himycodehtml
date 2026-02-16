@@ -13,6 +13,7 @@ class RuntimeCleaner {
   start() {
     if (this.interval) return;
     this.interval = setInterval(() => this.cleanup(), 1000 * 60 * 5);
+    this.interval.unref();
   }
 
   stop() {

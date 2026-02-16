@@ -128,16 +128,13 @@ class ProcessSupervisor {
     }
 
     // Wait up to 3 seconds for graceful shutdown
-    const waitStart = Date.now();
-    while (Date.now() - waitStart < 3000) {
-      if (child.killed) {
-        if (DEBUG) {
-          console.log(`[debug] Supervisor: process "${name}" exited gracefully`);
-        }
-        return;
-      }
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 3000);
+      child.once('close', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
 
     // Force kill if still alive
     if (!child.killed) {

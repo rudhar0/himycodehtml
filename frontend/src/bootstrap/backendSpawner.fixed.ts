@@ -1,8 +1,8 @@
 /**
- * Backend Spawner Module
+ * Backend Spawner Module - FIXED VERSION
  * Manages the lifecycle of the Node.js backend process using Neutralino.os.spawnProcess.
  * 
- * Refactored to use object signature for spawnProcess (Neutralino 6+).
+ * FIX: Improved graceful shutdown with timeout and fallback force kill.
  */
 
 /* global Neutralino */
@@ -39,9 +39,6 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
   });
   
   try {
-    // Fix: Neutralino.os.spawnProcess replaces the entire environment if 'env' is provided.
-    // We must fetch and merge the current environment to avoid scrubbing critical Windows variables (SystemRoot, PATH, etc.)
-    // which are required by the pkg binary and its bundled Node runtime to load system DLLs.
     let hostEnv: Record<string, string> = {};
     try {
       const N = (globalThis as any).Neutralino;
@@ -50,7 +47,6 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
         console.log(LOG_PREFIX, `Fetched ${Object.keys(hostEnv).length} environment variables.`);
       }
 
-      // Critical fallback: if getEnvs is empty or missing, try to fetch critical Windows variables individually.
       const criticalKeys = ['SystemRoot', 'SystemDrive', 'TEMP', 'PATH', 'USERNAME', 'USERPROFILE'];
       for (const key of criticalKeys) {
         if (!hostEnv[key]) {
@@ -73,7 +69,6 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
       console.warn(LOG_PREFIX, 'Failed to fetch host environment variables:', e);
     }
 
-    // Neutralino 5.x/6.x requires (command, options) signature
     const proc = await (globalThis as any).Neutralino.os.spawnProcess(options.executablePath, {
       args: options.args || [],
       cwd: options.cwd,
@@ -81,11 +76,11 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
         ...hostEnv,
         ...options.env,
         NEUTRALA_FORCE_LOCAL_RUNTIME: 'true'
-      }, // Pass merged environment + force local runtime matches frontend expectation
-      background: false, // Attach process to parent (critical for cleanup)
-      stdIn: '',      // Optional: empty stdin
-      stdOut: '',     // Optional: handle stdout via events if needed
-      stdErr: ''      // Optional: handle stderr via events if needed
+      },
+      background: true,
+      stdIn: '',
+      stdOut: '',
+      stdErr: ''
     });
 
     activeProcess = {
@@ -95,8 +90,6 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
 
     console.log(LOG_PREFIX, 'Backend spawned successfully. ID:', proc.id, 'PID:', proc.pid);
 
-    // Listen for exit to cleanup local state
-    // Note: Neutralino events are global, so we check ID match
     const onExit = (event: any) => {
       if (activeProcess && event.detail.id === activeProcess.id) {
         console.log(LOG_PREFIX, 'Backend process exited unexpectedly:', event.detail);
@@ -110,14 +103,13 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
     return proc.pid;
   } catch (error) {
     console.error(LOG_PREFIX, 'Failed to spawn backend:', error);
-    // Include context in error for debugging
     throw new Error(`Spawn failed for ${options.executablePath}: ${String(error)}`);
   }
 }
 
 /**
  * Stops the backend process with graceful shutdown + forced kill fallback.
- * Adds extra resilience when `proc.pid` is missing by falling back to `proc.id`.
+ * FIX: Uses SIGTERM (graceful) first with timeout, then SIGKILL (force) if needed.
  */
 export async function stopBackend(): Promise<void> {
   if (!activeProcess) {
@@ -125,53 +117,53 @@ export async function stopBackend(): Promise<void> {
     return;
   }
 
-  // Prefer PID but fall back to the Neutralino process id if PID is not available
-  const targetPid = (activeProcess.pid || activeProcess.id);
-  console.log(LOG_PREFIX, 'Stopping backend PID/ID:', targetPid);
+  const targetPid = activeProcess.pid;
+  console.log(LOG_PREFIX, 'Stopping backend PID:', targetPid);
   
   try {
     const isWindows = (globalThis as any).NL_OS === 'Windows';
     
-    // Try graceful SIGTERM first (gives server time to cleanup)
+    // FIX: Try graceful SIGTERM first (gives server 2.5s to cleanup)
     const gracefulCmd = isWindows 
       ? `taskkill /PID ${targetPid} /T` 
       : `kill -TERM ${targetPid}`;
     
-    // Force kill fallback
+    // FIX: Force SIGKILL as fallback (kills immediately)
     const forceCmd = isWindows 
       ? `taskkill /F /T /PID ${targetPid}`
       : `kill -9 ${targetPid}`;
-
+    
     console.log(LOG_PREFIX, `Graceful kill attempt: ${gracefulCmd}`);
-    let gracefulSucceeded = false;
-
+    let killed = false;
+    
     try {
-      // Race kill command against a timeout to avoid hangs
       await Promise.race([
         (globalThis as any).Neutralino.os.execCommand(gracefulCmd),
         new Promise((_, r) => setTimeout(() => r(null), 2500))
       ]);
-      gracefulSucceeded = true;
-      console.log(LOG_PREFIX, 'Graceful kill attempted');
+      killed = true;
+      console.log(LOG_PREFIX, 'Graceful kill successful');
     } catch (graceErr) {
-      console.warn(LOG_PREFIX, 'Graceful kill failed or timed out, will attempt force kill', graceErr);
+      console.warn(LOG_PREFIX, 'Graceful kill failed or timed out, using force kill');
     }
-
-    if (!gracefulSucceeded) {
+    
+    // FIX: If graceful kill didn't work, force kill
+    if (!killed) {
       try {
-        console.log(LOG_PREFIX, `Force kill attempt: ${forceCmd}`);
         await Promise.race([
           (globalThis as any).Neutralino.os.execCommand(forceCmd),
           new Promise((_, r) => setTimeout(() => r(null), 1500))
         ]);
-        console.log(LOG_PREFIX, 'Force kill attempted');
+        console.log(LOG_PREFIX, 'Force kill executed successfully');
       } catch (forceErr) {
         console.error(LOG_PREFIX, 'Force kill also failed:', forceErr);
       }
     }
-
+    
     activeProcess = null;
     console.log(LOG_PREFIX, 'Backend stop completed');
+    
+    // FIX: Wait for OS to reap the process
     await new Promise(r => setTimeout(r, 200));
   } catch (error) {
     console.error(LOG_PREFIX, 'Unexpected error stopping backend:', error);
@@ -185,7 +177,6 @@ export async function stopBackend(): Promise<void> {
 export async function restartBackend(options: SpawnOptions): Promise<number> {
   console.log(LOG_PREFIX, 'Restarting backend...');
   await stopBackend();
-  // Brief delay to ensure port release and OS cleanup
   await new Promise(r => setTimeout(r, 1000));
   return await spawnBackend(options);
 }

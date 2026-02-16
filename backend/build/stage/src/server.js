@@ -22,6 +22,7 @@ import {
 } from './utils/port-manager.js';
 import { registerRuntimeEnv } from './utils/runtime-manager.js';
 import fssync from 'node:fs';
+import { cleanupRuntimeTemp } from './runtime/session_manager.js';
 
 dotenv.config();
 
@@ -168,6 +169,9 @@ async function startServer() {
       logger.info('Docker: removed');
     })();
 
+    logger.info('Performing startup cleanup...');
+    await cleanupRuntimeTemp();
+
   } catch (error) {
     logger.error('❌ Failed to start server:', error);
     process.exit(1);
@@ -184,6 +188,7 @@ process.on('SIGTERM', async () => {
     for (const s of sessionManager.listActive()) {
       await sessionManager.destroySession(s.id);
     }
+    await cleanupRuntimeTemp();
   } catch (error) {
     logger.error('Error during shutdown cleanup:', error);
   }
@@ -203,6 +208,7 @@ process.on('SIGINT', async () => {
     for (const s of sessionManager.listActive()) {
       await sessionManager.destroySession(s.id);
     }
+    await cleanupRuntimeTemp();
   } catch (error) {
     logger.error('Error during shutdown cleanup:', error);
   }
@@ -223,6 +229,7 @@ process.on('SIGUSR2', async () => {
     for (const s of sessionManager.listActive()) {
       await sessionManager.destroySession(s.id);
     }
+    await cleanupRuntimeTemp();
   } catch (error) {
     logger.error('Error during shutdown cleanup:', error);
   }
@@ -239,18 +246,31 @@ startServer();
 // Auto-shutdown Watchdog
 // Prevents orphan processes when the frontend is closed abruptly.
 let idleTimer = null;
-const IDLE_TIMEOUT = 60000; // 60 seconds (increased for dev mode stability)
+const IDLE_TIMEOUT = 300000; // 5 minutes
+let lastCheck = Date.now();
 
 function startWatchdog() {
   if (idleTimer) return;
 
   idleTimer = setInterval(() => {
+    const now = Date.now();
+    const drift = now - lastCheck - IDLE_TIMEOUT;
+    lastCheck = now;
+
+    // If drift is significant (> 10s), the system likely slept.
+    // Skip this cycle to allow reconnection.
+    if (drift > 10000) {
+      logger.info(`[Watchdog] System sleep detected (drift: ${drift}ms). Skipping idle check.`);
+      return;
+    }
+
     const activeClients = io.engine.clientsCount;
     if (activeClients === 0) {
       logger.info(`[Watchdog] No active connections for ${IDLE_TIMEOUT}ms. Shutting down...`);
       process.emit('SIGTERM');
     }
   }, IDLE_TIMEOUT);
+  idleTimer.unref();
 }
 
 function stopWatchdog() {
@@ -271,5 +291,17 @@ io.on('connection', (socket) => {
 
 // Start initial watchdog in case no one ever connects
 startWatchdog();
+
+// Parent Process Watchdog (Failsafe)
+// If the parent process dies, we should exit to avoid becoming an orphan.
+setInterval(() => {
+  try {
+    // process.kill(pid, 0) checks if the process exists. Throws if not.
+    process.kill(process.ppid, 0);
+  } catch (e) {
+    logger.warn(`[Watchdog] Parent process ${process.ppid} not found. Exiting.`);
+    process.exit(0);
+  }
+}, 5000).unref(); // Don't block exit
 
 export { io };

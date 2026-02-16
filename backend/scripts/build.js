@@ -20,7 +20,7 @@ import {
   shouldUseShell,
 } from './_lib/process-utils.js';
 import { setupSupervisor, registerProcess } from './_lib/process-supervisor.js';
-import { generateIco } from './generate-ico.mjs';
+import { generateIco } from './generate-icon.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -389,6 +389,18 @@ async function findNeutralinoBinaryPath(rootDir, targetOs, maxDepth = 4) {
   return await walk(rootDir, 0);
 }
 
+async function ensureRcedit() {
+  const toolsDir = path.join(BACKEND_ROOT, 'resources', 'tools');
+  await ensureDir(toolsDir);
+  const rceditPath = path.join(toolsDir, 'rcedit.exe');
+  if (await exists(rceditPath)) return rceditPath;
+
+  console.log('Downloading rcedit.exe...');
+  // Use a known reliable release of rcedit
+  await downloadToFile('https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe', rceditPath);
+  return rceditPath;
+}
+
 async function buildDesktopPortable({
   desktopTemplateConfigPath,
   backendBundleDir,
@@ -493,6 +505,41 @@ async function buildDesktopPortable({
     }
   }
 
+  // Fix: Embed icon into the Windows executable using rcedit
+  if (targetOs === 'windows') {
+    try {
+      // We need to resolve the ico path before using it
+      // fallback to auto-generated one if available
+      let iconToEmbed = appIconIco;
+
+      // Re-verify icon existence logic from below to ensure we have a valid path
+      if ((!iconToEmbed || !(await exists(iconToEmbed))) && appIconPng && (await exists(appIconPng))) {
+        const autoIco = path.join(path.dirname(appIconPng), 'app.ico');
+        // generateIco might have been called already or will be called. 
+        // To be safe, we'll rely on the later block to generate it if missing, 
+        // BUT we need it NOW for embedding. 
+        // So let's move the generation logic UP, or duplicate the check here.
+        // Pragmactic approach: Generate it eagerly here if missing.
+        if (!(await exists(autoIco))) {
+          console.log(`[Fix] Generating app.ico for embedding...`);
+          await generateIco(appIconPng, autoIco);
+        }
+        if (await exists(autoIco)) iconToEmbed = autoIco;
+      }
+
+      if (iconToEmbed && (await exists(iconToEmbed))) {
+        const rceditExe = await ensureRcedit();
+        console.log(`[build] Embedding icon into ${path.basename(dstBin)}...`);
+        await run(rceditExe, [dstBin, '--set-icon', iconToEmbed]);
+        console.log(`[build] ✓ Icon embedded successfully.`);
+      } else {
+        console.warn(`[build] ⚠️ Cannot embed icon: .ico file not found.`);
+      }
+    } catch (e) {
+      console.warn(`[build] ⚠️ Failed to embed icon with rcedit: ${e.message}`);
+    }
+  }
+
   // Copy frontend dist into desktop/resources.
   // Important: do not remove the entire runtime-provided resources folder because it may
   // contain runtime metadata (e.g. resources.neu) required by the Neutralino binary.
@@ -514,18 +561,48 @@ async function buildDesktopPortable({
   // Copy and pin app icons to stable names so config/shortcuts can reliably reference them.
   const copied = { ico: false, png: false };
 
+  // Critical: Ensure app.ico exists in resources for NSIS installer
+  // If ICO is missing but PNG exists, attempt to generate ICO now as a final fallback
+  if ((!appIconIco || !(await exists(appIconIco))) && appIconPng && (await exists(appIconPng))) {
+    try {
+      const autoIco = path.join(path.dirname(appIconPng), 'app.ico');
+      console.log(`[Fix] app.ico missing — generating from PNG: ${autoIco}`);
+      const ok = await generateIco(appIconPng, autoIco);
+      if (ok) appIconIco = autoIco;
+    } catch (e) {
+      console.warn(`[Fix] Failed to auto-generate ICO: ${e?.message || e}`);
+    }
+  }
+
   if (appIconIco && (await exists(appIconIco))) {
     const dest = path.join(desktopResourcesDir, 'app.ico');
-    await fs.copyFile(appIconIco, dest);
-    copied.ico = true;
-    console.log(`Copied app.ico to ${dest}`);
+    try {
+      await fs.copyFile(appIconIco, dest);
+      copied.ico = true;
+      console.log(`✓ Copied app.ico to desktop/resources: ${dest}`);
+    } catch (err) {
+      console.error(`WARNING: Failed to copy app.ico: ${err.message}`);
+    }
+  } else {
+    console.warn(`WARNING: app.ico not found at ${appIconIco}`);
   }
 
   if (appIconPng && (await exists(appIconPng))) {
     const dest = path.join(desktopResourcesDir, 'app.png');
-    await fs.copyFile(appIconPng, dest);
-    copied.png = true;
-    console.log(`Copied app.png to ${dest}`);
+    try {
+      await fs.copyFile(appIconPng, dest);
+      copied.png = true;
+      console.log(`✓ Copied app.png to desktop/resources: ${dest}`);
+    } catch (err) {
+      console.error(`WARNING: Failed to copy app.png: ${err.message}`);
+    }
+  } else {
+    console.warn(`WARNING: app.png not found at ${appIconPng}`);
+  }
+
+  // Validate that icon was copied for Windows builds
+  if (targetOs === 'windows' && !copied.ico && !copied.png) {
+    console.warn(`⚠️  CRITICAL: No icon files copied for Windows build. Shortcuts will have no icon.`);
   }
   try {
     const embedded = [
@@ -557,7 +634,9 @@ async function buildDesktopPortable({
   baseCfg.modes = baseCfg.modes || {};
   baseCfg.modes.window = baseCfg.modes.window || {};
   baseCfg.modes.window.title = appName || baseCfg.modes.window.title || 'CodeViz';
-  baseCfg.modes.window.enableInspector = true;
+  // Disable inspector in packaged desktop bundles (portable/installer) so devtools
+  // are not exposed to end users. Dev runs use `desktop/neutralino.config.json`.
+  baseCfg.modes.window.enableInspector = false;
   // Best-effort: set window/taskbar icon (Neutralino may ignore unknown keys on some platforms).
   // We keep this non-fatal; OS-level icon embedding is handled by installers/.app/.desktop.
   if (targetOs === 'windows') {
@@ -618,7 +697,19 @@ async function buildDesktopPortable({
 async function buildNsiInstaller({ pkgName, appName, publisher, srcDir, outFile, iconIco, desktopExeName, version }) {
   // Fix 7: Icon Reliability check
   if (iconIco && !fssync.existsSync(iconIco)) {
+    console.error(`ERROR: NSIS icon not found at ${iconIco}`);
+    console.error(`This icon will be used for the installer .exe itself.`);
+    console.error(`The app.ico in desktop/resources MUST still be copied by buildDesktopPortable.`);
     throw new Error(`Critical Error: NSIS icon not found at ${iconIco}. Build aborted.`);
+  }
+
+  // Verify that the icon will be available in the installed location
+  const installedIconPath = path.join(srcDir, 'desktop', 'resources', 'app.ico');
+  if (!fssync.existsSync(installedIconPath)) {
+    console.warn(`⚠️  WARNING: Icon will not be available after installation at ${installedIconPath}`);
+    console.warn(`App shortcuts will be created without icons.`);
+  } else {
+    console.log(`✓ Icon confirmed in portable pkg: ${installedIconPath}`);
   }
 
   const pubName = publisher || `${appName} Team`;
@@ -686,10 +777,21 @@ async function buildNsiInstaller({ pkgName, appName, publisher, srcDir, outFile,
   const installedIcon = iconIco ? '$INSTDIR\\\\desktop\\\\resources\\\\app.ico' : null;
   nsi.push('  SetOutPath "$INSTDIR\\\\desktop"');
   if (installedIcon) {
+    nsi.push('  ; Debug: Check if icon exists');
+    nsi.push(`  IfFileExists "${installedIcon}" icon_found icon_missing`);
+    nsi.push('icon_found:');
     nsi.push(
       `  CreateShortCut "$SMPROGRAMS\\\\${appName}\\\\${appName}.lnk" "$INSTDIR\\\\desktop\\\\${exeName}" "" "${installedIcon}" 0`,
     );
     nsi.push(`  CreateShortCut "$DESKTOP\\\\${appName}.lnk" "$INSTDIR\\\\desktop\\\\${exeName}" "" "${installedIcon}" 0`);
+    nsi.push('  Goto icon_done');
+    nsi.push('icon_missing:');
+    nsi.push('  DetailPrint "WARNING: Icon not found, creating shortcuts without icon"');
+    nsi.push(
+      `  CreateShortCut "$SMPROGRAMS\\\\${appName}\\\\${appName}.lnk" "$INSTDIR\\\\desktop\\\\${exeName}"`,
+    );
+    nsi.push(`  CreateShortCut "$DESKTOP\\\\${appName}.lnk" "$INSTDIR\\\\desktop\\\\${exeName}"`);
+    nsi.push('icon_done:');
   } else {
     nsi.push(
       `  CreateShortCut "$SMPROGRAMS\\\\${appName}\\\\${appName}.lnk" "$INSTDIR\\\\desktop\\\\${exeName}"`,
@@ -1239,7 +1341,7 @@ async function main() {
   const appIconPng = await ask('App icon PNG path (Linux .desktop)', appIcon.endsWith('.png') ? appIcon : '');
 
   // Smart default for ICO: prefer existing app.ico, else empty
-  const appIconIco = await ask('App icon ICO path (Windows NSIS)', hasDefaultIco ? defaultIco : '');
+  let appIconIco = await ask('App icon ICO path (Windows NSIS)', hasDefaultIco ? defaultIco : '');
 
   const uninstallIcon = await ask('Uninstall icon path (optional)', appIconIco || appIcon);
   const buildDesktopRaw = (await ask('Build Neutralino desktop portable bundle? [y/N]', 'N')).toLowerCase();
@@ -1292,9 +1394,8 @@ async function main() {
       const autoIco = path.join(path.dirname(appIconPng), 'app.ico');
       console.log(`Generating app.ico from ${appIconPng}...`);
       await generateIco(appIconPng, autoIco);
-      // Ask user if they want to use this generated one? Or just auto-use it?
-      // The 'appIconIco' variable might be empty if user hit enter.
-      // We can just rely on the next step to pick it up if we assign it.
+      // Use the generated ICO for subsequent steps
+      appIconIco = autoIco;
     } else {
       // Check if existing ICO is valid
       try {

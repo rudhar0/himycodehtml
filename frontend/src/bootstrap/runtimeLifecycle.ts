@@ -5,7 +5,7 @@
 
 /* global Neutralino */
 
-import { spawnBackend, stopBackend } from './backendSpawner';
+import { spawnBackend, stopBackend, isBackendAlive } from './backendSpawner';
 import { resolveAllPaths } from './pathResolver';
 import { waitForBackendReady } from './portWaitManager';
 
@@ -73,12 +73,7 @@ function setupExitHandlers() {
   // Listen for window close (user clicks X)
   N.events.on('windowClose', async () => {
     console.log(LOG_PREFIX, '📣 [windowClose] Window closing, cleaning up...');
-    try {
-      await stopBackend();
-    } catch (e) {
-      console.error(LOG_PREFIX, 'Cleanup failed on windowClose:', e);
-    }
-    N.app.exit();
+    await shutdownApp();
   });
 
   // Neutralino global exit / client disconnection
@@ -94,4 +89,27 @@ function setupExitHandlers() {
 export async function emergencyCleanup() {
   console.log(LOG_PREFIX, 'Running emergency cleanup...');
   await stopBackend();
+}
+
+/**
+ * Robust shutdown sequence ensuring backend termination.
+ */
+async function shutdownApp() {
+  try {
+    await stopBackend();
+
+    // verify backend stopped
+    const timeout = Date.now() + 3000;
+    while (Date.now() < timeout) {
+      const running = isBackendAlive();
+      if (!running) break;
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+  } catch (e) {
+    console.warn(LOG_PREFIX, "Backend shutdown error", e);
+  }
+
+  const N = (globalThis as any).Neutralino;
+  await N.app.exit();
 }

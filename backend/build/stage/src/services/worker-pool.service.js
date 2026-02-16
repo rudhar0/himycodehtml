@@ -24,15 +24,15 @@ class WorkerPoolManager {
     logger.info('Initializing worker pool...');
     try {
       // Create local workers
-      const poolSize =  Math.max(2, parseInt(process.env.WORKER_POOL_SIZE || '4', 10));
+      const poolSize = Math.max(2, parseInt(process.env.WORKER_POOL_SIZE || '4', 10));
       for (let i = 0; i < poolSize; i++) {
         const worker = await this.createWorker(`worker-${i}`);
         this.pool.push(worker);
       }
       this.isInitialized = true;
       logger.info(`Worker pool initialized with ${this.pool.length} workers.`);
-      setInterval(() => this.healthCheck(), parseInt(process.env.WORKER_HEALTH_INTERVAL || '30000', 10));
-      setInterval(() => this.scale(), parseInt(process.env.WORKER_HEALTH_INTERVAL || '30000', 10)); // Can be a different interval
+      setInterval(() => this.healthCheck(), parseInt(process.env.WORKER_HEALTH_INTERVAL || '30000', 10)).unref();
+      setInterval(() => this.scale(), parseInt(process.env.WORKER_HEALTH_INTERVAL || '30000', 10)).unref(); // Can be a different interval
     } catch (error) {
       logger.error('Failed to initialize worker pool:', error);
       // In a production scenario, you might want to exit the process or have a more robust retry mechanism.
@@ -95,17 +95,17 @@ class WorkerPoolManager {
       const nextResolver = this.queue.shift();
       if (nextResolver) {
         const freeWorker = this.pool.find(w => !w.busy);
-        if(freeWorker) {
+        if (freeWorker) {
           freeWorker.busy = true;
           logger.info({ workerId: freeWorker.id }, 'Allocating worker to queued request.');
           nextResolver(freeWorker);
         } else {
-            this.queue.unshift(nextResolver);
+          this.queue.unshift(nextResolver);
         }
       }
     }
   }
-  
+
   async executeInWorker(worker, code, language, sessionId) {
     const eventEmitter = new EventEmitter();
     const codeB64 = Buffer.from(code).toString('base64');
@@ -154,8 +154,8 @@ class WorkerPoolManager {
         // Future: add liveness probe
         continue;
       } catch (error) {
-          logger.error({ workerId: worker && worker.id }, `Error inspecting worker. It might have been removed. Handling failure.`);
-          await this.handleFailedWorker(worker);
+        logger.error({ workerId: worker && worker.id }, `Error inspecting worker. It might have been removed. Handling failure.`);
+        await this.handleFailedWorker(worker);
       }
     }
   }
@@ -166,13 +166,13 @@ class WorkerPoolManager {
     // Ensure minimum pool size
     const minPool = Math.max(2, parseInt(process.env.WORKER_POOL_SIZE || '4', 10));
     if (this.pool.length < minPool) {
-        logger.info('Pool is below minimum size. Provisioning new worker.');
-        try {
-            const newWorker = await this.createWorker(`worker-replacement-${this.pool.length}`);
-            this.pool.push(newWorker);
-        } catch(e) {
-            logger.error("Could not provision replacement worker", e);
-        }
+      logger.info('Pool is below minimum size. Provisioning new worker.');
+      try {
+        const newWorker = await this.createWorker(`worker-replacement-${this.pool.length}`);
+        this.pool.push(newWorker);
+      } catch (e) {
+        logger.error("Could not provision replacement worker", e);
+      }
     }
   }
 
@@ -191,7 +191,7 @@ class WorkerPoolManager {
       }
     }
   }
-  
+
   async cleanupLingeringWorkers() {
     // Docker removed; nothing to cleanup.
     return;

@@ -54,17 +54,17 @@ export default function StepInfo() {
           className="rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white"
           style={{ backgroundColor: getStepColor() }}
         >
-          {currentStep.type.replace(/_/g, ' ')}
+          {(currentStep.type || 'unknown').replace(/_/g, ' ')}
         </div>
         
         <span className="text-xs text-[#5a6a7a] dark:text-slate-500">
-          Line {currentStep.line}
+          Line {currentStep.line ?? '—'}
         </span>
       </div>
 
       {/* Explanation */}
       <div className="text-sm text-[#1a2332] dark:text-slate-300 line-clamp-2">
-        {currentStep.explanation}
+        {currentStep.explanation || 'No explanation available.'}
       </div>
 
       {/* Input Request Indicator */}

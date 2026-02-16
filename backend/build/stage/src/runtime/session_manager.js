@@ -72,7 +72,7 @@ function cleanupSession(sessionId, opts = { force: false }) {
 const POOL = new WorkerPool(Math.max(2, Math.min(6, os.cpus().length)));
 
 // background sweeper every 10 minutes
-setInterval(() => { try { sweepSessions(ROOT_TEMP, 1000 * 60 * 30); } catch (e) { } }, 1000 * 60 * 10);
+setInterval(() => { try { sweepSessions(ROOT_TEMP, 1000 * 60 * 30); } catch (e) { } }, 1000 * 60 * 10).unref();
 
 async function compileAndRun(sessionId, sourceCode, opts = {}) {
   const { sid, dir } = createSession(sessionId);
@@ -111,4 +111,34 @@ async function compileAndRun(sessionId, sourceCode, opts = {}) {
   }
 }
 
-export { createSession, cleanupSession, atomicWrite, compileAndRun };
+/**
+ * Destroy all temporary runtime data.
+ * Safe: removes only temp/session artifacts.
+ */
+async function cleanupRuntimeTemp() {
+  try {
+    const tempRoot = resourceResolver.getTempRoot();
+    if (!fs.existsSync(tempRoot)) return;
+
+    console.log("[cleanup] removing runtime temp:", tempRoot);
+
+    // Instead of deleting the root (which might be in use), clear its entries
+    const entries = fs.readdirSync(tempRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(tempRoot, entry.name);
+      try {
+        if (entry.isDirectory()) {
+          fs.rmSync(full, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(full);
+        }
+      } catch (err) {
+        console.warn(`[cleanup] failed to remove ${entry.name}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error("[cleanup] error during temp cleanup:", err);
+  }
+}
+
+export { createSession, cleanupSession, atomicWrite, compileAndRun, cleanupRuntimeTemp };
