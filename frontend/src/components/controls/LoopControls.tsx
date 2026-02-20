@@ -38,13 +38,6 @@ export default function LoopControls() {
     }
   };
 
-  // Calculate skip percentage
-  const getSkipPercentage = () => {
-    if (!loopInfo || !loopInfo.totalIterations) return 0;
-    const remaining = loopInfo.totalIterations - loopInfo.currentIteration;
-    return Math.min(90, (remaining / loopInfo.totalIterations) * 100);
-  };
-
   return (
     <div className="flex items-center gap-2">
       {/* Toggle Mode Button */}
@@ -98,9 +91,9 @@ export default function LoopControls() {
 
       {/* Skip Loop Button */}
       <div className="relative group">
-        <button
-          onClick={handleSkipLoop}
-          disabled={!canSkip}
+          <button
+            onClick={handleSkipLoop}
+            disabled={!canSkip}
           className={`
             rounded-lg px-3 py-2 transition-all duration-200
             flex items-center gap-2
@@ -110,7 +103,7 @@ export default function LoopControls() {
             }
             disabled:opacity-30 disabled:cursor-not-allowed
           `}
-          title={canSkip ? `Skip remaining ${getSkipPercentage().toFixed(0)}% of loop` : 'No active loop'}
+          title={canSkip ? 'Skip to end of loop' : 'No active loop'}
         >
           <FastForward className="h-4 w-4" />
           <span className="text-xs font-semibold">

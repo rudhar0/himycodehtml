@@ -23,7 +23,8 @@ export interface LayoutElement {
     | "class"
     | "array_panel"
     | "array_reference"
-    | "call_site";
+    | "call_site"
+    | "condition_caller";
   subtype?: string;
   x: number;
   y: number;
@@ -60,6 +61,7 @@ export interface Layout {
   arrayReferences: LayoutElement[];
   updateArrows: LayoutElement[];
   functionArrows: LayoutElement[];
+  controlArrows: LayoutElement[];
   width: number;
   height: number;
 }
@@ -89,6 +91,17 @@ const FUNCTION_BOX_WIDTH = 400;
 const FUNCTION_VERTICAL_SPACING = 200;
 const PARAMS_HEIGHT = 0;
 const LOCALS_HEIGHT = 0;
+const CONTROL_HORIZONTAL_GAP = 160;
+const CONTROL_SAFE_MARGIN = 24;
+const CONTROL_CURVE_OFFSET = 60;
+const CONTROL_SUBTREE_SHIFT_X = 120;
+const CONTROL_BASE_WIDTH = 320;
+const CONTROL_CALLER_HEIGHT = 44;
+const CONTROL_HEADER_HEIGHT = 58;
+const CONTROL_BODY_HEIGHT = 120;
+const CONTROL_CALLER_BODY_GAP = 20;
+const CONTROL_CHAIN_VERTICAL_GAP = 14;
+const MAX_PARENT_FLOW_WIDTH = 600;
 
 
 interface ArrayTrackerData {
@@ -100,6 +113,33 @@ interface ArrayTrackerData {
   birthStep: number;
   values: Map<string, any>;
   lastUpdateStep: number;
+}
+
+type ControlKind =
+  | "if"
+  | "else_if"
+  | "else"
+  | "switch"
+  | "case"
+  | "default"
+  | "group";
+
+type BranchState = "active" | "skipped" | "pending";
+
+interface ControlGroupState {
+  groupId: string;
+  frameId: string;
+  scopeDepth: number;
+  containerElementId: string;
+  controlType: "if_chain" | "switch";
+  parentControlElementId?: string;
+  parentContainerId: string;
+  parentContainerDepth: number;
+  members: string[];
+  activeCallerId?: string;
+  activeBodyId?: string;
+  lastStep: number;
+  lastLine: number;
 }
 
 class ProgressiveArrayTracker {
@@ -263,9 +303,45 @@ export class LayoutEngine {
   private static updateArrows: Map<number, LayoutElement[]> = new Map();
   private static functionFrames: Map<string, LayoutElement> = new Map();
   private static functionArrows: LayoutElement[] = [];
+  private static controlArrows: LayoutElement[] = [];
   private static frameDepthMap: Map<string, number> = new Map();
   private static frameOrderMap: Map<string, number> = new Map();
   private static frameOrder: number = 0;
+  private static activeControlGroups: Map<string, ControlGroupState> = new Map();
+  private static activeControlByDepth: Map<string, Map<number, string>> = new Map();
+  private static ephemeralControlByDepth: Map<
+    string,
+    Map<number, { elementId: string; usedAtStep?: number }>
+  > = new Map();
+  private static recentIfGroupByFrame: Map<
+    string,
+    { groupId: string; stepIndex: number; line: number; scopeDepth: number }
+  > = new Map();
+  private static rightFlowOccupancy: Map<
+    string,
+    Array<{ x: number; y: number; width: number; height: number }>
+  > = new Map();
+
+  /**
+   * Lane-based frames (main/function_call) use LOCALS.usedHeight as the vertical cursor.
+   * When we render children inside non-lane containers (loops/iterations), we still must advance the
+   * owning frame cursor, otherwise subsequent siblings can be placed "above" existing content.
+   */
+  private static bumpFrameLocalsCursorToInclude(
+    frame: LayoutElement,
+    childBottomY: number,
+  ): void {
+    const localsLane = this.getLane(frame, "LOCALS");
+    const localsTopY = frame.y + localsLane.startY;
+    const requiredUsedHeight = Math.max(
+      0,
+      childBottomY - localsTopY + ELEMENT_SPACING,
+    );
+
+    if (requiredUsedHeight > localsLane.usedHeight) {
+      localsLane.usedHeight = requiredUsedHeight;
+    }
+  }
 
   private static activeLoops: Map<number, {
     loopId: number;
@@ -288,20 +364,68 @@ export class LayoutEngine {
     parentFrameId: string;
     conditionResult?: boolean;
     branchTaken?: string;
+    expression?: string;
+    kind?: string;
   }> = new Map();
 
   // ============================================
   // LANE MANAGEMENT
   // ============================================
+  private static getFrameHeaderHeight(frame: LayoutElement): number {
+    switch (frame.type) {
+      case 'main':
+      case 'function':
+        return 40; // StackFrame header height
+      case 'function_call':
+        return 55; // FunctionElement header height
+      default:
+        return HEADER_HEIGHT;
+    }
+  }
+
+  private static getBodyOffsetY(element: LayoutElement): number {
+    switch (element.type) {
+      case 'main':
+      case 'function':
+        return 40;
+      case 'function_call':
+        return 55;
+      case 'loop':
+        return element.subtype === 'iteration' ? 25 : 80;
+      case 'condition':
+        if (element.subtype === "group" && element.data?.controlRole === "group") {
+          return 0;
+        }
+        if (
+          element.subtype === "group" ||
+          element.subtype === "if" ||
+          element.subtype === "else_if" ||
+          element.subtype === "else" ||
+          element.subtype === "switch" ||
+          element.subtype === "case" ||
+          element.subtype === "default"
+        ) {
+          return CONTROL_HEADER_HEIGHT + 10;
+        }
+        return 85;
+      case 'struct':
+      case 'class':
+        return 30;
+      default:
+        return HEADER_HEIGHT;
+    }
+  }
+
   private static getLane(frame: LayoutElement, laneName: string): LaneState {
     if (!frame.metadata) frame.metadata = {};
     if (!frame.metadata.lanes) {
+      const headerHeight = this.getFrameHeaderHeight(frame);
       // Initialize lanes if they don't exist
       frame.metadata.lanes = {
-        HEADER: { startY: 0, usedHeight: HEADER_HEIGHT },
-        PARAMS: { startY: HEADER_HEIGHT, usedHeight: 0 },
-        LOCALS: { startY: HEADER_HEIGHT, usedHeight: 0 }, 
-        RETURN: { startY: HEADER_HEIGHT, usedHeight: 0 },
+        HEADER: { startY: 0, usedHeight: headerHeight },
+        PARAMS: { startY: headerHeight, usedHeight: 0 },
+        LOCALS: { startY: headerHeight, usedHeight: 0 },
+        RETURN: { startY: headerHeight, usedHeight: 0 },
         EXPLANATION: { startY: 0, usedHeight: 0, }
       };
     }
@@ -325,12 +449,13 @@ export class LayoutEngine {
    * Used to check if we're currently inside a loop
    */
   private static getActiveLoopForFrame(frameId: string) {
+    let match: any = null;
     for (const loop of this.activeLoops.values()) {
       if (loop.parentFrameId === frameId) {
-        return loop;
+        match = loop;
       }
     }
-    return null;
+    return match;
   }
 
   /**
@@ -346,12 +471,510 @@ export class LayoutEngine {
     );
   }
 
+  private static getScopeDepth(step: ExecutionStep): number {
+    const rawDepth = Number(
+      (step as any).scopeDepth ??
+        (step as any).blockDepth ??
+        0,
+    );
+    if (!Number.isFinite(rawDepth)) return 0;
+    return Math.max(0, Math.floor(rawDepth));
+  }
+
+  private static getFrameControlDepthMap(frameId: string): Map<number, string> {
+    if (!this.activeControlByDepth.has(frameId)) {
+      this.activeControlByDepth.set(frameId, new Map());
+    }
+    return this.activeControlByDepth.get(frameId)!;
+  }
+
+  private static getFrameEphemeralControlDepthMap(
+    frameId: string,
+  ): Map<number, { elementId: string; usedAtStep?: number }> {
+    if (!this.ephemeralControlByDepth.has(frameId)) {
+      this.ephemeralControlByDepth.set(frameId, new Map());
+    }
+    return this.ephemeralControlByDepth.get(frameId)!;
+  }
+
+  private static pruneControlDepthForScope(frameId: string, scopeDepth: number): string[] {
+    const depthMap = this.getFrameControlDepthMap(frameId);
+    const removed: string[] = [];
+
+    depthMap.forEach((elementId, depth) => {
+      if (depth > scopeDepth) {
+        removed.push(elementId);
+        depthMap.delete(depth);
+      }
+    });
+
+    const ephemeralMap = this.ephemeralControlByDepth.get(frameId);
+    if (ephemeralMap) {
+      ephemeralMap.forEach((_entry, depth) => {
+        if (depth > scopeDepth) {
+          ephemeralMap.delete(depth);
+        }
+      });
+    }
+
+    return removed;
+  }
+
+  private static setActiveControlForDepth(
+    frameId: string,
+    scopeDepth: number,
+    elementId?: string,
+  ): void {
+    const depthMap = this.getFrameControlDepthMap(frameId);
+    if (!elementId) {
+      depthMap.delete(scopeDepth);
+      const ephemeralMap = this.ephemeralControlByDepth.get(frameId);
+      ephemeralMap?.delete(scopeDepth);
+      return;
+    }
+    depthMap.set(scopeDepth, elementId);
+  }
+
+  private static setEphemeralControlForDepth(
+    frameId: string,
+    scopeDepth: number,
+    elementId: string,
+  ): void {
+    const map = this.getFrameEphemeralControlDepthMap(frameId);
+    map.set(scopeDepth, { elementId });
+  }
+
+  private static markEphemeralControlUsed(
+    frameId: string,
+    scopeDepth: number,
+    parentId: string,
+    stepIndex: number,
+  ): void {
+    const map = this.ephemeralControlByDepth.get(frameId);
+    if (!map) return;
+
+    const entry = map.get(scopeDepth);
+    if (!entry) return;
+    if (entry.elementId !== parentId) return;
+    if (typeof entry.usedAtStep === "number") return;
+
+    entry.usedAtStep = stepIndex;
+  }
+
+  private static pruneEphemeralControls(
+    frameId: string,
+    stepIndex: number,
+  ): string[] {
+    const map = this.ephemeralControlByDepth.get(frameId);
+    if (!map || map.size === 0) return [];
+
+    const removed: string[] = [];
+    map.forEach((entry, depth) => {
+      if (typeof entry.usedAtStep !== "number") return;
+      if (stepIndex <= entry.usedAtStep) return;
+
+      const depthMap = this.getFrameControlDepthMap(frameId);
+      if (depthMap.get(depth) === entry.elementId) {
+        depthMap.delete(depth);
+        removed.push(entry.elementId);
+      }
+      map.delete(depth);
+    });
+
+    return removed;
+  }
+
+  private static resolveControlBodyActivation(
+    executionTrace: ExecutionTrace,
+    stepIndex: number,
+    frameId: string,
+    scopeDepth: number,
+  ): { activationDepth: number; ephemeral: boolean } {
+    const lookaheadLimit = Math.min(executionTrace.steps.length, stepIndex + 10);
+
+    for (let i = stepIndex + 1; i < lookaheadLimit; i++) {
+      const s = executionTrace.steps[i] as any;
+      const sFrameId = String(s?.frameId ?? "");
+      if (sFrameId && sFrameId !== frameId) continue;
+
+      const depth = this.getScopeDepth(s);
+      if (depth > scopeDepth) {
+        return { activationDepth: depth, ephemeral: false };
+      }
+
+      const t = String(s?.eventType || s?.type || "").toLowerCase();
+      if (t === "block_enter") {
+        return { activationDepth: Math.max(scopeDepth + 1, depth), ephemeral: false };
+      }
+
+      if (t) {
+        return { activationDepth: scopeDepth, ephemeral: true };
+      }
+    }
+
+    return { activationDepth: scopeDepth, ephemeral: true };
+  }
+
+  private static getActiveControlParent(
+    frameId: string,
+    scopeDepth: number,
+  ): LayoutElement | null {
+    const depthMap = this.getFrameControlDepthMap(frameId);
+    let selected: LayoutElement | null = null;
+    let selectedDepth = -1;
+
+    depthMap.forEach((elementId, depth) => {
+      if (depth > scopeDepth) return;
+      if (depth < selectedDepth) return;
+      const element = this.elementHistory.get(elementId);
+      if (!element) return;
+      if (element.data?.controlRole && element.data.controlRole !== "body") {
+        return;
+      }
+      if (element.data?.headerOnly) return;
+      if (element.data?.branchState && element.data.branchState !== "active") {
+        return;
+      }
+      selected = element;
+      selectedDepth = depth;
+    });
+
+    return selected;
+  }
+
+  private static getLoopContainerParent(frameId: string): LayoutElement | null {
+    const activeLoop = this.getActiveLoopForFrame(frameId);
+    if (!activeLoop) return null;
+
+    if (activeLoop.currentIterationElementId) {
+      return this.elementHistory.get(activeLoop.currentIterationElementId) || null;
+    }
+
+    return activeLoop.elementId
+      ? this.elementHistory.get(activeLoop.elementId) || null
+      : null;
+  }
+
+  private static resolvePlacementParent(
+    ownerFrame: LayoutElement,
+    frameId: string,
+    scopeDepth: number,
+  ): LayoutElement {
+    const controlParent = this.getActiveControlParent(frameId, scopeDepth);
+    if (controlParent) return controlParent;
+
+    const loopParent = this.getLoopContainerParent(frameId);
+    if (loopParent) return loopParent;
+
+    return ownerFrame;
+  }
+
+  private static getPlacementContext(
+    ownerFrame: LayoutElement,
+    frameId: string,
+    scopeDepth: number,
+  ): {
+    parent: LayoutElement;
+    x: number;
+    y: number;
+    width: number;
+    isFrameParent: boolean;
+    lane?: LaneState;
+  } {
+    const parent = this.resolvePlacementParent(ownerFrame, frameId, scopeDepth);
+    const isFrameParent = parent.id === ownerFrame.id;
+    const indent = getIndentSize(ownerFrame);
+
+    if (isFrameParent) {
+      const lane = this.getLane(ownerFrame, "LOCALS");
+      return {
+        parent,
+        x: ownerFrame.x + indent,
+        y: ownerFrame.y + lane.startY + lane.usedHeight,
+        width: ownerFrame.width - indent * 2,
+        isFrameParent: true,
+        lane,
+      };
+    }
+
+    return {
+      parent,
+      x: parent.x + 20,
+      y: this.getNextCursorY(parent),
+      width: Math.max(220, parent.width - 40),
+      isFrameParent: false,
+    };
+  }
+
+  private static appendElementToPlacement(
+    ownerFrame: LayoutElement,
+    placement: {
+      parent: LayoutElement;
+      isFrameParent: boolean;
+      lane?: LaneState;
+    },
+    element: LayoutElement,
+    reserveSpace: boolean = true,
+  ): void {
+    if (!placement.parent.children) {
+      placement.parent.children = [];
+    }
+
+    placement.parent.children.push(element);
+
+    if (!reserveSpace) return;
+
+    if (placement.isFrameParent && placement.lane) {
+      placement.lane.usedHeight += element.height + ELEMENT_SPACING;
+      return;
+    }
+
+    // Keep right-flow control subtree growth isolated from frame flow.
+    if (this.isRightFlowControlNode(placement.parent)) {
+      return;
+    }
+
+    this.bumpFrameLocalsCursorToInclude(
+      ownerFrame,
+      element.y + element.height,
+    );
+  }
+
+  private static pushControlArrow(
+    id: string,
+    stepIndex: number,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    options?: {
+      kind?: "caller_to_condition" | "condition_to_body" | "return_flow";
+      dashed?: boolean;
+      opacity?: number;
+      strokeWidth?: number;
+      animated?: boolean;
+      pointerLength?: number;
+      pointerWidth?: number;
+      curveOffset?: number;
+      c1x?: number;
+      c1y?: number;
+      c2x?: number;
+      c2y?: number;
+      sourceNodeId?: string;
+      targetNodeId?: string;
+    },
+  ): void {
+    const direction = toX >= fromX ? 1 : -1;
+    const curveOffset = options?.curveOffset ?? CONTROL_CURVE_OFFSET;
+
+    this.controlArrows.push({
+      id,
+      type: "array_reference",
+      subtype: "control_arrow",
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      stepId: stepIndex,
+      data: {
+        fromX,
+        fromY,
+        toX,
+        toY,
+        c1x: options?.c1x ?? fromX + curveOffset * direction,
+        c1y: options?.c1y ?? fromY,
+        c2x: options?.c2x ?? toX - curveOffset * direction,
+        c2y: options?.c2y ?? toY,
+        arrowKind: options?.kind || "caller_to_condition",
+        dashed: Boolean(options?.dashed),
+        opacity: options?.opacity,
+        strokeWidth: options?.strokeWidth,
+        animated: options?.animated,
+        pointerLength: options?.pointerLength,
+        pointerWidth: options?.pointerWidth,
+        sourceNodeId: options?.sourceNodeId,
+        targetNodeId: options?.targetNodeId,
+      },
+    });
+  }
+
+  private static getFrameOccupancy(frameId: string) {
+    if (!this.rightFlowOccupancy.has(frameId)) {
+      this.rightFlowOccupancy.set(frameId, []);
+    }
+    return this.rightFlowOccupancy.get(frameId)!;
+  }
+
+  private static resolveRightFlowRect(
+    frameId: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): { x: number; y: number; width: number; height: number } {
+    const occupancy = this.getFrameOccupancy(frameId);
+    const rect = { x, y, width, height };
+    const overlaps = (a: typeof rect, b: typeof rect) =>
+      a.x < b.x + b.width &&
+      a.x + a.width > b.x &&
+      a.y < b.y + b.height &&
+      a.y + a.height > b.y;
+
+    while (occupancy.some((entry) => overlaps(rect, entry))) {
+      rect.x += CONTROL_SUBTREE_SHIFT_X;
+    }
+
+    occupancy.push({ ...rect });
+    return rect;
+  }
+
+  private static findLastRenderableChild(parent: LayoutElement): LayoutElement | null {
+    if (!parent.children || parent.children.length === 0) return null;
+
+    const candidates = parent.children.filter(
+      (child) => !this.shouldIgnoreChildForParentFlow(parent, child),
+    );
+    if (candidates.length === 0) return null;
+
+    const sorted = [...candidates].sort((a, b) => {
+      const aStep = this.getElementStep(a) ?? -1;
+      const bStep = this.getElementStep(b) ?? -1;
+      return bStep - aStep;
+    });
+
+    return sorted[0] || null;
+  }
+
   // NEW METHOD: Sort children by stepId
   private static sortChildrenByStep(children: LayoutElement[]): void {
     children.sort((a, b) => {
       const aStep = a.stepId ?? a.data?.birthStep ?? 0;
       const bStep = b.stepId ?? b.data?.birthStep ?? 0;
       return aStep - bStep;
+    });
+  }
+
+  private static getElementStep(element: LayoutElement): number | undefined {
+    if (typeof element.data?.birthStep === "number") {
+      return element.data.birthStep;
+    }
+    if (typeof element.stepId === "number") {
+      return element.stepId;
+    }
+    return undefined;
+  }
+
+  private static isEmptyValue(value: any): boolean {
+    return value === undefined || value === null || value === "";
+  }
+
+  private static isImmediateDeclarationInitialization(
+    executionTrace: ExecutionTrace,
+    stepIndex: number,
+    frameId: string,
+    variableName: string,
+  ): boolean {
+    const nextStep = executionTrace.steps[stepIndex + 1] as any;
+    if (!nextStep) return false;
+
+    const nextType = (nextStep.eventType || nextStep.type || "").toLowerCase();
+    if (nextType !== "var_assign" && nextType !== "var_load") return false;
+
+    const nextName = nextStep.name || nextStep.symbol;
+    if (nextName !== variableName) return false;
+
+    return (nextStep.frameId || "") === frameId;
+  }
+
+  private static findDeclarationOnlyDuplicateIds(
+    children: LayoutElement[],
+  ): Set<string> {
+    const idsToRemove = new Set<string>();
+    const varGroups = new Map<string, LayoutElement[]>();
+
+    children.forEach((child) => {
+      if (child.type === "variable" && child.data?.name) {
+        const name = child.data.name as string;
+        if (!varGroups.has(name)) {
+          varGroups.set(name, []);
+        }
+        varGroups.get(name)!.push(child);
+      }
+    });
+
+    varGroups.forEach((vars) => {
+      if (vars.length < 2) return;
+
+      vars.sort((a, b) => {
+        const aStep = this.getElementStep(a);
+        const bStep = this.getElementStep(b);
+        if (aStep === undefined && bStep === undefined) return 0;
+        if (aStep === undefined) return 1;
+        if (bStep === undefined) return -1;
+        return aStep - bStep;
+      });
+
+      for (let i = 0; i < vars.length - 1; i++) {
+        const current = vars[i];
+        const next = vars[i + 1];
+        const currentStep = this.getElementStep(current);
+        const nextStep = this.getElementStep(next);
+
+        if (
+          !this.isEmptyValue(current.data?.value) ||
+          this.isEmptyValue(next.data?.value) ||
+          currentStep === undefined ||
+          nextStep === undefined
+        ) {
+          continue;
+        }
+
+        if (nextStep - currentStep <= 1) {
+          idsToRemove.add(current.id);
+        }
+      }
+    });
+
+    return idsToRemove;
+  }
+
+  private static pruneDeclarationOnlyDuplicates(layout: Layout): void {
+    const removedIds = new Set<string>();
+    const visited = new Set<string>();
+
+    const pruneTree = (element?: LayoutElement | null) => {
+      if (!element || visited.has(element.id)) return;
+      visited.add(element.id);
+
+      if (!element.children || element.children.length === 0) return;
+
+      element.children.forEach((child) => pruneTree(child));
+
+      const idsToRemove = this.findDeclarationOnlyDuplicateIds(element.children);
+      if (idsToRemove.size === 0) return;
+
+      element.children = element.children.filter((child) => {
+        if (!idsToRemove.has(child.id)) {
+          return true;
+        }
+        removedIds.add(child.id);
+        return false;
+      });
+    };
+
+    pruneTree(layout.mainFunction);
+    pruneTree(layout.globalPanel);
+    if (layout.arrayPanel) {
+      pruneTree(layout.arrayPanel);
+    }
+    layout.elements.forEach((element) => pruneTree(element));
+
+    if (removedIds.size === 0) return;
+
+    layout.elements = layout.elements.filter((element) => !removedIds.has(element.id));
+    removedIds.forEach((id) => {
+      this.elementHistory.delete(id);
+      this.createdInStep.delete(id);
     });
   }
 
@@ -412,6 +1035,925 @@ export class LayoutEngine {
     return returnValue;
   }
 
+  private static appendReturnElement(
+    layout: Layout,
+    funcFrame: LayoutElement,
+    frameId: string,
+    stepIndex: number,
+    functionName: string,
+    returnValue: any,
+  ): void {
+    const hasRecentReturn = (funcFrame.children || []).some((child) => {
+      if (child.type !== "function_return") return false;
+      if (typeof child.stepId !== "number") return false;
+      return child.stepId === stepIndex || child.stepId === stepIndex - 1;
+    });
+    if (hasRecentReturn) return;
+
+    const lane = this.getLane(funcFrame, "RETURN");
+    const indent = getIndentSize(funcFrame);
+
+    const returnElement: LayoutElement = {
+      id: `return-${frameId}-${stepIndex}`,
+      type: "function_return",
+      x: funcFrame.x + indent,
+      y: funcFrame.y + lane.startY + lane.usedHeight,
+      width: funcFrame.width - indent * 2,
+      height: 70,
+      stepId: stepIndex,
+      parentId: funcFrame.id,
+      data: {
+        frameId,
+        functionName,
+        returnValue: returnValue ?? null,
+        explanation: `return ${returnValue ?? "void"}`,
+        birthStep: stepIndex,
+      },
+    };
+
+    lane.usedHeight += returnElement.height + ELEMENT_SPACING;
+    funcFrame.children?.push(returnElement);
+    layout.elements.push(returnElement);
+    this.elementHistory.set(returnElement.id, returnElement);
+  }
+
+  private static isControlEvaluationStep(stepType: string, step: ExecutionStep): boolean {
+    if (stepType === "condition_eval" || stepType === "condition") return true;
+    if (stepType === "conditional_start" && (step as any).conditionType === "switch") {
+      return true;
+    }
+    return false;
+  }
+
+  private static isControlBranchStep(stepType: string): boolean {
+    return (
+      stepType === "branch_taken" ||
+      stepType === "branch" ||
+      stepType === "conditional_branch"
+    );
+  }
+
+  private static resolveIfGroupId(
+    frameId: string,
+    scopeDepth: number,
+    stepIndex: number,
+    line: number,
+  ): string {
+    const recent = this.recentIfGroupByFrame.get(frameId);
+    const hasActiveParent = Boolean(
+      this.getActiveControlParent(frameId, scopeDepth),
+    );
+
+    if (
+      recent &&
+      stepIndex - recent.stepIndex <= 3 &&
+      Math.abs(line - recent.line) <= 2 &&
+      scopeDepth === recent.scopeDepth &&
+      !hasActiveParent &&
+      this.activeControlGroups.has(recent.groupId)
+    ) {
+      this.recentIfGroupByFrame.set(frameId, {
+        ...recent,
+        stepIndex,
+        line,
+        scopeDepth,
+      });
+      return recent.groupId;
+    }
+
+    const groupId = `if-group-${frameId}-${stepIndex}`;
+    this.recentIfGroupByFrame.set(frameId, {
+      groupId,
+      stepIndex,
+      line,
+      scopeDepth,
+    });
+    return groupId;
+  }
+
+  private static normalizeBranchLabel(label: string | undefined): string {
+    const raw = String(label || "").trim().toLowerCase();
+    if (raw === "else-if" || raw === "elseif") return "else_if";
+    if (raw === "if") return "if";
+    if (raw === "else") return "else";
+    if (raw === "default") return "default";
+    if (raw === "case") return "case";
+    return raw;
+  }
+
+  private static getControlParentForDepth(
+    ownerFrame: LayoutElement,
+    frameId: string,
+    scopeDepth: number,
+  ): LayoutElement {
+    const controlParent = this.getActiveControlParent(frameId, scopeDepth);
+    if (controlParent) return controlParent;
+
+    const loopParent = this.getLoopContainerParent(frameId);
+    if (loopParent) return loopParent;
+
+    return ownerFrame;
+  }
+
+  private static hasExplicitScopeDepth(step: ExecutionStep): boolean {
+    const rawDepth = (step as any).scopeDepth ?? (step as any).blockDepth;
+    return Number.isFinite(Number(rawDepth));
+  }
+
+  private static resolveBranchActivationDepth(
+    step: ExecutionStep,
+    scopeDepth: number,
+  ): number {
+    return this.hasExplicitScopeDepth(step) ? scopeDepth + 1 : scopeDepth;
+  }
+
+  private static resolveIfGroupForBranch(
+    frameId: string,
+    conditionId: string | undefined,
+  ): ControlGroupState | undefined {
+    if (!conditionId) {
+      const recent = this.recentIfGroupByFrame.get(frameId);
+      return recent ? this.activeControlGroups.get(recent.groupId) : undefined;
+    }
+
+    let selected: ControlGroupState | undefined;
+    this.activeControlGroups.forEach((groupState) => {
+      if (groupState.frameId !== frameId) return;
+      if (groupState.controlType !== "if_chain") return;
+
+      const matches = groupState.members.some((memberId) => {
+        const member = this.elementHistory.get(memberId);
+        if (!member) return false;
+        return String(member.data?.conditionId ?? "") === conditionId;
+      });
+      if (!matches) return;
+
+      if (!selected || groupState.lastStep > selected.lastStep) {
+        selected = groupState;
+      }
+    });
+
+    if (selected) return selected;
+
+    const recent = this.recentIfGroupByFrame.get(frameId);
+    return recent ? this.activeControlGroups.get(recent.groupId) : undefined;
+  }
+
+  private static resolveCallerOriginElement(
+    step: ExecutionStep,
+    ownerFrame: LayoutElement,
+    frameId: string,
+    scopeDepth: number,
+  ): LayoutElement {
+    const explicitId = String((step as any).triggerElementId || "");
+    if (explicitId) {
+      const found = this.elementHistory.get(explicitId);
+      if (found) return found;
+    }
+
+    const parent = this.getControlParentForDepth(ownerFrame, frameId, scopeDepth);
+    const last = this.findLastRenderableChild(parent);
+    if (last) return last;
+
+    return ownerFrame;
+  }
+
+  private static getControlConnectorPoint(element: LayoutElement): { x: number; y: number } {
+    if (element.type === "condition" && element.data?.controlKind) {
+      return {
+        x: element.x + element.width + 6,
+        y: element.y + CONTROL_HEADER_HEIGHT / 2,
+      };
+    }
+
+    if (element.type === "main" || element.type === "function_call") {
+      const headerHeight = this.getFrameHeaderHeight(element);
+      return {
+        x: element.x + element.width + 6,
+        y: element.y + headerHeight / 2,
+      };
+    }
+
+    return {
+      x: element.x + element.width + 6,
+      y: element.y + element.height / 2,
+    };
+  }
+
+  private static maybeCreateBranchReturnFlow(
+    executionTrace: ExecutionTrace,
+    frameId: string,
+    stepType: string,
+    stepIndex: number,
+    exitedControlIds: string[],
+  ): void {
+    return;
+  }
+
+  private static resolveControlContainerPlacement(
+    ownerFrame: LayoutElement,
+    parent: LayoutElement,
+    frameId: string,
+  ): {
+    x: number;
+    y: number;
+    width: number;
+    triggerElementId: string;
+    triggerStepId?: number;
+  } {
+    const width =
+      parent.id === ownerFrame.id
+        ? Math.max(240, Math.min(CONTROL_BASE_WIDTH, ownerFrame.width - 80))
+        : Math.max(240, Math.min(CONTROL_BASE_WIDTH, parent.width - 40));
+
+    let trigger: LayoutElement | undefined;
+    if (parent.data?.controlRole === "body") {
+      const callerId = String(parent.data?.callerId || "");
+      trigger = callerId ? this.elementHistory.get(callerId) : undefined;
+    }
+    if (!trigger) {
+      trigger = this.findLastRenderableChild(parent) || parent;
+    }
+
+    const baseX = trigger.x + trigger.width + CONTROL_HORIZONTAL_GAP;
+    const baseY = trigger.y + trigger.height / 2 - CONTROL_CALLER_HEIGHT / 2;
+    const rect = this.resolveRightFlowRect(
+      frameId,
+      baseX,
+      baseY,
+      width,
+      CONTROL_CALLER_HEIGHT,
+    );
+
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      triggerElementId: trigger.id,
+      triggerStepId: this.getElementStep(trigger),
+    };
+  }
+
+  private static getNextControlGroupY(container: LayoutElement): number {
+    if (!container.children || container.children.length === 0) {
+      return container.y;
+    }
+
+    let maxBottom = container.y;
+    container.children.forEach((child) => {
+      maxBottom = Math.max(maxBottom, this.getEffectiveBottom(child));
+    });
+    return maxBottom + CONTROL_CHAIN_VERTICAL_GAP;
+  }
+
+  private static syncControlGroupHeight(container: LayoutElement): void {
+    if (!container.children || container.children.length === 0) {
+      container.height = Math.max(container.height, CONTROL_CALLER_HEIGHT);
+      return;
+    }
+
+    let maxBottom = container.y;
+    container.children.forEach((child) => {
+      maxBottom = Math.max(maxBottom, this.getEffectiveBottom(child));
+    });
+    container.height = Math.max(
+      CONTROL_CALLER_HEIGHT,
+      maxBottom - container.y + ELEMENT_SPACING,
+    );
+  }
+
+  private static appendControlCaller(
+    layout: Layout,
+    groupState: ControlGroupState,
+    container: LayoutElement,
+    kind: Exclude<ControlKind, "group">,
+    step: ExecutionStep,
+    stepIndex: number,
+    expression: string,
+    conditionResult: boolean | undefined,
+    branchTaken: string | undefined,
+    line: number,
+    branchState: BranchState,
+    isActive: boolean,
+    triggerElementId?: string,
+  ): LayoutElement {
+    const childCount = container.children?.length ?? 0;
+    const y =
+      childCount === 0
+        ? container.y
+        : this.getNextControlGroupY(container);
+
+    const callerId = `control-caller-${kind}-${groupState.groupId}-${stepIndex}-${childCount}`;
+    const caller: LayoutElement = {
+      id: callerId,
+      type: "condition",
+      subtype: kind,
+      x: container.x,
+      y,
+      width: container.width,
+      height: CONTROL_CALLER_HEIGHT,
+      parentId: container.id,
+      stepId: stepIndex,
+      children: [],
+      data: {
+        conditionId: (step as any).conditionId,
+        conditionType:
+          kind === "switch" || kind === "case" || kind === "default"
+            ? "switch"
+            : "if",
+        condition: expression,
+        expression,
+        conditionResult,
+        branchTaken,
+        controlKind: kind,
+        controlRole: "caller",
+        controlGroupId: groupState.groupId,
+        branchState,
+        triggerStepId: stepIndex,
+        triggerElementId:
+          triggerElementId || container.data?.triggerElementId || container.parentId,
+        headerOnly: true,
+        isActive,
+        birthStep: stepIndex,
+        explanation: (step as any).explanation,
+        branchLabel: kind === "else_if" ? "else if" : kind,
+        isControlNode: true,
+      },
+    };
+
+    if (!container.children) {
+      container.children = [];
+    }
+    container.children.push(caller);
+    groupState.members.push(caller.id);
+    groupState.lastStep = stepIndex;
+    groupState.lastLine = line;
+
+    this.syncControlGroupHeight(container);
+    layout.elements.push(caller);
+    this.elementHistory.set(caller.id, caller);
+    this.createdInStep.set(caller.id, stepIndex);
+
+    const resolvedTriggerElementId = String(caller.data?.triggerElementId || "");
+    const triggerElement = resolvedTriggerElementId
+      ? this.elementHistory.get(resolvedTriggerElementId)
+      : null;
+    if (triggerElement) {
+      const from = this.getControlConnectorPoint(triggerElement);
+      const toX = caller.x;
+      const toY = caller.y + CONTROL_HEADER_HEIGHT / 2;
+      this.pushControlArrow(
+        `control-arrow-trigger-caller-${caller.id}`,
+        stepIndex,
+        from.x,
+        from.y,
+        toX,
+        toY,
+        {
+          kind: "caller_to_condition",
+          dashed: false,
+          opacity: 0.92,
+          strokeWidth: 2.2,
+          animated: true,
+          c1x: from.x + 60,
+          c1y: from.y,
+          c2x: toX - 60,
+          c2y: toY,
+          sourceNodeId: triggerElement.id,
+          targetNodeId: caller.id,
+        },
+      );
+    }
+
+    return caller;
+  }
+
+  private static createControlBodyForCaller(
+    layout: Layout,
+    groupState: ControlGroupState,
+    container: LayoutElement,
+    caller: LayoutElement,
+    stepIndex: number,
+  ): LayoutElement {
+    const existingBodyId = String(caller.data?.bodyId || "");
+    if (existingBodyId) {
+      const existingBody = this.elementHistory.get(existingBodyId);
+      if (existingBody) {
+        return existingBody;
+      }
+    }
+
+    const bodyId = `control-body-${caller.id}`;
+    const body: LayoutElement = {
+      id: bodyId,
+      type: "condition",
+      subtype: caller.subtype,
+      x: caller.x,
+      y: caller.y + CONTROL_HEADER_HEIGHT + 10,
+      width: caller.width,
+      height: CONTROL_BODY_HEIGHT,
+      parentId: caller.id,
+      stepId: stepIndex,
+      children: [],
+      data: {
+        ...caller.data,
+        controlRole: "body",
+        callerId: caller.id,
+        headerOnly: false,
+        isActive: true,
+        branchState: "active" as BranchState,
+        isControlNode: true,
+      },
+    };
+
+    if (!caller.children) {
+      caller.children = [];
+    }
+    caller.children.push(body);
+
+    layout.elements.push(body);
+    this.elementHistory.set(body.id, body);
+    this.createdInStep.set(body.id, stepIndex);
+
+    caller.data = {
+      ...caller.data,
+      bodyId: body.id,
+      isActive: true,
+      branchState: "active" as BranchState,
+      headerOnly: true,
+    };
+    caller.stepId = stepIndex;
+
+    const fromX = caller.x + caller.width / 2;
+    const fromY = caller.y + caller.height;
+    const toX = body.x + body.width / 2;
+    const toY = body.y;
+    this.pushControlArrow(
+      `control-arrow-caller-body-${caller.id}`,
+      stepIndex,
+      fromX,
+      fromY,
+      toX,
+      toY,
+      {
+        kind: "condition_to_body",
+        dashed: false,
+        opacity: 0.94,
+        strokeWidth: 2,
+        animated: true,
+        pointerLength: 8,
+        pointerWidth: 8,
+        c1x: fromX - 30,
+        c1y: fromY + 16,
+        c2x: toX - 30,
+        c2y: toY - 16,
+        sourceNodeId: caller.id,
+        targetNodeId: body.id,
+      },
+    );
+
+    const originId = String(caller.data?.triggerElementId || "");
+    const origin = originId ? this.elementHistory.get(originId) : null;
+    if (origin) {
+      const end = this.getControlConnectorPoint(origin);
+      const returnFromX = body.x + body.width / 2;
+      const returnFromY = body.y + body.height;
+      this.pushControlArrow(
+        `control-arrow-body-return-${caller.id}`,
+        stepIndex,
+        returnFromX,
+        returnFromY,
+        end.x,
+        end.y,
+        {
+          kind: "return_flow",
+          dashed: false,
+          opacity: 0.9,
+          strokeWidth: 2,
+          animated: true,
+          c1x: returnFromX + 60,
+          c1y: returnFromY,
+          c2x: end.x - 60,
+          c2y: end.y,
+          sourceNodeId: body.id,
+          targetNodeId: origin.id,
+        },
+      );
+    }
+
+    groupState.activeCallerId = caller.id;
+    groupState.activeBodyId = body.id;
+    this.syncControlGroupHeight(container);
+    return body;
+  }
+
+  private static createOrGetControlGroupContainer(
+    layout: Layout,
+    ownerFrame: LayoutElement,
+    frameId: string,
+    scopeDepth: number,
+    stepIndex: number,
+    groupId: string,
+    controlType: "if_chain" | "switch",
+  ): { groupState: ControlGroupState; container: LayoutElement } {
+    const existing = this.activeControlGroups.get(groupId);
+    if (existing) {
+      const container = this.elementHistory.get(existing.containerElementId);
+      if (container) {
+        return { groupState: existing, container };
+      }
+    }
+
+    const parent = this.getControlParentForDepth(ownerFrame, frameId, scopeDepth);
+    const placement = this.resolveControlContainerPlacement(
+      ownerFrame,
+      parent,
+      frameId,
+    );
+
+    const container: LayoutElement = {
+      id: `control-group-${groupId}`,
+      type: "condition",
+      subtype: "group",
+      x: placement.x,
+      y: placement.y,
+      width: Math.max(240, Math.min(CONTROL_BASE_WIDTH, placement.width)),
+      height: CONTROL_CALLER_HEIGHT,
+      parentId: parent.id,
+      stepId: stepIndex,
+      children: [],
+      data: {
+        controlKind: "group",
+        controlRole: "group",
+        controlGroupId: groupId,
+        branchState: "active",
+        triggerStepId: placement.triggerStepId ?? stepIndex,
+        triggerElementId: placement.triggerElementId,
+        isActive: true,
+        headerOnly: true,
+        isControlNode: true,
+      },
+    };
+
+    if (!parent.children) {
+      parent.children = [];
+    }
+    parent.children.push(container);
+
+    layout.elements.push(container);
+    this.elementHistory.set(container.id, container);
+    this.createdInStep.set(container.id, stepIndex);
+
+    const groupState: ControlGroupState = {
+      groupId,
+      frameId,
+      scopeDepth,
+      containerElementId: container.id,
+      controlType,
+      parentControlElementId:
+        parent.type === "condition" ? parent.id : undefined,
+      parentContainerId: parent.id,
+      parentContainerDepth: scopeDepth,
+      members: [],
+      lastStep: stepIndex,
+      lastLine: 0,
+    };
+
+    this.activeControlGroups.set(groupId, groupState);
+    return { groupState, container };
+  }
+
+  private static findGroupMemberByConditionId(
+    groupState: ControlGroupState,
+    conditionId: string | undefined,
+  ): LayoutElement | null {
+    if (!conditionId) return null;
+    for (let i = groupState.members.length - 1; i >= 0; i--) {
+      const el = this.elementHistory.get(groupState.members[i]);
+      if (!el) continue;
+      if (String(el.data?.conditionId ?? "") === String(conditionId)) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  private static processControlStep(
+    step: ExecutionStep,
+    executionTrace: ExecutionTrace,
+    layout: Layout,
+    stepIndex: number,
+    ownerFrame: LayoutElement,
+    frameId: string,
+  ): boolean {
+    const stepType = ((step as any).eventType || (step as any).type || "").toLowerCase();
+    const scopeDepth = this.getScopeDepth(step);
+    const line = Number((step as any).line ?? 0);
+
+    if (!this.isControlEvaluationStep(stepType, step) && !this.isControlBranchStep(stepType)) {
+      return false;
+    }
+
+    if (stepType === "conditional_start" && (step as any).conditionType !== "switch") {
+      return true;
+    }
+
+    if (stepType === "condition_eval" || stepType === "condition") {
+      const expression = String((step as any).condition || (step as any).expression || "");
+      const rawResult = (step as any).result ?? (step as any).value;
+      const conditionResult =
+        rawResult === undefined || rawResult === null
+          ? undefined
+          : Boolean(rawResult);
+      const conditionIdRaw = (step as any).conditionId ?? `${frameId}-cond-${stepIndex}`;
+      const conditionId = String(conditionIdRaw);
+      const line = Number((step as any).line ?? 0);
+      const groupId = this.resolveIfGroupId(frameId, scopeDepth, stepIndex, line);
+
+      const { groupState } = this.createOrGetControlGroupContainer(
+        layout,
+        ownerFrame,
+        frameId,
+        scopeDepth,
+        stepIndex,
+        groupId,
+        "if_chain",
+      );
+
+      const kind: ControlKind = groupState.members.length === 0 ? "if" : "else_if";
+      
+      const indent = getIndentSize(ownerFrame);
+      const lane = this.getLane(ownerFrame, "LOCALS");
+      const callerId = `condition-caller-${groupState.groupId}-${stepIndex}`;
+
+      const callerElement: LayoutElement = {
+        id: callerId,
+        type: "condition_caller",
+        x: ownerFrame.x + indent,
+        y: ownerFrame.y + lane.startY + lane.usedHeight,
+        width: ownerFrame.width - indent * 2,
+        height: 50,
+        parentId: ownerFrame.id,
+        stepId: stepIndex,
+        data: {
+          condition: expression,
+          conditionResult: conditionResult,
+          conditionId: conditionId,
+          controlGroupId: groupState.groupId,
+          controlKind: kind
+        }
+      };
+
+      lane.usedHeight += callerElement.height + ELEMENT_SPACING;
+      ownerFrame.children?.push(callerElement);
+      layout.elements.push(callerElement);
+      this.elementHistory.set(callerElement.id, callerElement);
+      this.createdInStep.set(callerElement.id, stepIndex);
+
+      this.activeConditions.set(conditionId, {
+        conditionId,
+        conditionType: "if",
+        startStep: stepIndex,
+        elementId: callerElement.id,
+        parentFrameId: frameId,
+        conditionResult,
+        expression,
+        kind
+      });
+
+      return true;
+    }
+
+    if (stepType === "branch_taken" || stepType === "branch") {
+      const conditionId = (step as any).conditionId
+        ? String((step as any).conditionId)
+        : undefined;
+      const branchTakenRaw = String(
+        (step as any).branch || (step as any).branchType || (step as any).branchTaken || "if",
+      );
+      const branchTaken = this.normalizeBranchLabel(branchTakenRaw);
+
+      const groupState = this.resolveIfGroupForBranch(frameId, conditionId);
+      if (!groupState) return true;
+      const container = this.elementHistory.get(groupState.containerElementId);
+      if (!container) return true;
+
+      if (branchTaken === "else") {
+        const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
+        const elseCaller = this.appendControlCaller(
+          layout,
+          groupState,
+          container,
+          "else",
+          step,
+          stepIndex,
+          "else",
+          true,
+          "else",
+          line,
+          "active",
+          true,
+          origin.id,
+        );
+        const elseBody = this.createControlBodyForCaller(
+          layout,
+          groupState,
+          container,
+          elseCaller,
+          stepIndex,
+        );
+        const activation = this.resolveControlBodyActivation(
+          executionTrace,
+          stepIndex,
+          frameId,
+          scopeDepth,
+        );
+        this.setActiveControlForDepth(frameId, activation.activationDepth, elseBody.id);
+        if (activation.ephemeral) {
+          this.setEphemeralControlForDepth(frameId, activation.activationDepth, elseBody.id);
+        }
+        return true;
+      }
+
+      const condState = conditionId ? this.activeConditions.get(conditionId) : undefined;
+      let target = conditionId ? this.findGroupMemberByConditionId(groupState, conditionId) : null;
+
+      const shouldExpand =
+        target?.data?.conditionResult === true ||
+        condState?.conditionResult === true ||
+        branchTaken === "if" ||
+        branchTaken === "else_if";
+
+      if (!target && condState && shouldExpand) {
+        target = this.appendControlCaller(
+          layout,
+          groupState,
+          container,
+          (condState.kind as Exclude<ControlKind, "group">) || "if",
+          step,
+          stepIndex,
+          condState.expression || branchTaken,
+          true,
+          branchTakenRaw,
+          line,
+          "active",
+          true,
+          condState.elementId
+        );
+      }
+
+      if (!target) return true;
+
+      const nextBranchState: BranchState = shouldExpand ? "active" : "skipped";
+      target.stepId = stepIndex;
+      target.height = CONTROL_CALLER_HEIGHT;
+      target.data = {
+        ...target.data,
+        branchTaken: branchTakenRaw,
+        branchLabel: branchTakenRaw,
+        branchState: nextBranchState,
+        headerOnly: true,
+        isActive: shouldExpand,
+      };
+      
+      if (!this.createdInStep.has(target.id)) {
+        this.createdInStep.set(target.id, stepIndex);
+      }
+      
+      if (shouldExpand) {
+        const targetBody = this.createControlBodyForCaller(
+          layout,
+          groupState,
+          container,
+          target,
+          stepIndex,
+        );
+        const activation = this.resolveControlBodyActivation(
+          executionTrace,
+          stepIndex,
+          frameId,
+          scopeDepth,
+        );
+        this.setActiveControlForDepth(frameId, activation.activationDepth, targetBody.id);
+        if (activation.ephemeral) {
+          this.setEphemeralControlForDepth(frameId, activation.activationDepth, targetBody.id);
+        }
+      }
+      this.syncControlGroupHeight(container);
+      return true;
+    }
+
+    if (stepType === "conditional_start") {
+      const conditionId = String((step as any).conditionId ?? `${frameId}-switch-${stepIndex}`);
+      const expression = String((step as any).expression || (step as any).condition || "switch");
+      const groupId = `switch-group-${frameId}-${conditionId}`;
+      const { groupState, container } = this.createOrGetControlGroupContainer(
+        layout,
+        ownerFrame,
+        frameId,
+        scopeDepth,
+        stepIndex,
+        groupId,
+        "switch",
+      );
+
+      if (groupState.members.length === 0) {
+        const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
+        const switchCaller = this.appendControlCaller(
+          layout,
+          groupState,
+          container,
+          "switch",
+          step,
+          stepIndex,
+          expression,
+          undefined,
+          undefined,
+          line,
+          "pending",
+          false,
+          origin.id,
+        );
+        switchCaller.data = {
+          ...switchCaller.data,
+          conditionType: "switch",
+          headerOnly: true,
+          branchState: "pending" as BranchState,
+        };
+        this.activeConditions.set(conditionId, {
+          conditionId,
+          conditionType: "switch",
+          startStep: stepIndex,
+          elementId: switchCaller.id,
+          parentFrameId: frameId,
+        });
+      }
+      return true;
+    }
+
+    if (stepType === "conditional_branch") {
+      const conditionId = String((step as any).conditionId ?? "");
+      const branchLabel = String((step as any).label || "default");
+      const isMatched = Boolean((step as any).isMatched);
+      const groupId = `switch-group-${frameId}-${conditionId}`;
+      const groupState = this.activeControlGroups.get(groupId);
+      if (!groupState) return true;
+      const container = this.elementHistory.get(groupState.containerElementId);
+      if (!container) return true;
+
+      const kind: ControlKind =
+        branchLabel.toLowerCase() === "default" ? "default" : "case";
+
+      const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
+      const caseCaller = this.appendControlCaller(
+        layout,
+        groupState,
+        container,
+        kind as Exclude<ControlKind, "group">,
+        step,
+        stepIndex,
+        branchLabel,
+        isMatched,
+        branchLabel,
+        line,
+        isMatched ? "active" : "skipped",
+        isMatched,
+        origin.id,
+      );
+      caseCaller.data = {
+        ...caseCaller.data,
+        label: branchLabel,
+        caseValue: branchLabel,
+        isMatched,
+        branchTaken: branchLabel,
+        branchLabel,
+      };
+
+      if (isMatched) {
+        const caseBody = this.createControlBodyForCaller(
+          layout,
+          groupState,
+          container,
+          caseCaller,
+          stepIndex,
+        );
+        const activation = this.resolveControlBodyActivation(
+          executionTrace,
+          stepIndex,
+          frameId,
+          scopeDepth,
+        );
+        this.setActiveControlForDepth(frameId, activation.activationDepth, caseBody.id);
+        if (activation.ephemeral) {
+          this.setEphemeralControlForDepth(frameId, activation.activationDepth, caseBody.id);
+        }
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   public static calculateLayout(
     executionTrace: ExecutionTrace,
     currentStep: number, // RENAMED from currentStepIndex
@@ -445,6 +1987,7 @@ export class LayoutEngine {
       arrayReferences: [],
       updateArrows: [],
       functionArrows: [],
+      controlArrows: [],
       width: canvasWidth,
       height: canvasHeight,
     };
@@ -457,9 +2000,15 @@ export class LayoutEngine {
     this.updateArrows.clear();
     this.functionFrames.clear();
     this.functionArrows = [];
+    this.controlArrows = [];
     this.frameDepthMap.clear();
     this.frameOrderMap.clear();
     this.frameOrder = 0;
+    this.activeControlGroups.clear();
+    this.activeControlByDepth.clear();
+    this.ephemeralControlByDepth.clear();
+    this.recentIfGroupByFrame.clear();
+    this.rightFlowOccupancy.clear();
 
     this.functionFrames.set("main-0", layout.mainFunction);
     this.frameDepthMap.set("main-0", 0);
@@ -478,8 +2027,10 @@ export class LayoutEngine {
     this.positionGlobalPanel(layout);
     this.createArrayReferences(layout, currentStep);
     this.createUpdateArrows(layout, currentStep);
+    this.pruneDeclarationOnlyDuplicates(layout);
     this.updateContainerHeights(layout);
     layout.functionArrows = this.functionArrows;
+    layout.controlArrows = this.controlArrows;
 
     // Validate layout in development mode
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
@@ -646,43 +2197,65 @@ export class LayoutEngine {
         funcFrame.data.isActive = false;
         funcFrame.data.isReturning = true;
       }
+      this.activeControlByDepth.delete(frameId);
+      this.recentIfGroupByFrame.delete(frameId);
 
       // *** NEW: Get return value properly ***
       const returnValue = this.getReturnValue(executionTrace, frameId, stepIndex);
       const functionName = (step as any).function;
 
       if (funcFrame) {
-        const lane = this.getLane(funcFrame, 'RETURN');
-        const indent = getIndentSize(funcFrame);
-        
-        const returnElement: LayoutElement = {
-          id: `return-${frameId}-${stepIndex}`,
-          type: "function_return",
-          x: funcFrame.x + indent,
-          y: funcFrame.y + lane.startY + lane.usedHeight,
-          width: funcFrame.width - indent * 2,
-          height: 70, // *** CHANGED: was 60 ***
-          stepId: stepIndex,
-          parentId: funcFrame.id,
-          data: {
-            frameId: frameId,
-            functionName: functionName,
-            returnValue: returnValue, // *** NEW: Proper value ***
-            explanation: `return ${returnValue ?? 'void'}`,
-          },
-        };
-        
-        lane.usedHeight += returnElement.height + ELEMENT_SPACING;
-
-        funcFrame.children?.push(returnElement);
-        layout.elements.push(returnElement);
-        this.elementHistory.set(returnElement.id, returnElement);
+        this.appendReturnElement(
+          layout,
+          funcFrame,
+          frameId,
+          stepIndex,
+          functionName || funcFrame.data?.functionName || "function",
+          returnValue,
+        );
       }
+      return;
+    }
+
+    if (stepType === "return") {
+      const funcFrame = this.functionFrames.get(frameId);
+      if (!funcFrame) return;
+
+      const functionName =
+        (step as any).function || funcFrame.data?.functionName || "function";
+      const returnValue = (step as any).returnValue ?? (step as any).value ?? null;
+
+      this.appendReturnElement(
+        layout,
+        funcFrame,
+        frameId,
+        stepIndex,
+        functionName,
+        returnValue,
+      );
       return;
     }
 
     const ownerFrame = this.functionFrames.get(frameId);
     if (!ownerFrame) {
+      return;
+    }
+
+    const normalizedStepType = String(stepType || "").toLowerCase();
+    const scopeDepth = this.getScopeDepth(step);
+    const exitedControlIds = [
+      ...this.pruneControlDepthForScope(frameId, scopeDepth),
+      ...this.pruneEphemeralControls(frameId, stepIndex),
+    ];
+    this.maybeCreateBranchReturnFlow(
+      executionTrace,
+      frameId,
+      normalizedStepType,
+      stepIndex,
+      exitedControlIds,
+    );
+
+    if (this.processControlStep(step, executionTrace, layout, stepIndex, ownerFrame, frameId)) {
       return;
     }
 
@@ -708,59 +2281,47 @@ export class LayoutEngine {
         frameId: frameId,
       };
 
-      // LANE: LOCALS (or PARAMS if new)
-      const indent = getIndentSize(ownerFrame);
-      const laneName = 'LOCALS';
-      const lane = this.getLane(ownerFrame, laneName);
+      const scopeDepth = this.getScopeDepth(step);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
       const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
-      
-      // CHECK FOR ACTIVE LOOP PARENT
-      const activeLoop = this.getActiveLoopForFrame(frameId);
-      
+      const reservesCursorSpace = !this.isImmediateDeclarationInitialization(
+        executionTrace,
+        stepIndex,
+        frameId,
+        varName,
+      );
+       
       const varElement: LayoutElement = {
         id: varId,
         type: "variable",
         subtype: "variable_load",
-        x: activeLoop 
-           ? this.elementHistory.get(activeLoop.elementId!)!.x + 20 
-           : ownerFrame.x + indent,
-        y: activeLoop 
-           ? this.getNextCursorY(this.elementHistory.get(activeLoop.elementId!)!) 
-           : ownerFrame.y + lane.startY + lane.usedHeight,
-        width: (activeLoop 
-           ? this.elementHistory.get(activeLoop.elementId!)!.width 
-           : ownerFrame.width - indent * 2) - 40,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width - 40,
         height: elementHeight,
-        parentId: activeLoop ? activeLoop.elementId : ownerFrame.id,
+        parentId: placement.parent.id,
         stepId: stepIndex,
         data: {
             ...variable,
             explanation: explanation,
+            suppressLayoutSpacing: !reservesCursorSpace,
         },
       };
 
-      if (activeLoop) {
-        // CHECK FOR ITERATION CONTAINER (Expanded Mode)
-        if (activeLoop.currentIterationElementId) {
-             const iterationElement = this.elementHistory.get(activeLoop.currentIterationElementId)!;
-             iterationElement.children!.push(varElement);
-        } else {
-             // Add to loop container (Collapsed Mode)
-             const loopElement = this.elementHistory.get(activeLoop.elementId!)!;
-             loopElement.children!.push(varElement);
-        }
-        // We don't increment lane height here because loop height will grow dynamically
-      } else {
-        lane.usedHeight += varElement.height + ELEMENT_SPACING;
-        ownerFrame.children!.push(varElement);
-      }
+      this.appendElementToPlacement(
+        ownerFrame,
+        placement,
+        varElement,
+        reservesCursorSpace,
+      );
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
 
       layout.elements.push(varElement);
       this.elementHistory.set(varId, varElement);
       this.createdInStep.set(varId, stepIndex);
       
-      if (ownerFrame.type === "function_call" && ownerFrame.data) {
+      if (reservesCursorSpace && ownerFrame.type === "function_call" && ownerFrame.data) {
         ownerFrame.data.localVarCount++;
       }
       return;
@@ -816,7 +2377,8 @@ export class LayoutEngine {
         frameId: frameId,
       };
 
-      const indent = getIndentSize(ownerFrame);
+      const scopeDepth = this.getScopeDepth(step);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
       // Calculate height based on explanation and function call
       const baseHeight = VARIABLE_HEIGHT;
@@ -828,23 +2390,15 @@ export class LayoutEngine {
                          (hasFunctionCall ? 60 : 0); // 60px for inline call
       const elementHeight = baseHeight + extraHeight;
       
-      const activeLoop = this.getActiveLoopForFrame(frameId);
-
       const varElement: LayoutElement = {
         id: varId,
         type: "variable",
         subtype: isFunctionReturnAssignment ? "variable_with_call" : "variable_load",
-        x: activeLoop 
-           ? this.elementHistory.get(activeLoop.elementId!)!.x + 20 
-           : ownerFrame.x + indent,
-        y: activeLoop 
-           ? this.getNextCursorY(this.elementHistory.get(activeLoop.elementId!)!) 
-           : this.getNextCursorY(ownerFrame),
-        width: (activeLoop 
-           ? this.elementHistory.get(activeLoop.elementId!)!.width 
-           : ownerFrame.width - indent * 2) - 40,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width - 40,
         height: elementHeight,
-        parentId: activeLoop ? activeLoop.elementId : ownerFrame.id,
+        parentId: placement.parent.id,
         stepId: stepIndex,
         data: {
           ...variable,
@@ -859,18 +2413,8 @@ export class LayoutEngine {
         },
       };
 
-      if (activeLoop) {
-        // CHECK FOR ITERATION CONTAINER (Expanded Mode)
-        if (activeLoop.currentIterationElementId) {
-             const iterationElement = this.elementHistory.get(activeLoop.currentIterationElementId)!;
-             iterationElement.children!.push(varElement);
-        } else {
-             const loopElement = this.elementHistory.get(activeLoop.elementId!)!;
-             loopElement.children!.push(varElement);
-        }
-      } else {
-        ownerFrame.children!.push(varElement);
-      }
+      this.appendElementToPlacement(ownerFrame, placement, varElement);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
 
       layout.elements.push(varElement);
       this.elementHistory.set(varId, varElement);
@@ -904,17 +2448,19 @@ export class LayoutEngine {
           frameId: frameId,
         };
 
-        const indent = getIndentSize(ownerFrame);
+        const scopeDepth = this.getScopeDepth(step);
+        const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
         const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
+
         const ptrElement: LayoutElement = {
           id: ptrId,
           type: "heap_pointer",
           subtype: decayedFromArray ? "array_alias" : "pointer",
-          x: ownerFrame.x + indent,
-          y: this.getNextCursorY(ownerFrame),
-          width: ownerFrame.width - indent * 2,
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
           height: elementHeight,
-          parentId: ownerFrame.id,
+          parentId: placement.parent.id,
           stepId: stepIndex,
           data: {
             ...pointerData,
@@ -924,8 +2470,8 @@ export class LayoutEngine {
             referencesArray: aliasOf,
           },
         };
-
-        ownerFrame.children!.push(ptrElement);
+        this.appendElementToPlacement(ownerFrame, placement, ptrElement);
+        this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
         layout.elements.push(ptrElement);
         this.elementHistory.set(ptrId, ptrElement);
         this.createdInStep.set(ptrId, stepIndex);
@@ -934,20 +2480,65 @@ export class LayoutEngine {
     }
 
     // Handle pointer dereference write events to update pointer value display
-    if (stepType === "pointer_deref_write") {
-      const { name, symbol, value } = step as any;
-      const ptrName = name || symbol;
+    if (stepType === "pointer_deref_write" || stepType === "pointer_write") {
+      const { name, symbol, target, value, address } = step as any;
+      const ptrName = name || symbol || target;
       if (!ptrName) return;
 
       const ptrId = `ptr-${frameId}-${ptrName}`;
       if (this.elementHistory.has(ptrId)) {
         const existingElement = this.elementHistory.get(ptrId)!;
+        existingElement.stepId = stepIndex;
         existingElement.data = {
           ...existingElement.data,
-          // Store written value as string for UI consistency
           value: value !== undefined ? String(value) : undefined,
+          address: address || existingElement.data?.address,
         };
+        this.createdInStep.set(existingElement.id, stepIndex);
+        return;
       }
+
+      const pointerData: any = {
+        name: ptrName,
+        value: value !== undefined ? String(value) : undefined,
+        type: "void*",
+        primitive: "pointer",
+        address: address || "0x0",
+        scope: "local",
+        isInitialized: true,
+        isAlive: true,
+        birthStep: stepIndex,
+        isPointer: true,
+        frameId: frameId,
+      };
+
+      const scopeDepth = this.getScopeDepth(step);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const elementHeight = explanation
+        ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT
+        : VARIABLE_HEIGHT;
+
+      const ptrElement: LayoutElement = {
+        id: ptrId,
+        type: "heap_pointer",
+        subtype: "pointer_write",
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
+        height: elementHeight,
+        parentId: placement.parent.id,
+        stepId: stepIndex,
+        data: {
+          ...pointerData,
+          explanation,
+        },
+      };
+      this.appendElementToPlacement(ownerFrame, placement, ptrElement);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+
+      layout.elements.push(ptrElement);
+      this.elementHistory.set(ptrId, ptrElement);
+      this.createdInStep.set(ptrId, stepIndex);
       return;
     }
 
@@ -992,24 +2583,26 @@ export class LayoutEngine {
           frameId: frameId,
         };
 
-        const indent = getIndentSize(ownerFrame);
+        const scopeDepth = this.getScopeDepth(step);
+        const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+
         const varElement: LayoutElement = {
           id: varId,
           type: "variable",
           subtype: "array_reference",
-          x: ownerFrame.x + indent,
-          y: this.getNextCursorY(ownerFrame),
-          width: ownerFrame.width - indent * 2,
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
           height: VARIABLE_HEIGHT,
-          parentId: ownerFrame.id,
+          parentId: placement.parent.id,
           stepId: stepIndex,
           data: arrayRefVar,
           metadata: {
             referencesArray: arrayName,
           },
         };
-
-        ownerFrame.children!.push(varElement);
+        this.appendElementToPlacement(ownerFrame, placement, varElement);
+        this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
         layout.elements.push(varElement);
         this.elementHistory.set(varId, varElement);
         this.createdInStep.set(varId, stepIndex);
@@ -1044,17 +2637,19 @@ export class LayoutEngine {
       const outputId = `output-${stepIndex}`;
       if (this.elementHistory.has(outputId)) return;
 
-      const indent = getIndentSize(ownerFrame);
+      const scopeDepth = this.getScopeDepth(step);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       const baseHeight = 60;
       const elementHeight = explanation ? baseHeight + EXPLANATION_HEIGHT : baseHeight;
+
       const outputElement: LayoutElement = {
         id: outputId,
         type: "output",
-        x: ownerFrame.x + indent,
-        y: this.getNextCursorY(ownerFrame),
-        width: ownerFrame.width - indent * 2,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
         height: elementHeight,
-        parentId: ownerFrame.id,
+        parentId: placement.parent.id,
         stepId: stepIndex,
         data: {
           text: (step as any).text || (step as any).rawText,
@@ -1063,10 +2658,50 @@ export class LayoutEngine {
           explanation: explanation,
         },
       };
-
-      ownerFrame.children!.push(outputElement);
+      this.appendElementToPlacement(ownerFrame, placement, outputElement);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
       layout.elements.push(outputElement);
       this.elementHistory.set(outputId, outputElement);
+      return;
+    }
+
+    if (stepType === 'input' || stepType === 'input_request' || stepType === 'input_call') {
+      const inputId = `input-${stepIndex}`;
+      if (this.elementHistory.has(inputId)) return;
+
+      const scopeDepth = this.getScopeDepth(step);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const hasAssignments = !!(step as any).assignments;
+      const baseHeight = 80;
+      const extraHeight = hasAssignments ? 24 : 0;
+
+      const inputElement: LayoutElement = {
+        id: inputId,
+        type: 'input',
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
+        height: baseHeight + extraHeight,
+        parentId: placement.parent.id,
+        stepId: stepIndex,
+        data: {
+          format: (step as any).format || (step as any).prompt,
+          prompt: (step as any).prompt || (step as any).format,
+          varName: (step as any).varName || (step as any).name,
+          variables: (step as any).variables,
+          assignments: (step as any).assignments,
+          returnValue: (step as any).returnValue,
+          returnNote: (step as any).returnNote,
+          value: (step as any).value,
+          isWaiting: !(step as any).value && !(step as any).assignments,
+          frameId,
+        },
+      };
+
+      this.appendElementToPlacement(ownerFrame, placement, inputElement);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      layout.elements.push(inputElement);
+      this.elementHistory.set(inputId, inputElement);
       return;
     }
 
@@ -1077,6 +2712,8 @@ export class LayoutEngine {
       if (!ownerFrame) return;
 
       const loopElementId = `loop-${frameId}-${loopId}-${stepIndex}`;
+      const scopeDepth = this.getScopeDepth(step);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
       // Look ahead to find end step for skip functionality
       let endStep: number | undefined;
@@ -1099,37 +2736,15 @@ export class LayoutEngine {
         parentFrameId: frameId,
       });
 
-      // SYNC WITH STORE
-      // We only want to sync if this is the "current" step being processed for the first time
-      // to avoid dispatching actions during historical re-renders.
-      // However, calculating layout usually implies "current state".
-      // We use a small timeout or check if we are near the end of the trace?
-      // Better: Just sync. The store handles updates.
-      if (stepIndex === currentStep) { // RENAMED
-         try {
-           useLoopStore.getState().enterLoop({
-             loopId,
-             loopType,
-             currentIteration: 0,
-             totalIterations: 0, // Will be updated
-             startStepIndex: stepIndex,
-             endStepIndex: endStep,
-           });
-         } catch (e) { console.error("Failed to sync loop start", e); }
-      }
-
-      const indent = getIndentSize(ownerFrame);
-      const lane = this.getLane(ownerFrame, 'LOCALS');
-
       const loopElement: LayoutElement = {
         id: loopElementId,
         type: 'loop',
         subtype: loopType,
-        x: ownerFrame.x + indent,
-        y: ownerFrame.y + lane.startY + lane.usedHeight,
-        width: ownerFrame.width - indent * 2,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
         height: 150,
-        parentId: ownerFrame.id,
+        parentId: placement.parent.id,
         stepId: stepIndex,
         children: [],
         data: {
@@ -1143,16 +2758,11 @@ export class LayoutEngine {
         },
       };
 
-      ownerFrame.children!.push(loopElement);
+      this.appendElementToPlacement(ownerFrame, placement, loopElement);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
       layout.elements.push(loopElement);
       this.elementHistory.set(loopElementId, loopElement);
       this.createdInStep.set(loopElementId, stepIndex);
-      
-      // Update lane height to account for loop element (only if not nested in another loop)
-      const activeLoop = this.getActiveLoopForFrame(frameId);
-      if (!activeLoop) {
-        lane.usedHeight += loopElement.height + ELEMENT_SPACING;
-      }
 
       return;
     }
@@ -1174,19 +2784,19 @@ export class LayoutEngine {
         // TOGGLE MODE CHECK
         const { toggleMode } = useLoopStore.getState();
         
-        if (!toggleMode) {
-            // EXPANDED MODE: Create new Iteration Container
-            const iterationId = `iter-${loopId}-${iteration}-${stepIndex}`;
-            
-            const iterationElement: LayoutElement = {
-                id: iterationId,
-                type: 'loop', // We use 'loop' type but subtype 'iteration'
-                subtype: 'iteration',
-                x: 20, // Relative to Loop Container
-                y: this.getNextCursorY(loopElement),
-                width: loopElement.width - 40,
-                height: 40, // Will grow
-                parentId: loopElement.id,
+         if (!toggleMode) {
+             // EXPANDED MODE: Create new Iteration Container
+             const iterationId = `iter-${loopId}-${iteration}-${stepIndex}`;
+             
+             const iterationElement: LayoutElement = {
+                 id: iterationId,
+                 type: 'loop', // We use 'loop' type but subtype 'iteration'
+                 subtype: 'iteration',
+                 x: loopElement.x + 20,
+                 y: this.getNextCursorY(loopElement),
+                 width: loopElement.width - 40,
+                 height: 40, // Will grow
+                 parentId: loopElement.id,
                 stepId: stepIndex,
                 children: [],
                 data: {
@@ -1197,157 +2807,24 @@ export class LayoutEngine {
             loopElement.children!.push(iterationElement);
             this.elementHistory.set(iterationId, iterationElement);
             loopState.currentIterationElementId = iterationId;
+
+            const ownerFrame = this.functionFrames.get(loopState.parentFrameId);
+            if (ownerFrame) {
+              this.bumpFrameLocalsCursorToInclude(
+                ownerFrame,
+                iterationElement.y + iterationElement.height,
+              );
+            }
         } else {
             // COLLAPSED MODE: Reuse loop container, clear specific iteration ID
             loopState.currentIterationElementId = undefined;
         }
         
-        if (stepIndex === currentStep) { // RENAMED
-           useLoopStore.getState().updateLoopIteration(loopId, iteration);
-        }
-      }
-      return;
-    }
+       }
+       return;
+     }
 
-    // CONDITIONAL START (SWITCH/IF)
-    if (stepType === "conditional_start") {
-        const { conditionId, conditionType, expression } = step as any; // Assuming fields
-        const frameId = (step as any).frameId;
-        const ownerFrame = this.functionFrames.get(frameId);
-        if (!ownerFrame) return;
-
-        // Only handle Switch for now as per task, or generic Conditions later
-        if (conditionType === 'switch') {
-             const switchId = `switch-${conditionId}-${stepIndex}`;
-             
-             // Check for active loop parent
-             const activeLoop = this.getActiveLoopForFrame(frameId);
-             
-             const indent = getIndentSize(ownerFrame);
-             const lane = this.getLane(ownerFrame, 'LOCALS');
-
-             // Determine Parent & Position
-             let parent = ownerFrame;
-             let relativeX = ownerFrame.x + indent;
-             let relativeY = ownerFrame.y + lane.startY + lane.usedHeight;
-             let availableWidth = ownerFrame.width - indent * 2;
-
-             if (activeLoop) {
-                 const loopEl = this.elementHistory.get(activeLoop.elementId!)!;
-                 if (activeLoop.currentIterationElementId) {
-                     const iterEl = this.elementHistory.get(activeLoop.currentIterationElementId)!;
-                     parent = iterEl;
-                     relativeX = iterEl.x + 20; // Relative to Iteration
-                     relativeY = this.getNextCursorY(iterEl);
-                     availableWidth = iterEl.width - 40;
-                 } else {
-                     parent = loopEl;
-                     relativeX = loopEl.x + 20; // Relative to Loop
-                     relativeY = this.getNextCursorY(loopEl);
-                     availableWidth = loopEl.width - 40;
-                 }
-             }
-
-             const switchElement: LayoutElement = {
-                 id: switchId,
-                 type: 'condition', // Generic type
-                 subtype: 'switch',
-                 
-                 y: activeLoop 
-                    ? (activeLoop.currentIterationElementId 
-                        ? this.getNextCursorY(this.elementHistory.get(activeLoop.currentIterationElementId!)!) 
-                        : this.getNextCursorY(this.elementHistory.get(activeLoop.elementId!)!))
-                    : relativeY,
-                 
-                 x: activeLoop 
-                    ? (activeLoop.currentIterationElementId 
-                        ? this.elementHistory.get(activeLoop.currentIterationElementId!)!.x + 20 
-                        : this.elementHistory.get(activeLoop.elementId!)!.x + 20)
-                    : relativeX,
-
-                 width: availableWidth,
-                 height: 100,
-                 parentId: parent.id,
-                 stepId: stepIndex,
-                 children: [],
-                 data: {
-                     expression: expression,
-                     conditionId: conditionId
-                 }
-             };
-             
-             parent.children!.push(switchElement);
-             this.elementHistory.set(switchId, switchElement);
-             
-             // Update lane height to account for switch element (only if not nested in loop)
-             if (!activeLoop) {
-                 lane.usedHeight += switchElement.height + ELEMENT_SPACING;
-             }
-             
-             // Add to active conditions stack setup if needed, 
-             // but 'conditional_branch' usually comes next immediately or nested.
-             this.activeConditions.set(conditionId, {
-                 conditionId,
-                 conditionType,
-                 startStep: stepIndex,
-                 elementId: switchId,
-                 parentFrameId: frameId
-             });
-        }
-        return;
-    }
-
-    // CONDITIONAL BRANCH (CASE)
-    if (stepType === "conditional_branch") {
-        const { conditionId, label, isMatched } = step as any; // Assuming
-        const conditionState = this.activeConditions.get(conditionId);
-        
-        if (conditionState && conditionState.conditionType === 'switch') {
-             const switchEl = this.elementHistory.get(conditionState.elementId!)!;
-             
-             const caseId = `case-${conditionId}-${label}-${stepIndex}`;
-             const caseElement: LayoutElement = {
-                 id: caseId,
-                 type: 'condition',
-                 subtype: 'case',
-                 x: switchEl.x + 10,
-                 y: this.getNextCursorY(switchEl),
-                 width: switchEl.width - 20,
-                 height: 50,
-                 parentId: switchEl.id,
-                 stepId: stepIndex,
-                 children: [],
-                 data: {
-                     label: label || 'default',
-                     isMatched: isMatched
-                 }
-             };
-             
-             switchEl.children!.push(caseElement);
-             this.elementHistory.set(caseId, caseElement);
-             // We could set this as "Active Scope" for variables?
-             // But valid C++ scoping in switch is tricky.
-             // For now, let's just make sure variables declared here land in this case?
-             // If we want that, we need to track "activeCase".
-             
-             // Simplification: Variables in switch cases usually have block scope or function scope.
-             // If block scope, we'd need `block_enter` logic.
-             // User rules: "Variables declared inside an iteration belong ONLY to that iteration". 
-             // Switch scoping is similar. 
-             // For NOW, variables in cases might just float in the switch if we don't track case scope.
-             // We can assume they land in the parent (Switch) or Iteration.
-             // Ideally we'd add `currentCaseElementId` to `activeConditions`, 
-             // and check `activeConditions` in var_declare.
-             // Let's SKIP strictly creating a new scope for now to avoid complexity explosion,
-             // unless user explicitly asked for Switch Scoping.
-             // User said: "Non-executed cases appear dimmed/skipped".
-             // "Only executed case body is visually active".
-             
-             // If we want visual nesting:
-             conditionState.branchTaken = caseId; // Track active branch
-        }
-        return;
-    }
+    // Legacy conditional handling removed: all condition events are processed in processControlStep.
 
     // LOOP CONDITION
     if (stepType === "loop_condition") {
@@ -1395,12 +2872,9 @@ export class LayoutEngine {
         
         this.activeLoops.delete(loopId);
         
-        if (stepIndex === currentStep) { // RENAMED
-           useLoopStore.getState().exitLoop(loopId);
-        }
-      }
-      return;
-    }
+       }
+       return;
+     }
   }
 
   private static createArrayPanel(layout: Layout, currentStep: number): void {
@@ -1596,11 +3070,37 @@ export class LayoutEngine {
     
     // Otherwise, position after last child
     if (!parent.children || parent.children.length === 0) {
-      return parent.y + HEADER_HEIGHT;
+      return parent.y + this.getBodyOffsetY(parent);
     }
-    
-    const lastChild = parent.children[parent.children.length - 1];
-    return lastChild.y + lastChild.height + ELEMENT_SPACING;
+
+    const flowChildren = parent.children.filter(
+      (child) => !this.shouldIgnoreChildForParentFlow(parent, child),
+    );
+    if (flowChildren.length === 0) {
+      return parent.y + this.getBodyOffsetY(parent);
+    }
+
+    let maxBottom = parent.y + this.getBodyOffsetY(parent);
+    flowChildren.forEach((child) => {
+      maxBottom = Math.max(maxBottom, this.getEffectiveBottom(child));
+    });
+    return maxBottom + ELEMENT_SPACING;
+  }
+
+  private static getEffectiveBottom(element: LayoutElement): number {
+    let maxBottom = element.y + element.height;
+    if (!element.children || element.children.length === 0) {
+      return maxBottom;
+    }
+
+    element.children.forEach((child) => {
+      if (this.shouldIgnoreChildForParentFlow(element, child)) {
+        return;
+      }
+      maxBottom = Math.max(maxBottom, this.getEffectiveBottom(child));
+    });
+
+    return maxBottom;
   }
 
   /**
@@ -1679,18 +3179,25 @@ export class LayoutEngine {
         return element.y + newHeight;
       }
       
-      // No children - return current bottom edge
-      if (!element.children || element.children.length === 0) {
-        return element.y + element.height;
-      }
+       // No children - return current bottom edge
+       if (!element.children || element.children.length === 0) {
+         return element.y + element.height;
+       }
 
-      // Recursively update child heights first
-      let maxChildBottom = element.y + HEADER_HEIGHT;
-      
-      element.children.forEach((child) => {
-        const childBottom = updateHeight(child);  // Recurse
-        maxChildBottom = Math.max(maxChildBottom, childBottom);
-      });
+       const flowChildren = element.children.filter(
+         (child) => !this.shouldIgnoreChildForParentFlow(element, child),
+       );
+       if (flowChildren.length === 0) {
+         return element.y + element.height;
+       }
+
+       // Recursively update child heights first
+       let maxChildBottom = element.y + this.getBodyOffsetY(element);
+       
+       flowChildren.forEach((child) => {
+         const childBottom = updateHeight(child);  // Recurse
+         maxChildBottom = Math.max(maxChildBottom, childBottom);
+       });
 
       // Calculate parent height to contain all children
       // maxChildBottom is the absolute Y of the bottom-most child
@@ -1718,5 +3225,37 @@ export class LayoutEngine {
         updateHeight(element);
       }
     });
+  }
+
+  private static isRightFlowControlNode(element: LayoutElement): boolean {
+    return Boolean(element.type === "condition" && element.data?.controlKind);
+  }
+
+  private static shouldIgnoreChildForParentFlow(
+    parent: LayoutElement,
+    child: LayoutElement,
+  ): boolean {
+    if (!child) return false;
+
+    // Connector elements must never affect container bounds.
+    if (
+      child.type === "array_reference" ||
+      child.subtype === "control_arrow" ||
+      child.subtype === "function_arrow" ||
+      child.subtype === "connector_path"
+    ) {
+      return true;
+    }
+
+    // Right-flow branches are not vertical content inside parent containers.
+    if (this.isRightFlowControlNode(child) && child.x >= parent.x + parent.width) {
+      return true;
+    }
+
+    if (child.x > parent.x + MAX_PARENT_FLOW_WIDTH) {
+      return true;
+    }
+
+    return false;
   }
 }

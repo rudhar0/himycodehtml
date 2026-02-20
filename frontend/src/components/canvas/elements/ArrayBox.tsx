@@ -45,8 +45,6 @@ export const ArrayBox: React.FC<ArrayBoxProps> = memo(({
   const groupRef = useRef<Konva.Group>(null);
   const [activeTab, setActiveTab] = useState(0);
 
-  console.log(`[ArrayBox ${name}] Rendering with ${values.length} values:`, values);
-  
   const is1D = dimensions.length === 1;
   const is2D = dimensions.length === 2;
   const is3D = dimensions.length === 3;

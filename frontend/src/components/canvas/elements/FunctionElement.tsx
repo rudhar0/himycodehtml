@@ -1,9 +1,10 @@
 // frontend/src/components/canvas/elements/FunctionElement.tsx
 // COMPLETE FILE - REPLACE ENTIRELY
 
-import React, { useRef, useEffect, useState, memo } from 'react';
+import React, { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { Group, Rect, Text, Line, Circle } from 'react-konva';
 import Konva from 'konva';
+import { resizeContainer } from '../utils/resizeContainer';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -114,10 +115,14 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
   const connectorRef = useRef<Konva.Circle>(null);
   const [isHovered, setIsHovered] = useState(false);
   const isInitialMount = useRef(true);
+  const tweenRef = useRef<Konva.Tween | null>(null);
 
   // Use prop height/width directly (calculated by LayoutEngine)
-  const totalWidth = width || BOX_WIDTH;
-  const totalHeight = height || 150;
+  const baseWidth = width || BOX_WIDTH;
+  const baseHeight = height || 150;
+  const [autoSize, setAutoSize] = useState({ width: baseWidth, height: baseHeight });
+  const totalWidth = Math.max(baseWidth, autoSize.width);
+  const totalHeight = Math.max(baseHeight, autoSize.height);
 
   const colorScheme = isReturning 
     ? COLORS.returning 
@@ -135,17 +140,21 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
     const glow = glowRef.current;
 
     if (!group) return;
+    if (tweenRef.current) {
+      tweenRef.current.destroy();
+      tweenRef.current = null;
+    }
 
     if (isNew && isInitialMount.current) {
       group.opacity(0);
-      group.scaleX(0.8);
-      group.scaleY(0.8);
+      group.scaleX(0.01); // Start small but not zero
+      group.scaleY(0.01);
       const origY = group.y();
       group.y(origY + 35);
 
       const playAnim = () => {
         if (!group.getLayer()) return;
-        new Konva.Tween({
+        const tween = new Konva.Tween({
           node: group,
           opacity: 1,
           scaleX: 1,
@@ -155,15 +164,25 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
           easing: Konva.Easings.BackEaseOut,
           onFinish: () => {
             if (glow) glow.to({ opacity: 0.65, duration: 0.3 });
+            resizeContainer(group, { padding: 16, minWidth: baseWidth, minHeight: baseHeight });
+            group.getLayer()?.batchDraw();
           }
-        }).play();
+        });
+        tweenRef.current = tween;
+        tween.play();
       };
 
       if (enterDelay > 0) {
         const t = setTimeout(playAnim, enterDelay);
-        return () => clearTimeout(t);
+        return () => {
+          clearTimeout(t);
+          if (tweenRef.current) {
+            tweenRef.current.destroy();
+            tweenRef.current = null;
+          }
+        };
       } else {
-        playAnim();
+        requestAnimationFrame(playAnim);
       }
     } else if (isInitialMount.current) {
       group.opacity(1);
@@ -172,7 +191,58 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       if (glow) glow.opacity(0.65);
       isInitialMount.current = false;
     }
-  }, [isNew, enterDelay]);
+
+    return () => {
+      if (tweenRef.current) {
+        tweenRef.current.destroy();
+        tweenRef.current = null;
+      }
+    };
+  }, [isNew, enterDelay, baseWidth, baseHeight]);
+
+  const measureContent = useCallback(() => {
+    const group = groupRef.current;
+    if (!group || !group.getLayer()) return;
+
+    if (group.scaleX() < 0.9 || group.scaleY() < 0.9 || group.opacity() < 1) return;
+
+    const content = group.findOne<Konva.Node>('.content-bounds');
+    if (!content) return;
+
+    const bounds = content.getClientRect({
+      relativeTo: group,
+      skipTransform: true,
+      skipShadow: true,
+    });
+    const padding = 16;
+    const bottomReserve = 40; // keep space for step/return indicators
+
+    const desiredWidth = Math.ceil(Math.max(0, bounds.x + bounds.width) + padding);
+    const desiredHeight = Math.ceil(
+      Math.max(0, bounds.y + bounds.height) + padding + bottomReserve,
+    );
+
+    setAutoSize((prev) => {
+      const nextWidth = Math.max(baseWidth, desiredWidth);
+      const nextHeight = Math.max(baseHeight, desiredHeight);
+      if (prev.width === nextWidth && prev.height === nextHeight) {
+        return prev;
+      }
+      return { width: nextWidth, height: nextHeight };
+    });
+  }, [baseWidth, baseHeight]);
+
+  useEffect(() => {
+    setAutoSize((prev) => {
+      if (prev.width === baseWidth && prev.height === baseHeight) {
+        return prev;
+      }
+      return { width: baseWidth, height: baseHeight };
+    });
+
+    const raf = requestAnimationFrame(measureContent);
+    return () => cancelAnimationFrame(raf);
+  }, [baseWidth, baseHeight, measureContent, children, parameters.length, localVarCount, isReturning, isRecursive, depth, calledFrom]);
 
   // ============================================
   // ACTIVE STATE ANIMATION
@@ -214,15 +284,17 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
   return (
     <Group
       ref={groupRef}
-      id={`${id}-step-${stepNumber || 0}`}
+      id={id}
       x={x}
       y={y}
+      name="auto-resize"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Glow Effect */}
       <Rect
         ref={glowRef}
+        name="glow-bg"
         x={-5}
         y={-5}
         width={totalWidth + 10}
@@ -237,6 +309,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
 
       {/* Main Background */}
       <Rect
+        name="main-bg"
         width={totalWidth}
         height={totalHeight}
         fill="rgba(15, 23, 42, 0.96)"
@@ -248,6 +321,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
         shadowOffsetY={3}
       />
 
+      <Group name="content-bounds">
       {/* Header Background */}
       <Rect
         width={totalWidth}
@@ -413,6 +487,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
         {children}
       </Group>
 
+      </Group>
       {/* Call Connector */}
       <Group
         x={totalWidth}

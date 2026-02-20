@@ -120,6 +120,7 @@ export class RelationManager {
         this.handleOutput(raw, index, frameId);
         break;
       case 'input_request':
+      case 'input':
         this.handleInput(raw, index, frameId);
         break;
       case 'loop_start':

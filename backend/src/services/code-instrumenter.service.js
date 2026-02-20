@@ -151,6 +151,24 @@ class CodeInstrumenter {
     return /^\s*(break|continue)\s*;/.test(trimmed);
   }
 
+  isStdoutOutputStatement(trimmed) {
+    if (!trimmed || !trimmed.endsWith(';')) return false;
+    if (/^\s*(for|while|if|switch)\b/.test(trimmed)) return false;
+
+    if (/^\s*printf\s*\(/.test(trimmed)) return true;
+    if (/^\s*puts\s*\(/.test(trimmed)) return true;
+    if (/^\s*fputs\s*\(/.test(trimmed)) return true;
+    if (/^\s*putchar\s*\(/.test(trimmed)) return true;
+    if (/^\s*fprintf\s*\(\s*stdout\s*,/.test(trimmed)) return true;
+
+    return false;
+  }
+
+  appendOutputFlush(out, indent, lineNumber) {
+    out.push(`${indent}__trace_control_flow("output_flush", ${lineNumber});`);
+    out.push(`${indent}__trace_output_flush(${lineNumber});`);
+  }
+
   isVariableDeclaredInScope(varName, scope) {
     const key = `${scope}:${varName}`;
     return this.scopeVariables.has(key);
@@ -241,6 +259,7 @@ class CodeInstrumenter {
     conditionIdCounter = 0;
     this.blockDepth = 0;
     this.loopStack = [];
+    const pendingElseIfWrapperIndents = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -369,7 +388,7 @@ class CodeInstrumenter {
       const returnStmt = trimmed.match(/^\s*return\s+([^;]+);/);
       if (returnStmt) {
         const returnValue = returnStmt[1];
-        out.push(`${indent}__trace_output_flush(${i + 1});`);
+        this.appendOutputFlush(out, indent, i + 1);
         out.push(`${indent}__trace_return(${returnValue}, "auto", "", ${i + 1});`);
         out.push(line);
         continue;
@@ -379,6 +398,12 @@ class CodeInstrumenter {
         const controlType = trimmed.match(/^\s*(break|continue)/)[1];
         out.push(line);
         out.push(`${indent}__trace_control_flow("${controlType}", ${i + 1});`);
+        continue;
+      }
+
+      if (this.isStdoutOutputStatement(trimmed)) {
+        out.push(line);
+        this.appendOutputFlush(out, indent, i + 1);
         continue;
       }
 
@@ -626,6 +651,24 @@ class CodeInstrumenter {
         }
       }
 
+      if (trimmed === '}' && pendingElseIfWrapperIndents.length > 0) {
+        const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+        const isElseContinuation = /^(\}\s*)?else\b/.test(nextLine);
+        const wrapperIndent = pendingElseIfWrapperIndents[pendingElseIfWrapperIndents.length - 1];
+
+        if (!isElseContinuation && indent === wrapperIndent) {
+          out.push(line);
+          while (
+            pendingElseIfWrapperIndents.length > 0 &&
+            pendingElseIfWrapperIndents[pendingElseIfWrapperIndents.length - 1] === indent
+          ) {
+            pendingElseIfWrapperIndents.pop();
+            out.push(`${indent}}`);
+          }
+          continue;
+        }
+      }
+
       const ifStmt = trimmed.match(/^\s*if\s*\(([^)]+)\)\s*\{/);
       if (ifStmt) {
         const [, condition] = ifStmt;
@@ -644,6 +687,7 @@ class CodeInstrumenter {
         out.push(`${indent}  __trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}  if (${condition}) {`);
         out.push(`${indent}    __trace_branch_taken(${condId}, "else-if", ${i + 1});`);
+        pendingElseIfWrapperIndents.push(indent);
         continue;
       }
 

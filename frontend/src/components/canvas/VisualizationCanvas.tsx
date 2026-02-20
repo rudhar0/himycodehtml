@@ -5,6 +5,7 @@ import { ZoomIn, ZoomOut, Maximize2, Move, Hand } from "lucide-react";
 import { useExecutionStore } from "@store/slices/executionSlice";
 import { useCanvasStore } from "@store/slices/canvasSlice";
 import { useThemeStore } from "@store/slices/themeSlice";
+import { useLoopStore } from "@store/slices/loopSlice";
 import { VariableBox } from "./elements/VariableBox";
 import { ArrayPanel } from "./elements/ArrayPanel";
 import { ArrayReference } from "./elements/ArrayReference";
@@ -16,9 +17,10 @@ import { InputElement } from "./elements/InputElement";
 import { HeapPointerElement } from "./elements/HeapPointerElement";
 import { FunctionElement } from "./elements/FunctionElement";
 import { CallElement } from "./elements/CallElement";
+import { ConditionCallerForParent } from "./elements/ConditionCallerForParent";
 import { FunctionCallArrow } from "./elements/FunctionCallArrow";
 import { ReturnElement } from "./elements/ReturnElement";
-import { LayoutEngine, LayoutElement, BASE_FUNCTION_Z, STACK_Z_STEP } from "./layout/LayoutEngine";
+import { LayoutEngine, LayoutElement } from "./layout/LayoutEngine";
 import { InputDialog } from "./InputDialog";
 import { socketService } from "../../api/socket.service";
 import { getFocusPosition } from "../../utils/camera";
@@ -27,6 +29,10 @@ import { LoopElement } from './elements/LoopElement';
 import { ConditionElement } from './elements/ConditionElement';
 import { SwitchElement, CaseElement } from './elements/SwitchElement';
 import { IterationElement } from './elements/IterationElement';
+import { ControlNodeElement } from "./elements/ControlNodeElement";
+import { ControlLinkArrow } from "./elements/ControlLinkArrow";
+import { ControlCallerBlock } from "./elements/ControlCallerBlock";
+import { resizeAllContainers } from "./utils/resizeContainer";
 
 const DARK_COLORS = {
   bg: "#0F172A",
@@ -65,6 +71,116 @@ const SPACING = {
   HEADER_HEIGHT: 40,
 };
 
+const getBodyOffsetY = (type: LayoutElement["type"], subtype?: string) => {
+  switch (type) {
+    case "main":
+    case "function":
+      return 40; // StackFrame children start at y=40
+    case "function_call":
+      return 55; // FunctionElement children start at y=55
+    case "loop":
+      return subtype === "iteration" ? 25 : 80; // IterationElement y=25; LoopElement y=70+10
+    case "condition":
+      if (subtype === "switch") return 35; // SwitchElement children start at y=35
+      if (subtype === "case") return 28; // CaseElement children start at y=28
+      return 85; // ConditionElement children start at y=75+10
+    case "struct":
+    case "class":
+      return 30; // Struct/Class children start at y=30
+    default:
+      return SPACING.HEADER_HEIGHT;
+  }
+};
+
+const getElementSignature = (element: LayoutElement): string => {
+  const data = element.data ?? {};
+  switch (element.type) {
+    case "variable":
+    case "global":
+    case "heap_pointer":
+      return [
+        element.type,
+        element.subtype ?? "",
+        data.name ?? "",
+        data.state ?? "",
+        data.address ?? "",
+        data.aliasOf ?? "",
+        data.pointsTo ?? "",
+        String(data.value ?? ""),
+      ].join("|");
+    case "function_call": {
+      const params = Array.isArray(data.parameters)
+        ? data.parameters
+            .map((p: any) => `${p?.name ?? ""}:${String(p?.value ?? "")}`)
+            .join(",")
+        : "";
+      return [
+        element.type,
+        data.frameId ?? "",
+        data.functionName ?? "",
+        data.isActive ? "1" : "0",
+        data.isReturning ? "1" : "0",
+        String(data.localVarCount ?? ""),
+        params,
+      ].join("|");
+    }
+    case "function_return":
+      return [
+        element.type,
+        data.frameId ?? "",
+        data.functionName ?? "",
+        String(data.returnValue ?? ""),
+      ].join("|");
+    case "loop":
+      return [
+        element.type,
+        element.subtype ?? "",
+        String(data.loopId ?? ""),
+        String(data.iteration ?? ""),
+        String(data.currentIteration ?? ""),
+        String(data.totalIterations ?? ""),
+        data.isActive ? "1" : "0",
+        data.isComplete ? "1" : "0",
+      ].join("|");
+    case "condition":
+      return [
+        element.type,
+        element.subtype ?? "",
+        data.conditionId ?? "",
+        data.controlRole ?? "",
+        data.branchState ?? "",
+        data.callerId ?? "",
+        data.bodyId ?? "",
+        String(data.conditionResult ?? ""),
+        data.branchTaken ?? "",
+        String(data.caseValue ?? ""),
+        data.isActive ? "1" : "0",
+        data.isMatched ? "1" : "0",
+      ].join("|");
+    case "struct":
+    case "class":
+      return [
+        element.type,
+        data.type ?? "",
+        data.name ?? "",
+        String(element.children?.length ?? 0),
+      ].join("|");
+    case "output":
+      return [element.type, element.subtype ?? "", data.text ?? ""].join("|");
+    case "input":
+      return [
+        element.type,
+        data.prompt ?? "",
+        data.format ?? "",
+        String(data.value ?? ""),
+      ].join("|");
+    default:
+      return [element.type, element.subtype ?? "", String(element.stepId ?? "")].join(
+        "|",
+      );
+  }
+};
+
 const VAR_COLORS: Record<string, string> = {
   int: "#3B82F6",
   float: "#14B8A6",
@@ -92,6 +208,8 @@ export default function VisualizationCanvas() {
   const currentStep = useExecutionStore((state) => state.currentStep);
   const getCurrentStep = useExecutionStore((state) => state.getCurrentStep);
   const isAnalyzing = useExecutionStore((state) => state.isAnalyzing);
+  const toggleMode = useLoopStore((s) => s.toggleMode);
+  const syncLoopsFromTrace = useLoopStore((s) => s.syncFromTrace);
   const { theme } = useThemeStore();
   const COLORS = theme === 'dark' ? DARK_COLORS : LIGHT_COLORS;
   const { setCanvasSize, zoom, setZoom, position, setPosition } =
@@ -101,13 +219,53 @@ export default function VisualizationCanvas() {
   const [inputDialogOpen, setInputDialogOpen] = useState(false);
   const [inputDialogProps, setInputDialogProps] = useState<any>(null);
   const [activeArrows, setActiveArrows] = useState<Map<string, any>>(new Map());
+  const [hoveredControlNodeId, setHoveredControlNodeId] = useState<string | null>(null);
+  const [collapsedCallerIds, setCollapsedCallerIds] = useState<Set<string>>(new Set());
   const prevStepRef = useRef<number>(-1);
-  const prevElementsRef = useRef<Map<string, any>>(new Map());
-  const currentStepData = getCurrentStep();
-  const state = currentStepData?.state;
+  const prevElementsRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    setCollapsedCallerIds(new Set());
+  }, [executionTrace]);
+  const gridSpec = useMemo(() => {
+    const baseSpacing = 20;
+    const worldPad = 200;
+    const maxLines = 260;
+
+    const worldLeft = -position.x / zoom;
+    const worldTop = -position.y / zoom;
+    const worldRight = (dimensions.width - position.x) / zoom;
+    const worldBottom = (dimensions.height - position.y) / zoom;
+
+    let spacing = baseSpacing;
+
+    const compute = () => {
+      const startX = Math.floor((worldLeft - worldPad) / spacing) * spacing;
+      const endX = Math.ceil((worldRight + worldPad) / spacing) * spacing;
+      const startY = Math.floor((worldTop - worldPad) / spacing) * spacing;
+      const endY = Math.ceil((worldBottom + worldPad) / spacing) * spacing;
+      const xCount = Math.floor((endX - startX) / spacing) + 1;
+      const yCount = Math.floor((endY - startY) / spacing) + 1;
+      return { startX, endX, startY, endY, xCount, yCount };
+    };
+
+    let { startX, endX, startY, endY, xCount, yCount } = compute();
+    while (xCount > maxLines || yCount > maxLines) {
+      spacing *= 2;
+      ({ startX, endX, startY, endY, xCount, yCount } = compute());
+      if (spacing > 320) break;
+    }
+
+    return { startX, endX, startY, endY, spacing, xCount, yCount };
+  }, [
+    dimensions.width,
+    dimensions.height,
+    position.x,
+    position.y,
+    zoom,
+  ]);
   const fullLayout = useMemo(() => {
-    if (!state || !executionTrace || executionTrace.steps.length === 0)
-      return null;
+    if (!executionTrace || executionTrace.steps.length === 0) return null;
     const layout = LayoutEngine.calculateLayout(
       executionTrace,
       currentStep,
@@ -116,7 +274,16 @@ export default function VisualizationCanvas() {
     );
 
     return layout;
-  }, [state, currentStep, executionTrace, dimensions.width, dimensions.height]);
+  }, [
+    currentStep,
+    executionTrace,
+    dimensions.width,
+    dimensions.height,
+    toggleMode,
+  ]);
+  useEffect(() => {
+    syncLoopsFromTrace(executionTrace, currentStep);
+  }, [syncLoopsFromTrace, executionTrace, currentStep]);
   const visibleLayout = useMemo(() => {
     if (!fullLayout) return null;
     const filterChildren = (
@@ -144,10 +311,16 @@ export default function VisualizationCanvas() {
       const stepId = el.data?.birthStep ?? el.stepId;
       if (stepId === undefined || stepId > currentStep) return false;
       if (el.type === "array_panel") return false;
+      // Group containers are structural wrappers for caller/body control chains.
+      // Keep them out of camera/animation candidate lists.
+      if (el.type === "condition" && el.data?.controlKind === "group") return false;
       return true;
     });
 
     const filteredFunctionArrows = (fullLayout.functionArrows || []).filter(
+      (arrow) => arrow.stepId !== undefined && arrow.stepId <= currentStep,
+    );
+    const filteredControlArrows = (fullLayout.controlArrows || []).filter(
       (arrow) => arrow.stepId !== undefined && arrow.stepId <= currentStep,
     );
 
@@ -163,6 +336,7 @@ export default function VisualizationCanvas() {
       },
       elements: filteredElements,
       functionArrows: filteredFunctionArrows,
+      controlArrows: filteredControlArrows,
     };
 
     return filtered;
@@ -180,11 +354,9 @@ export default function VisualizationCanvas() {
         prevStep < currentStep &&
         !didExistBefore;
 
-      const prev = prevElements.get(element.id);
-      const dataChanged = prev
-        ? JSON.stringify(prev.data) !== JSON.stringify(element.data)
-        : false;
-      const isUpdated = !isNew && !!prev && dataChanged;
+      const prevSig = prevElements.get(element.id);
+      const nextSig = getElementSignature(element);
+      const isUpdated = !isNew && prevSig !== undefined && prevSig !== nextSig;
 
       states.set(element.id, { isNew, isUpdated });
     });
@@ -220,35 +392,38 @@ export default function VisualizationCanvas() {
   }, [visibleLayout, elementAnimationStates]);
   useEffect(() => {
     if (!visibleLayout) return;
-    const map = new Map<string, any>();
+    const map = new Map<string, string>();
     visibleLayout.elements.forEach((el) => {
-      map.set(el.id, {
-        id: el.id,
-        data: el.data ? structuredClone(el.data) : undefined,
-      });
+      map.set(el.id, getElementSignature(el));
     });
     prevElementsRef.current = map;
   }, [visibleLayout]);
-  useEffect(() => {
-    prevStepRef.current = currentStep;
-  }, [currentStep]);
 
   useEffect(() => {
     const layer = layerRef.current;
-    if (!layer || !visibleLayout) return;
+    if (!layer) return;
 
-    visibleLayout.elements.forEach((el) => {
-        if (el.type === 'function_call' && el.metadata?.stackIndex !== undefined) {
-            // Use predicate to avoid selector parsing errors with special characters in IDs
-            const node = layer.findOne((node: Konva.Node) => node.id() === el.id);
-            if (node) {
-                const zIndex = BASE_FUNCTION_Z + (el.metadata.stackIndex * STACK_Z_STEP);
-                node.zIndex(zIndex);
-            }
-        }
-    });
-    layer.batchDraw();
-  }, [visibleLayout, currentStep]);
+    const hasEnteringAnimations = Array.from(elementAnimationStates.values()).some(
+      (state) => state.isNew,
+    );
+    const debounceMs = hasEnteringAnimations ? 220 : 50;
+
+    const timeoutId = setTimeout(() => {
+      const resizedCount = resizeAllContainers(layer, { padding: 16 });
+      if (resizedCount > 0) {
+        layer.batchDraw();
+      }
+    }, debounceMs);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    currentStep,
+    visibleLayout,
+    dimensions.width,
+    dimensions.height,
+    elementAnimationStates,
+  ]);
+
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -257,21 +432,44 @@ export default function VisualizationCanvas() {
         setCanvasSize(width, height);
       }
     };
+    
+    // Initial size
     updateSize();
+
+    let resizeTimeout: any;
+    const debouncedUpdate = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(updateSize, 100);
+    };
+
     const ro =
       typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(updateSize)
+        ? new ResizeObserver(debouncedUpdate)
         : null;
+        
     if (ro && containerRef.current) ro.observe(containerRef.current);
-    window.addEventListener("resize", updateSize);
+    window.addEventListener("resize", debouncedUpdate);
+    
     return () => {
-      window.removeEventListener("resize", updateSize);
+      window.removeEventListener("resize", debouncedUpdate);
       if (ro) ro.disconnect();
+      clearTimeout(resizeTimeout);
     };
   }, [setCanvasSize]);
   useEffect(() => {
-    if (!visibleLayout || !stageRef.current) return;
-    const movingForward = prevStepRef.current < currentStep;
+    const prevStep = prevStepRef.current;
+    if (!visibleLayout || !stageRef.current) {
+      prevStepRef.current = currentStep;
+      return;
+    }
+    const currentTraceStep = executionTrace?.steps?.[currentStep] as any;
+    const stepHasVisualChange =
+      currentTraceStep ? currentTraceStep.hasVisualChange !== false : true;
+    if (!stepHasVisualChange) {
+      prevStepRef.current = currentStep;
+      return;
+    }
+    const movingForward = prevStep < currentStep;
 
     const isFinalStep = executionTrace && 
                         executionTrace.steps.length > 0 && 
@@ -291,6 +489,7 @@ export default function VisualizationCanvas() {
                 onFinish: () => setPosition({ x: stage.x(), y: stage.y() }),
              }).play();
         }
+        prevStepRef.current = currentStep;
         return;
     }
 
@@ -322,11 +521,15 @@ export default function VisualizationCanvas() {
             setPosition({ x: stage.x(), y: stage.y() });
           },
         }).play();
+        prevStepRef.current = currentStep;
         return;
       }
     }
 
-    if (focusCandidates.length === 0) return;
+    if (focusCandidates.length === 0) {
+      prevStepRef.current = currentStep;
+      return;
+    }
 
     const focusTarget = focusCandidates.reduce(
       (prev, curr) => {
@@ -336,7 +539,18 @@ export default function VisualizationCanvas() {
       undefined as LayoutElement | undefined,
     );
 
-    if (!focusTarget) return;
+    if (!focusTarget) {
+      prevStepRef.current = currentStep;
+      return;
+    }
+
+    if (focusTarget.type === "function_return") {
+      const returnNode = stageRef.current.findOne(`#${focusTarget.id}`);
+      if (!returnNode) {
+        prevStepRef.current = currentStep;
+        return;
+      }
+    }
 
     const targetPos = getFocusPosition(focusTarget, dimensions, zoom);
     const stage = stageRef.current;
@@ -351,12 +565,14 @@ export default function VisualizationCanvas() {
         setPosition({ x: stage.x(), y: stage.y() });
       },
     }).play();
+    prevStepRef.current = currentStep;
   }, [
     currentStep,
     elementAnimationStates,
     dimensions,
     zoom,
     setPosition,
+    executionTrace,
     visibleLayout,
   ]);
   useEffect(() => {
@@ -413,10 +629,15 @@ export default function VisualizationCanvas() {
   );
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === " ") {
-        e.preventDefault();
-        setDragMode(!dragMode);
-      } else if (e.key === "+" || e.key === "=") {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === "+" || e.key === "=") {
         handleZoomIn();
       } else if (e.key === "-" || e.key === "_") {
         handleZoomOut();
@@ -424,9 +645,10 @@ export default function VisualizationCanvas() {
         handleFitToScreen();
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dragMode, handleZoomIn, handleZoomOut, handleFitToScreen]);
+  }, [handleZoomIn, handleZoomOut, handleFitToScreen]);
   useEffect(() => {
     const handleInputRequired = (data: any) => {
       useExecutionStore.getState().pause();
@@ -476,41 +698,96 @@ export default function VisualizationCanvas() {
     setInputDialogOpen(false);
     setInputDialogProps(null);
   };
-  const filterChildren = (children: LayoutElement[] | undefined) => {
-    if (!children) return [];
-    const idsToExclude = new Set<string>();
-    const varGroups = new Map<string, LayoutElement[]>();
-
-    children.forEach((child) => {
-      if (child.type === "variable" && child.data?.name) {
-        const name = child.data.name;
-        if (!varGroups.has(name)) varGroups.set(name, []);
-        varGroups.get(name)!.push(child);
+  const filterChildren = (
+    children: LayoutElement[] | undefined,
+  ) => children ?? [];
+  const isControlNodeElement = (element: LayoutElement | undefined) =>
+    Boolean(
+      element &&
+        element.type === "condition" &&
+        element.data?.controlKind,
+    );
+  const isControlGroupContainer = (element: LayoutElement | undefined) =>
+    Boolean(
+      element &&
+        element.type === "condition" &&
+        element.data?.controlKind &&
+        element.data?.controlRole === "group",
+    );
+  const isControlBodyElement = (element: LayoutElement | undefined) =>
+    Boolean(
+      element &&
+        element.type === "condition" &&
+        element.data?.controlKind &&
+        element.data?.controlRole === "body",
+    );
+  const filterFlowChildren = (
+    children: LayoutElement[] | undefined,
+  ) => filterChildren(children).filter((child) => !isControlNodeElement(child));
+  const elementById = useMemo(() => {
+    const entries = visibleLayout?.elements ?? [];
+    return new Map(entries.map((el) => [el.id, el] as const));
+  }, [visibleLayout]);
+  const isNestedControlCaller = useCallback(
+    (caller: LayoutElement): boolean => {
+      let current: LayoutElement | undefined = caller;
+      for (let i = 0; i < 8; i++) {
+        const parentId = current?.parentId;
+        if (!parentId) return false;
+        const parent = elementById.get(parentId);
+        if (!parent) return false;
+        if (isControlBodyElement(parent)) return true;
+        current = parent;
       }
-    });
+      return false;
+    },
+    [elementById, isControlBodyElement],
+  );
+  const getControlBodyRenderableChildren = useCallback(
+    (body: LayoutElement | undefined): LayoutElement[] => {
+      if (!body?.children || body.children.length === 0) return [];
+      const result: LayoutElement[] = [];
 
-    varGroups.forEach((vars) => {
-      if (vars.length > 1) {
-        vars.sort((a, b) => (a.stepId || 0) - (b.stepId || 0));
-
-        for (let i = 0; i < vars.length; i++) {
-          const current = vars[i];
-          const next = vars[i + 1];
-
-          if (
-            next &&
-            current.stepId === next.stepId &&
-            current.data?.value === undefined &&
-            next.data?.value !== undefined
-          ) {
-            idsToExclude.add(current.id);
-          }
+      body.children.forEach((child) => {
+        if (isControlGroupContainer(child)) {
+          (child.children ?? []).forEach((member) => {
+            if (
+              member.type === "condition" &&
+              member.data?.controlKind &&
+              member.data?.controlRole === "caller"
+            ) {
+              result.push(member);
+            }
+          });
+          return;
         }
-      }
-    });
 
-    return children.filter((c) => !idsToExclude.has(c.id));
-  };
+        if (isControlBodyElement(child)) return;
+        result.push(child);
+      });
+
+      return result;
+    },
+    [isControlGroupContainer, isControlBodyElement],
+  );
+  const controlCallerElements = useMemo(
+    () =>
+      visibleLayout?.elements
+        .filter(
+          (el) =>
+            el.type === "condition" &&
+            el.data?.controlKind &&
+            el.data?.controlRole === "caller" &&
+            !isNestedControlCaller(el),
+        )
+        .sort((a, b) => {
+          const aStep = a.stepId ?? 0;
+          const bStep = b.stepId ?? 0;
+          if (aStep !== bStep) return aStep - bStep;
+          return (a.y ?? 0) - (b.y ?? 0);
+        }) ?? [],
+    [visibleLayout, isNestedControlCaller],
+  );
   const renderElement = (
     element: LayoutElement,
     parentX: number = 0,
@@ -535,9 +812,10 @@ export default function VisualizationCanvas() {
             height={height}
             isNew={false}
           >
-            {filterChildren(children).map((child, idx) => {
+            {filterFlowChildren(children).map((child, idx) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - SPACING.HEADER_HEIGHT;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
 
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
@@ -570,10 +848,28 @@ export default function VisualizationCanvas() {
           />
         );
 
+      case "condition_caller":
+        return (
+          <ConditionCallerForParent
+            key={id}
+            id={id}
+            condition={data?.condition || "(condition)"}
+            conditionResult={data?.conditionResult}
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            isNew={isNew}
+            stepNumber={
+              element.stepId !== undefined ? element.stepId + 1 : undefined
+            }
+          />
+        );
+
       case "function_call": {
         return (
           <FunctionElement
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             functionName={data?.functionName || "function"}
             returnType={data?.returnType || "void"}
@@ -590,9 +886,10 @@ export default function VisualizationCanvas() {
             stepNumber={stepId}
             enterDelay={enterDelayMap.get(id) || 0}
           >
-            {filterChildren(children).map((child) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - 55;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
                   {renderElement(
@@ -610,7 +907,7 @@ export default function VisualizationCanvas() {
       case "function_return": {
         return (
           <ReturnElement
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             x={x}
             y={y}
@@ -627,7 +924,7 @@ export default function VisualizationCanvas() {
       case "heap_pointer": {
         return (
           <HeapPointerElement
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             name={data?.name || "ptr"}
             type={data?.type || "void*"}
@@ -666,6 +963,13 @@ export default function VisualizationCanvas() {
           varState = "updated";
         }
 
+        // LayoutEngine represents declarations with `isInitialized: false` and `value: ""`.
+        // If we don't map that to the declared state here, declaration boxes look "initialized"
+        // and contribute to confusing stacking/identity behavior.
+        if (data?.isInitialized === false) {
+          varState = "declared";
+        }
+
         const effectiveIsNew = isNew || isUpdated;
 
         const normalizedType = (data?.type || data?.primitive || "")
@@ -687,7 +991,7 @@ export default function VisualizationCanvas() {
 
           return (
             <VariableBox
-              key={`${id}-${stepId}`}
+              key={id}
               id={id}
               name={data?.name || ""}
               type={data?.type || data?.primitive || "int"}
@@ -711,7 +1015,7 @@ export default function VisualizationCanvas() {
 
         return (
           <VariableBox
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             name={data?.name || ""}
             type={data?.type || data?.primitive || "int"}
@@ -761,12 +1065,14 @@ export default function VisualizationCanvas() {
             prompt={data?.prompt}
             format={data?.format}
             varName={data?.varName || data?.variables?.[0]}
+            assignments={data?.assignments}
+            returnNote={data?.returnNote}
             x={x}
             y={y}
             width={width}
             height={height}
             isNew={isNew}
-            isWaiting={!data?.value}
+            isWaiting={!data?.value && !data?.assignments}
           />
         );
 
@@ -784,7 +1090,7 @@ export default function VisualizationCanvas() {
 
         return (
           <VariableBox
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             name={data?.name || ""}
             type={data?.type || data?.primitive || "int"}
@@ -816,9 +1122,10 @@ export default function VisualizationCanvas() {
             height={height}
             isNew={isNew}
           >
-            {filterChildren(children).map((child) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - SPACING.HEADER_HEIGHT;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
                   {renderElement(
@@ -844,9 +1151,10 @@ export default function VisualizationCanvas() {
             height={height}
             isNew={isNew}
           >
-            {filterChildren(children).map((child) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - SPACING.HEADER_HEIGHT;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
                   {renderElement(
@@ -873,9 +1181,10 @@ export default function VisualizationCanvas() {
             height={height}
             isNew={isNew}
           >
-            {filterChildren(children).map((child) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - SPACING.HEADER_HEIGHT;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
                   {renderElement(
@@ -891,8 +1200,8 @@ export default function VisualizationCanvas() {
 
       case "loop": {
         if (element.subtype === 'iteration') {
-            return (
-              <IterationElement
+             return (
+               <IterationElement
                 key={id}
                 id={id}
                 iteration={data?.iteration ?? 0}
@@ -900,14 +1209,15 @@ export default function VisualizationCanvas() {
                 y={y}
                 width={width}
                 height={height}
-              >
-                {filterChildren(children).map((child) => {
-                  const relativeX = child.x - x;
-                  const relativeY = child.y - y - 25; // Adjusted offset for Iteration
-                  return (
-                    <Group key={child.id} x={relativeX} y={relativeY}>
-                      {renderElement(
-                        { ...child, x: 0, y: 0 },
+               >
+                 {filterFlowChildren(children).map((child) => {
+                   const relativeX = child.x - x;
+                   const relativeY =
+                     child.y - y - getBodyOffsetY(element.type, element.subtype);
+                   return (
+                     <Group key={child.id} x={relativeX} y={relativeY}>
+                       {renderElement(
+                         { ...child, x: 0, y: 0 },
                         x,
                         y,
                       )}
@@ -920,7 +1230,7 @@ export default function VisualizationCanvas() {
 
         return (
           <LoopElement
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             loopType={data?.loopType || 'for'}
             loopId={data?.loopId || 0}
@@ -945,9 +1255,10 @@ export default function VisualizationCanvas() {
               }
             }}
           >
-            {filterChildren(children).map((child) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - SPACING.HEADER_HEIGHT;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
                   {renderElement(
@@ -963,6 +1274,60 @@ export default function VisualizationCanvas() {
       }
 
       case "condition":
+        if (data?.controlKind) {
+          const role = data?.controlRole;
+          if (role === "group" || data?.controlKind === "group") {
+            return null;
+          }
+
+          if (role === "body") {
+            return null;
+          }
+
+          const callerBody = filterChildren(children).find(
+            (child) => child.data?.controlRole === "body",
+          );
+          const callerId = String(id || "");
+          const isCollapsed = collapsedCallerIds.has(callerId);
+          const bodyVisible =
+            Boolean(callerBody) &&
+            !isCollapsed &&
+            data?.branchState === "active";
+          const controlBodyOffset = 68;
+          return (
+            <ControlNodeElement
+              key={id}
+              id={id}
+              x={x}
+              y={y}
+              width={width}
+              height={height}
+              controlKind={data?.controlKind}
+              condition={data?.expression || data?.condition || data?.label || ""}
+              conditionResult={data?.conditionResult}
+              branchTaken={data?.branchTaken}
+              branchLabel={data?.branchLabel}
+              branchState={data?.branchState}
+              headerOnly={!bodyVisible}
+              isActive={Boolean(data?.isActive || data?.branchState === "active")}
+              isNew={isNew}
+              stepNumber={stepId}
+              enterDelay={enterDelayMap.get(id) || 0}
+              onHoverChange={setHoveredControlNodeId}
+            >
+              {bodyVisible && callerBody ? (
+                <Group x={-x} y={-y - controlBodyOffset}>
+                  {getControlBodyRenderableChildren(callerBody).map((child) => (
+                    <Group key={child.id} x={0} y={0}>
+                      {renderElement(child)}
+                    </Group>
+                  ))}
+                </Group>
+              ) : null}
+            </ControlNodeElement>
+          );
+        }
+
         if (element.subtype === 'switch') {
              return (
                  <SwitchElement
@@ -973,14 +1338,15 @@ export default function VisualizationCanvas() {
                     width={width}
                     height={height}
                     expression={data?.expression || '...'}
-                 >
-                    {filterChildren(children).map((child) => {
-                      const relativeX = child.x - x;
-                      const relativeY = child.y - y - 35; // Header height
-                      return (
-                        <Group key={child.id} x={relativeX} y={relativeY}>
-                          {renderElement(
-                            { ...child, x: 0, y: 0 },
+                  >
+                     {filterFlowChildren(children).map((child) => {
+                       const relativeX = child.x - x;
+                       const relativeY =
+                         child.y - y - getBodyOffsetY(element.type, element.subtype);
+                       return (
+                         <Group key={child.id} x={relativeX} y={relativeY}>
+                           {renderElement(
+                             { ...child, x: 0, y: 0 },
                             x,
                             y,
                           )}
@@ -1001,14 +1367,15 @@ export default function VisualizationCanvas() {
                     height={height}
                     label={data?.label || 'default'}
                     isMatched={data?.isMatched || false}
-                 >
-                    {filterChildren(children).map((child) => {
-                      const relativeX = child.x - x;
-                      const relativeY = child.y - y - 28; // Header height
-                      return (
-                        <Group key={child.id} x={relativeX} y={relativeY}>
-                          {renderElement(
-                            { ...child, x: 0, y: 0 },
+                  >
+                     {filterFlowChildren(children).map((child) => {
+                       const relativeX = child.x - x;
+                       const relativeY =
+                         child.y - y - getBodyOffsetY(element.type, element.subtype);
+                       return (
+                         <Group key={child.id} x={relativeX} y={relativeY}>
+                           {renderElement(
+                             { ...child, x: 0, y: 0 },
                             x,
                             y,
                           )}
@@ -1021,7 +1388,7 @@ export default function VisualizationCanvas() {
 
         return (
           <ConditionElement
-            key={`${id}-${stepId}`}
+            key={id}
             id={id}
             conditionType={data?.conditionType || 'if'}
             condition={data?.condition || ''}
@@ -1038,10 +1405,14 @@ export default function VisualizationCanvas() {
             enterDelay={enterDelayMap.get(id) || 0}
             switchExpression={data?.switchExpression}
             totalCases={data?.totalCases}
+            headerOnly={Boolean(data?.headerOnly)}
+            triggerElementId={String(data?.triggerElementId || '')}
+            triggerStepId={data?.triggerStepId}
           >
-            {filterChildren(children).map((child) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
-              const relativeY = child.y - y - SPACING.HEADER_HEIGHT;
+              const relativeY =
+                child.y - y - getBodyOffsetY(element.type, element.subtype);
               return (
                 <Group key={child.id} x={relativeX} y={relativeY}>
                   {renderElement(
@@ -1059,9 +1430,10 @@ export default function VisualizationCanvas() {
         return null;
     }
   };
-  if (!state || !visibleLayout) {
+  if (!executionTrace || !visibleLayout) {
     return (
       <div
+        id="visualization-canvas"
         ref={containerRef}
         style={{
           width: "100%",
@@ -1098,6 +1470,7 @@ export default function VisualizationCanvas() {
   return (
     <>
       <div
+        id="visualization-canvas"
         ref={containerRef}
         style={{
           width: "100%",
@@ -1205,7 +1578,7 @@ export default function VisualizationCanvas() {
             fontWeight: 600,
           }}
         >
-          Step {currentStep + 1} / {executionTrace?.totalSteps ?? 0}
+          Step {currentStep} / {Math.max((executionTrace?.totalSteps ?? 1) - 1, 0)}
         </div>
 
         {dimensions.width > 0 && dimensions.height > 0 && (
@@ -1234,26 +1607,28 @@ export default function VisualizationCanvas() {
           >
             <Layer ref={layerRef}>
               <Group>
-                {Array.from({ length: Math.floor(dimensions.width / 20) }).map(
-                  (_, i) => (
+                {Array.from({ length: gridSpec.xCount }).map((_, i) => {
+                  const x = gridSpec.startX + i * gridSpec.spacing;
+                  return (
                     <Line
-                      key={`v-grid-${i}`}
-                      points={[i * 20, 0, i * 20, dimensions.height]}
+                      key={`v-grid-${x}`}
+                      points={[x, gridSpec.startY, x, gridSpec.endY]}
                       stroke={COLORS.grid}
                       strokeWidth={0.5}
                     />
-                  ),
-                )}
-                {Array.from({ length: Math.floor(dimensions.height / 20) }).map(
-                  (_, i) => (
+                  );
+                })}
+                {Array.from({ length: gridSpec.yCount }).map((_, i) => {
+                  const y = gridSpec.startY + i * gridSpec.spacing;
+                  return (
                     <Line
-                      key={`h-grid-${i}`}
-                      points={[0, i * 20, dimensions.width, i * 20]}
+                      key={`h-grid-${y}`}
+                      points={[gridSpec.startX, y, gridSpec.endX, y]}
                       stroke={COLORS.grid}
                       strokeWidth={0.5}
                     />
-                  ),
-                )}
+                  );
+                })}
               </Group>
 
               {visibleLayout.mainFunction && (
@@ -1263,35 +1638,27 @@ export default function VisualizationCanvas() {
               )}
 
               {visibleLayout.elements
-                .filter(
-                  (el) =>
-                    el.type === "function_call",
-                )
+                .filter((el) => el.type === "function_call")
+                .sort((a, b) => {
+                  const aIdx = a.metadata?.stackIndex ?? 0;
+                  const bIdx = b.metadata?.stackIndex ?? 0;
+                  return aIdx - bIdx;
+                })
                 .map((el) => (
                   <Group key={el.id} x={0} y={0}>
                     {renderElement(el)}
                   </Group>
                 ))}
 
-              {visibleLayout.functionArrows &&
-                visibleLayout.functionArrows.length > 0 && (
-                  <Group>
-                    {visibleLayout.functionArrows.map((arrow) => (
-                      <FunctionCallArrow
-                        key={arrow.id}
-                        id={arrow.id}
-                        fromX={arrow.data.fromX}
-                        fromY={arrow.data.fromY}
-                        toX={arrow.data.toX}
-                        toY={arrow.data.toY}
-                        label={arrow.data.label}
-                        isActive={arrow.stepId === currentStep}
-                        isRecursive={arrow.data.isRecursive || false}
-                        isNew={arrow.stepId === currentStep}
-                      />
-                    ))}
-                  </Group>
-                )}
+              {controlCallerElements.length > 0 && (
+                <Group name="controlNodesLayer">
+                  {controlCallerElements.map((el) => (
+                    <Group key={el.id} x={0} y={0}>
+                      {renderElement(el)}
+                    </Group>
+                  ))}
+                </Group>
+              )}
 
               {visibleLayout.arrayPanel &&
                 visibleLayout.arrayPanel.data?.arrays &&
@@ -1330,35 +1697,120 @@ export default function VisualizationCanvas() {
                       opacity={0.6}
                     />
 
-                    <Rect
+                    <Group
                       x={visibleLayout.globalPanel.x}
                       y={visibleLayout.globalPanel.y}
-                      width={visibleLayout.globalPanel.width}
-                      height={SPACING.HEADER_HEIGHT}
-                      fill={COLORS.globalBorder}
-                      fillOpacity={0.2}
-                      stroke={COLORS.globalBorder}
-                      strokeWidth={2}
-                      cornerRadius={[8, 8, 0, 0]}
-                    />
-                    <Text
-                      text="Globals"
-                      x={visibleLayout.globalPanel.x + 12}
-                      y={visibleLayout.globalPanel.y + 12}
-                      fontSize={16}
-                      fontStyle="bold"
-                      fill="#F1F5F9"
-                      fontFamily="monospace"
-                    />
-                    {filterChildren(visibleLayout.globalPanel.children).map(
-                      (child) => {
-                        return (
-                          <Group key={child.id} x={child.x} y={child.y}>
-                            {renderElement(child)}
-                          </Group>
+                    >
+                      <Rect
+                        x={0}
+                        y={0}
+                        width={visibleLayout.globalPanel.width}
+                        height={SPACING.HEADER_HEIGHT}
+                        fill={COLORS.globalBorder}
+                        fillOpacity={0.2}
+                        stroke={COLORS.globalBorder}
+                        strokeWidth={2}
+                        cornerRadius={[8, 8, 0, 0]}
+                      />
+                      <Text
+                        text="Globals"
+                        x={12}
+                        y={12}
+                        fontSize={16}
+                        fontStyle="bold"
+                        fill="#F1F5F9"
+                        fontFamily="monospace"
+                      />
+                      <Group y={SPACING.HEADER_HEIGHT}>
+                        {filterChildren(visibleLayout.globalPanel.children).map(
+                          (child) => {
+                            const relativeX =
+                              child.x - visibleLayout.globalPanel.x;
+                            const relativeY =
+                              child.y -
+                              visibleLayout.globalPanel.y -
+                              SPACING.HEADER_HEIGHT;
+                            return (
+                              <Group
+                                key={child.id}
+                                x={relativeX}
+                                y={relativeY}
+                              >
+                                {renderElement(
+                                  { ...child, x: 0, y: 0 },
+                                  visibleLayout.globalPanel.x,
+                                  visibleLayout.globalPanel.y,
+                                )}
+                              </Group>
+                            );
+                          },
+                        )}
+                      </Group>
+                    </Group>
+                  </Group>
+                )}
+
+              {visibleLayout.functionArrows &&
+                visibleLayout.functionArrows.length > 0 && (
+                  <Group>
+                    {visibleLayout.functionArrows.map((arrow) => (
+                      <FunctionCallArrow
+                        key={arrow.id}
+                        id={arrow.id}
+                        fromX={arrow.data.fromX}
+                        fromY={arrow.data.fromY}
+                        toX={arrow.data.toX}
+                        toY={arrow.data.toY}
+                        label={arrow.data.label}
+                        isActive={arrow.stepId === currentStep}
+                        isRecursive={arrow.data.isRecursive || false}
+                        isNew={arrow.stepId === currentStep}
+                      />
+                    ))}
+                  </Group>
+                )}
+
+              {visibleLayout.controlArrows &&
+                visibleLayout.controlArrows.length > 0 && (
+                  <Group>
+                    {visibleLayout.controlArrows.map((arrow) => {
+                        const sourceNodeId = String(arrow.data?.sourceNodeId || "");
+                        const hideCollapsedBodyArrow =
+                          arrow.data?.arrowKind === "condition_to_body" &&
+                          collapsedCallerIds.has(sourceNodeId);
+                        if (hideCollapsedBodyArrow) {
+                          return null;
+                        }
+                        const highlightCallerArrow = Boolean(
+                          hoveredControlNodeId &&
+                            sourceNodeId &&
+                            hoveredControlNodeId === sourceNodeId,
                         );
-                      },
-                    )}
+                        return (
+                      <ControlLinkArrow
+                        key={arrow.id}
+                        id={arrow.id}
+                        fromX={arrow.data.fromX}
+                        fromY={arrow.data.fromY}
+                        toX={arrow.data.toX}
+                        toY={arrow.data.toY}
+                        c1x={arrow.data.c1x}
+                        c1y={arrow.data.c1y}
+                        c2x={arrow.data.c2x}
+                        c2y={arrow.data.c2y}
+                        arrowKind={arrow.data.arrowKind}
+                        dashed={arrow.data.dashed}
+                        strokeWidth={arrow.data.strokeWidth}
+                        opacity={arrow.data.opacity}
+                        animated={arrow.data.animated}
+                        pointerLength={arrow.data.pointerLength}
+                        pointerWidth={arrow.data.pointerWidth}
+                        isActive={arrow.stepId === currentStep}
+                        isNew={arrow.stepId === currentStep}
+                        isHighlighted={highlightCallerArrow}
+                      />
+                        );
+                      })}
                   </Group>
                 )}
 

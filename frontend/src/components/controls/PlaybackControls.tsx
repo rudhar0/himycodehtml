@@ -104,10 +104,10 @@ export default function PlaybackControls() {
             className="text-lg font-bold"
             style={{ color: COLORS.brand.primary }}
           >
-            {currentStep + 1}
+            {currentStep}
           </span>
           <span className="text-sm text-[#5a6a7a] dark:text-slate-500">
-            / {totalSteps}
+            / {Math.max(totalSteps - 1, 0)}
           </span>
         </div>
       )}

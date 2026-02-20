@@ -55,9 +55,9 @@ export const ReturnElement: React.FC<ReturnElementProps> = memo(({
     if (!group) return;
 
     if (isNew && isInitialMount.current) {
-      group.opacity(0);
-      group.scaleX(0.8);
-      group.scaleY(0.8);
+      group.opacity(0.85);
+      group.scaleX(0.9);
+      group.scaleY(0.9);
       const origY = group.y();
       group.y(origY + 20);
 
@@ -116,7 +116,7 @@ export const ReturnElement: React.FC<ReturnElementProps> = memo(({
   return (
     <Group
       ref={groupRef}
-      id={`${id}-step-${stepNumber || 0}`}
+      id={id}
       x={x}
       y={y}
     >

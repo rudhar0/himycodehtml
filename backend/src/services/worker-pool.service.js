@@ -115,6 +115,7 @@ class WorkerPoolManager {
     // Local process: spawn a node process to run the worker script
     try {
       const proc = spawnProcess('node', ['src/docker/worker-service.js', codeB64, language, sessionId], { stdio: ['ignore', 'pipe', 'pipe'] });
+      worker.process = proc;
 
       proc.stdout.on('data', (chunk) => {
         const lines = chunk.toString().split('\n').filter(l => l);
@@ -134,6 +135,7 @@ class WorkerPoolManager {
 
       proc.on('close', (code) => {
         logger.info({ workerId: worker.id, sessionId, code }, 'Local worker process finished.');
+        worker.process = null;
         this.releaseWorker(worker);
         eventEmitter.emit('end');
       });
@@ -141,6 +143,7 @@ class WorkerPoolManager {
       return eventEmitter;
     } catch (error) {
       logger.error({ err: error, workerId: worker.id }, 'Failed to spawn local worker process.');
+      worker.process = null;
       this.releaseWorker(worker);
       throw error;
     }
@@ -202,10 +205,13 @@ class WorkerPoolManager {
     logger.info('Shutting down worker pool...');
     this.isInitialized = false;
     for (const worker of this.pool) {
-      try {
-        // nothing to remove for local workers
-      } catch (error) {
-        logger.warn({ workerId: worker.id }, 'Could not remove worker on shutdown.');
+      if (worker.process) {
+        try {
+          logger.info({ workerId: worker.id, pid: worker.process.pid }, 'Killing worker process...');
+          worker.process.kill('SIGKILL');
+        } catch (error) {
+          logger.warn({ workerId: worker.id }, 'Could not kill worker process on shutdown.');
+        }
       }
     }
     this.pool = [];

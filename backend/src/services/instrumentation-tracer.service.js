@@ -1,11 +1,13 @@
 // backend/src/services/instrumentation-tracer.service.js
 import { spawn, execFileSync } from 'child_process';
 import { writeFile, readFile, unlink, mkdir, copyFile } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { fileURLToPath } from 'url';
 import codeInstrumenter from './code-instrumenter.service.js';
+import controlFlowNormalizer from './control-flow-normalizer.service.js';
+import inputRequirementsService from './input-requirements.service.js';
 import { toolchainService } from './toolchain.service.js';
 import { tracePlatformAdapter } from './trace-platform-adapter.js';
 import resourceResolver from './resource-resolver.service.js';
@@ -63,6 +65,26 @@ class InstrumentationTracer {
         this.addressToName = new Map();
         this.addressToFrame = new Map();
         this.addressResolutionCache = new Map();
+        this.activeProcesses = new Set();
+    }
+
+    registerProcess(proc) {
+        if (!proc) return;
+        this.activeProcesses.add(proc);
+        proc.on('close', () => this.activeProcesses.delete(proc));
+        proc.on('error', () => this.activeProcesses.delete(proc));
+    }
+
+    stop() {
+        console.log(`[TraceService] Stopping ${this.activeProcesses.size} active processes...`);
+        for (const proc of this.activeProcesses) {
+            try {
+                proc.kill('SIGKILL');
+            } catch (e) {
+                // ignore
+            }
+        }
+        this.activeProcesses.clear();
     }
 
     async ensureTempDir() {
@@ -217,6 +239,7 @@ class InstrumentationTracer {
                 // eslint-disable-next-line no-await-in-loop
                 const info = await new Promise((resolve) => {
                     const proc = spawn(bin, ['-e', executable, '-f', '-C', '-i', address]);
+                    this.registerProcess(proc);
                     let output = '';
                     proc.stdout.on('data', d => output += d.toString());
                     proc.on('error', (err) => {
@@ -339,13 +362,18 @@ class InstrumentationTracer {
     async compile(code, language = 'cpp') {
         const sessionId = uuid();
         const ext = language === 'c' ? 'c' : 'cpp';
-        const compiler = toolchainService.getCompiler('cpp');
-        const stdFlag = '-std=c++17';
-        const includeFlags = toolchainService.getIncludeFlags('cpp');
+        const isC = language === 'c';
+        const userCompiler = toolchainService.getCompiler(isC ? 'c' : 'cpp');
+        const tracerCompiler = toolchainService.getCompiler('cpp');
+        const linkCompiler = toolchainService.getCompiler('cpp');
+        const userStdFlag = isC ? '-std=c11' : '-std=c++17';
+        const tracerStdFlag = '-std=c++17';
+        const userIncludeFlags = toolchainService.getIncludeFlags(isC ? 'c' : 'cpp');
+        const tracerIncludeFlags = toolchainService.getIncludeFlags('cpp');
         const linkerFlags = toolchainService.getLinkerFlags();
 
         // --- Step 1.3: Compiler validation (cross-platform safe) ---
-        const compilerBasename = path.basename(compiler).toLowerCase();
+        const compilerBasename = path.basename(linkCompiler).toLowerCase();
         if (compilerBasename.includes('clang-cl') || compilerBasename === 'cl.exe') {
             throw new TraceInstrumentationUnsupportedError(
                 `Unsupported compiler: ${compilerBasename}. ` +
@@ -353,20 +381,30 @@ class InstrumentationTracer {
             );
         }
 
-        const instrumented = await codeInstrumenter.instrumentCode(code, language);
-        const sourceFile = path.resolve(path.join(this.tempDir, `src_${sessionId}.${ext}`));
+        const sourceOriginalFile = path.resolve(path.join(this.tempDir, `src_${sessionId}.${ext}`));
+        const sourceNormalizedFile = path.resolve(path.join(this.tempDir, `src_${sessionId}.normalized.${ext}`));
+        const sourceFile = path.resolve(path.join(this.tempDir, `src_${sessionId}.instrumented.${ext}`));
         const userObj = path.resolve(path.join(this.tempDir, `src_${sessionId}.o`));
         const tracerObj = path.resolve(path.join(this.tempDir, `tracer_${sessionId}.o`));
         const executable = path.resolve(path.join(this.tempDir, `exec_${sessionId}${process.platform === 'win32' ? '.exe' : ''}`));
         const traceOutput = path.resolve(path.join(this.tempDir, `trace_${sessionId}.json`));
         const headerCopy = path.resolve(path.join(this.tempDir, 'trace.h'));
 
+        await writeFile(sourceOriginalFile, code, 'utf-8');
+
+        const normalization = await controlFlowNormalizer.normalizeFile(
+            sourceOriginalFile,
+            language,
+            sourceNormalizedFile
+        );
+        const instrumented = await codeInstrumenter.instrumentCode(normalization.code, language);
+
         await writeFile(sourceFile, instrumented, 'utf-8');
         await copyFile(this.traceHeader, headerCopy);
 
         // --- Step 1.3 + Phase 2: Normalize user compile flags via adapter ---
-        const rawUserFlags = ['-c', '-g', '-O0', stdFlag, '-fno-omit-frame-pointer',
-            '-finstrument-functions', ...includeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline'];
+        const rawUserFlags = ['-c', '-g', '-O0', userStdFlag, '-fno-omit-frame-pointer',
+            '-finstrument-functions', ...userIncludeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline'];
         const normalizedFlags = tracePlatformAdapter.normalizeCompileFlags(rawUserFlags);
         const userCompileArgs = [...normalizedFlags, sourceFile, '-o', userObj];
 
@@ -377,11 +415,12 @@ class InstrumentationTracer {
         }
 
         // --- Step 1.2: Log exact compile command ---
-        console.log('[Compile] User compile command:', compiler, userCompileArgs.join(' '));
+        console.log('[Compile] User compile command:', userCompiler, userCompileArgs.join(' '));
         console.log('[Compile] Working directory:', this.tempDir);
 
         const compileUser = new Promise((resolve, reject) => {
-            const p = spawn(compiler, userCompileArgs);
+            const p = spawn(userCompiler, userCompileArgs);
+            this.registerProcess(p);
             let err = '';
             p.stderr.on('data', d => err += d.toString());
             p.on('close', code => code === 0 ? resolve() : reject(new Error(`User compile failed:\n${err}`)));
@@ -389,9 +428,9 @@ class InstrumentationTracer {
         });
 
         const compileTracer = new Promise((resolve, reject) => {
-            const disableInstrFlag = compiler.includes('clang') ? null : '-fno-instrument-functions';
-            let tracerArgs = ['-c', '-g', '-O0', stdFlag, '-fno-omit-frame-pointer',
-                ...includeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline', this.tracerCpp, '-o', tracerObj];
+            const disableInstrFlag = tracerCompiler.includes('clang') ? null : '-fno-instrument-functions';
+            let tracerArgs = ['-c', '-g', '-O0', tracerStdFlag, '-fno-omit-frame-pointer',
+                ...tracerIncludeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline', this.tracerCpp, '-o', tracerObj];
             if (disableInstrFlag) {
                 tracerArgs = [
                     ...tracerArgs.slice(0, tracerArgs.length - 2),
@@ -400,9 +439,10 @@ class InstrumentationTracer {
                 ];
             }
             // --- Step 1.2: Log tracer compile command ---
-            console.log('[Compile] Tracer compile command:', compiler, tracerArgs.join(' '));
+            console.log('[Compile] Tracer compile command:', tracerCompiler, tracerArgs.join(' '));
 
-            const p = spawn(compiler, tracerArgs);
+            const p = spawn(tracerCompiler, tracerArgs);
+            this.registerProcess(p);
             let err = '';
             p.stderr.on('data', d => err += d.toString());
             p.on('close', code => code === 0 ? resolve() : reject(new Error(`Tracer compile failed:\n${err}`)));
@@ -416,15 +456,23 @@ class InstrumentationTracer {
         if (process.platform !== 'win32') linkArgs.unshift('-pthread', '-ldl');
 
         // --- Step 1.2: Log link command ---
-        console.log('[Compile] Link command:', compiler, linkArgs.join(' '));
+        console.log('[Compile] Link command:', linkCompiler, linkArgs.join(' '));
 
         const linked = await new Promise((resolve, reject) => {
-            const link = spawn(compiler, linkArgs);
+            const link = spawn(linkCompiler, linkArgs);
+            this.registerProcess(link);
             let err = '';
             link.stderr.on('data', d => err += d.toString());
             link.on('close', code => {
                 if (code === 0) {
-                    resolve({ executable, sourceFile, traceOutput, headerCopy });
+                    resolve({
+                        executable,
+                        sourceFile,
+                        sourceOriginalFile,
+                        sourceNormalizedFile,
+                        traceOutput,
+                        headerCopy
+                    });
                 } else {
                     reject(new Error(`Linking failed:\n${err}`));
                 }
@@ -474,7 +522,7 @@ class InstrumentationTracer {
         }
     }
 
-    async executeInstrumented(executable, traceOutput) {
+    async executeInstrumented(executable, traceOutput, inputs = []) {
         const cwd = path.dirname(executable);
         const absExecutable = path.resolve(executable);
 
@@ -498,10 +546,26 @@ class InstrumentationTracer {
             const proc = spawn(cmd, [], {
                 cwd,
                 env,
-                stdio: ['ignore', 'pipe', 'pipe'],
+                stdio: ['pipe', 'pipe', 'pipe'],
                 // use shell on Windows to ensure DLL resolution behaves consistently
                 shell: process.platform === 'win32'
             });
+            this.registerProcess(proc);
+
+            const stdinValues = Array.isArray(inputs) ? inputs : (inputs == null ? [] : [inputs]);
+            const stdinPayload = stdinValues.length > 0
+                ? `${stdinValues.map(v => `${v ?? ''}`).join('\n')}\n`
+                : '';
+            try {
+                if (stdinPayload.length > 0 && proc.stdin) {
+                    proc.stdin.write(stdinPayload);
+                }
+                if (proc.stdin) {
+                    proc.stdin.end();
+                }
+            } catch (e) {
+                console.warn(`[Execute] Failed to write stdin payload: ${e.message}`);
+            }
 
             let stdout = '', stderr = '';
             const stdoutChunks = [];
@@ -519,6 +583,7 @@ class InstrumentationTracer {
                 try { proc.kill(); } catch (_) { }
                 reject(new Error('Execution timeout (10 s)'));
             }, 10000);
+            timeout.unref();
 
             proc.on('close', async (code) => {
                 clearTimeout(timeout);
@@ -601,7 +666,7 @@ class InstrumentationTracer {
     }
 
 
-    async convertToSteps(events, executable, sourceFile, programOutput, trackedFunctions, inputLinesMap = null) {
+    async convertToSteps(events, executable, sourceFile, programOutput, trackedFunctions, inputLinesMap = null, providedInputs = []) {
         console.log(`📊 Converting ${events.length} events to beginner-correct steps...`);
 
         const steps = [];
@@ -621,10 +686,33 @@ class InstrumentationTracer {
         this.addressToFrame.clear();
 
         // Parse program output
-        const outputLines = programOutput.stdout.split('\n');
+        const outputText = typeof programOutput?.stdout === 'string' ? programOutput.stdout : '';
+        const outputLines = outputText.split('\n');
+        const pendingOutputQueue = [];
+        if (programOutput && Array.isArray(programOutput.stdoutChunks) && programOutput.stdoutChunks.length > 0) {
+            for (let idx = 0; idx < programOutput.stdoutChunks.length; idx++) {
+                const text = programOutput.stdoutChunks[idx];
+                if (typeof text !== 'string' || text.length === 0) continue;
+                const ts = Array.isArray(programOutput.stdoutTimestamps)
+                    ? Number(programOutput.stdoutTimestamps[idx] || idx)
+                    : idx;
+                pendingOutputQueue.push({ text, ts });
+            }
+            pendingOutputQueue.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        } else {
+            const normalizedLines = tracePlatformAdapter.normalizeOutputEvents(outputLines);
+            for (let idx = 0; idx < normalizedLines.length; idx++) {
+                const text = normalizedLines[idx];
+                if (typeof text !== 'string' || text.length === 0) continue;
+                pendingOutputQueue.push({ text, ts: idx });
+            }
+        }
 
         // Use provided inputLinesMap (from original code) or scan instrumented file
         const inputLines = inputLinesMap || this.scanForInputOperations(sourceFile);
+        const pendingInputQueue = Array.isArray(providedInputs)
+            ? providedInputs.map(v => `${v ?? ''}`)
+            : [];
 
         // Track functions observed during conversion to keep tracked_functions populated
         const functionSet = new Set(trackedFunctions || []);
@@ -657,6 +745,19 @@ class InstrumentationTracer {
 
             // 3. event.file is "??" AND function starts with "std::"
             if ((file === '??' || file === 'unknown') && fn.startsWith('std::')) return true;
+
+            return false;
+        };
+
+        const isRuntimeCleanupEvent = (ev, info) => {
+            const eventType = (ev.type || '').toLowerCase();
+            const fn = this.normalizeFunctionName(info?.function || ev.func || '').toLowerCase();
+            const file = normalizeFile(info?.file || ev.file || '').toLowerCase();
+
+            if (eventType === 'heap_free') return true;
+            if (fn.includes('operator delete')) return true;
+            if ((file === '??' || file === 'unknown') && fn.startsWith('std::')) return true;
+            if (file.includes('libc++') || file.includes('libstdc++')) return true;
 
             return false;
         };
@@ -714,6 +815,33 @@ class InstrumentationTracer {
                 events: remapped,
                 ...snapshot
             });
+        };
+
+        const emitOutputStep = ({ line, functionName, frameMetadata, fileName }) => {
+            if (pendingOutputQueue.length === 0) return false;
+
+            const nextOutput = pendingOutputQueue.shift();
+            const rawText = nextOutput?.text ?? '';
+            if (rawText.length === 0) return false;
+
+            const { rendered, escapes } = this.parseEscapeSequences(rawText);
+            steps.push({
+                stepIndex: stepIndex++,
+                eventType: 'output',
+                line: line || 0,
+                function: functionName || 'output',
+                scope: 'block',
+                file: normalizeFile(fileName || 'stdout'),
+                timestamp: (lastKnownTimestamp += timestampIncrement),
+                text: rendered,
+                rawText,
+                escapeInfo: escapes,
+                explanation: `📤 Output: "${rendered}"`,
+                internalEvents: [],
+                ...(frameMetadata || this.getCurrentFrameMetadata())
+            });
+
+            return true;
         };
 
         const DEBUG_LOOP_VALIDATION = false;
@@ -802,6 +930,10 @@ class InstrumentationTracer {
             // Debug first few events
             if (i < 100) {
                 console.log(`[Event ${i}] type=${ev.type}, func="${info.function}", file=${normalizeFile(info.file)}, line=${info.line}`);
+            }
+
+            if (isRuntimeCleanupEvent(ev, info)) {
+                continue;
             }
 
             const isEventNoise = isNoiseFunction(info);
@@ -922,20 +1054,35 @@ class InstrumentationTracer {
                     type: inputInfo.type,
                     variables: inputInfo.variables,
                     format: inputInfo.format || undefined,
+                    expectedTypes: inputInfo.expectedTypes || [],
                     line: info.line
                 };
 
+                const consumedValues = (inputInfo.variables || []).map(() => {
+                    if (pendingInputQueue.length === 0) return '';
+                    return pendingInputQueue.shift();
+                });
+                const pairs = (inputInfo.variables || []).map((name, idx) => ({
+                    variable: name,
+                    value: consumedValues[idx] ?? ''
+                }));
+                const explainText = pairs.length > 0
+                    ? `INPUT RECEIVED: ${pairs.map(p => `${p.variable} = ${p.value}`).join(', ')}`
+                    : inputInfo.prompt;
+
                 pushStep({
                     stepIndex: nextIndex(),
-                    eventType: 'input_request',
+                    eventType: 'input',
                     line: info.line,
                     function: currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
-                    explanation: inputInfo.prompt,
-                    pauseExecution: true,
+                    explanation: explainText,
+                    value: consumedValues.length <= 1 ? (consumedValues[0] ?? '') : consumedValues,
+                    variable: (inputInfo.variables || [])[0] || '',
                     inputRequest: inputRequest,
+                    inputValues: pairs,
                     internalEvents: [],
                     ...frameMetadata
                 });
@@ -1277,7 +1424,14 @@ class InstrumentationTracer {
 
             } else if (ev.type === 'control_flow') {
                 const controlType = ev.controlType;
-                if (controlType === 'break') {
+                if (controlType === 'output_flush') {
+                    emitOutputStep({
+                        line: info.line,
+                        functionName: currentFunction,
+                        frameMetadata,
+                        fileName: info.file
+                    });
+                } else if (controlType === 'break') {
                     pushStep({
                         stepIndex: nextIndex(),
                         eventType: 'loop_break',
@@ -1676,61 +1830,15 @@ class InstrumentationTracer {
         activeLoopIterationStack.length = 0;
 
         // ==========================================
-        // STEP 4: Add output steps BEFORE program_end (deterministic)
+        // STEP 4: Emit any output that did not match output_flush anchors
         // ==========================================
-        {
-            const mainFrame = this.frameStack[0] || { frameId: 'main-0', callDepth: 0, parentFrameId: undefined };
-            const frameMetadata = {
-                frameId: mainFrame.frameId,
-                callDepth: 0,
-                callIndex: this.globalCallIndex++,
-                parentFrameId: mainFrame.parentFrameId
-            };
-            // Prefer chunked stdout with timestamps when available
-            if (programOutput && Array.isArray(programOutput.stdoutChunks) && programOutput.stdoutChunks.length > 0) {
-                const combined = programOutput.stdoutChunks.map((text, idx) => ({ text, ts: idx }));
-                combined.sort((a, b) => (a.ts || 0) - (b.ts || 0));
-                for (const chunk of combined) {
-                    const { rendered, escapes } = this.parseEscapeSequences(chunk.text);
-                    steps.push({
-                        stepIndex: stepIndex++,
-                        eventType: 'output',
-                        line: 0,
-                        function: 'output',
-                        scope: 'global',
-                        file: 'stdout',
-                        timestamp: (lastKnownTimestamp += timestampIncrement),
-                        text: rendered,
-                        rawText: chunk.text,
-                        escapeInfo: escapes,
-                        explanation: `📤 Output: "${rendered}"`,
-                        internalEvents: [],
-                        ...frameMetadata
-                    });
-                }
-            } else {
-                // --- Phase 2: Output Normalization (fix empty lines) ---
-                const normalizedLines = tracePlatformAdapter.normalizeOutputEvents(outputLines);
-                for (let i = 0; i < normalizedLines.length; i++) {
-                    const line = normalizedLines[i];
-                    const { rendered, escapes } = this.parseEscapeSequences(line);
-                    steps.push({
-                        stepIndex: stepIndex++,
-                        eventType: 'output',
-                        line: 0,
-                        function: 'output',
-                        scope: 'global',
-                        file: 'stdout',
-                        timestamp: (lastKnownTimestamp += timestampIncrement),
-                        text: rendered,
-                        rawText: line,
-                        escapeInfo: escapes,
-                        explanation: `📤 Output: "${rendered}"`,
-                        internalEvents: [],
-                        ...frameMetadata
-                    });
-                }
-            }
+        while (pendingOutputQueue.length > 0) {
+            emitOutputStep({
+                line: 0,
+                functionName: currentFunction || 'main',
+                frameMetadata: this.getCurrentFrameMetadata(),
+                fileName: sourceFile
+            });
         }
 
         // Ensure main has a matching func_exit if it is still on the frame stack.
@@ -1962,7 +2070,7 @@ class InstrumentationTracer {
         return Array.from(map.values());
     }
 
-    async generateTrace(code, language = 'cpp') {
+    async generateTrace(code, language = 'cpp', inputs = []) {
         console.log('🚀 Starting trace generation...');
 
         this.arrayRegistry.clear();
@@ -1974,14 +2082,34 @@ class InstrumentationTracer {
         this.globalCallIndex = 0;
         this.frameCounts = new Map();
 
-        const inputLinesMap = this.scanForInputOperations(code);
+        const inputAnalysis = inputRequirementsService.analyzeInputRequirements(code, language);
+        const normalizedInputs = inputRequirementsService.normalizeProvidedInputs(
+            inputs,
+            inputAnalysis.requirements
+        );
+        if (normalizedInputs.warnings.length > 0) {
+            console.warn(`[Input] ${normalizedInputs.warnings.join(' | ')}`);
+        }
 
-        let exe, src, traceOut, hdr;
+        const inputLinesMap = this.scanForInputOperations(code, language);
+
+        let exe, src, srcOriginal, srcNormalized, traceOut, hdr;
         try {
-            ({ executable: exe, sourceFile: src, traceOutput: traceOut, headerCopy: hdr } =
+            ({
+                executable: exe,
+                sourceFile: src,
+                sourceOriginalFile: srcOriginal,
+                sourceNormalizedFile: srcNormalized,
+                traceOutput: traceOut,
+                headerCopy: hdr
+            } =
                 await this.compile(code, language));
 
-            const { stdout, stderr } = await this.executeInstrumented(exe, traceOut);
+            const { stdout, stderr, stdoutChunks, stdoutTimestamps } = await this.executeInstrumented(
+                exe,
+                traceOut,
+                normalizedInputs.values
+            );
             const { events, functions } = await this.parseTraceFile(traceOut);
 
             console.log(`📋 Captured ${events.length} raw events, ${functions.length} functions`);
@@ -1995,7 +2123,15 @@ class InstrumentationTracer {
                 );
             }
 
-            const steps = await this.convertToSteps(events, exe, src, { stdout, stderr }, functions, inputLinesMap);
+            const steps = await this.convertToSteps(
+                events,
+                exe,
+                src,
+                { stdout, stderr, stdoutChunks, stdoutTimestamps },
+                functions,
+                inputLinesMap,
+                normalizedInputs.values
+            );
 
             const result = {
                 steps,
@@ -2016,6 +2152,7 @@ class InstrumentationTracer {
                     deterministicStepCount: true,
                     capturedEvents: events.length,
                     emittedSteps: steps.length,
+                    providedInputCount: normalizedInputs.values.length,
                     programOutput: stdout,
                     timestamp: Date.now()
                 }
@@ -2034,7 +2171,7 @@ class InstrumentationTracer {
             console.error('❌ Trace failed:', e.message);
             throw e;
         } finally {
-            await this.cleanup([exe, src, traceOut, hdr]);
+            await this.cleanup([exe, src, srcOriginal, srcNormalized, traceOut, hdr]);
         }
     }
 
@@ -2046,45 +2183,33 @@ class InstrumentationTracer {
         }
     }
 
-    scanForInputOperations(sourceFile) {
+    scanForInputOperations(sourceOrCode, language = 'c') {
         try {
-            if (!existsSync(sourceFile)) {
-                return new Map();
-            }
+            const content = existsSync(sourceOrCode)
+                ? readFileSync(sourceOrCode, 'utf-8')
+                : (typeof sourceOrCode === 'string' ? sourceOrCode : '');
+            if (!content) return new Map();
 
-            const content = require('fs').readFileSync(sourceFile, 'utf-8');
-            const lines = content.split('\n');
             const inputLines = new Map();
-
-            const scanfRegex = /scanf\s*\(\s*"([^"]*)"\s*,\s*([^)]+)/;
-            const cinRegex = /cin\s*>>\s*([^;]+)/;
-
-            lines.forEach((line, index) => {
-                const lineNumber = index + 1;
-                let match;
-
-                if ((match = line.match(scanfRegex))) {
-                    const format = match[1];
-                    const variables = match[2].trim().split(',').map(v => v.replace(/[&\s]/g, ''));
-
-                    inputLines.set(lineNumber, {
-                        line: lineNumber,
-                        type: 'scanf',
-                        format: format,
-                        variables: variables,
-                        prompt: `Waiting for scanf input on line ${lineNumber}`
-                    });
-                } else if ((match = line.match(cinRegex))) {
-                    const variables = match[1].trim().split('>>').map(v => v.trim()).filter(v => v && v.length > 0);
-
-                    inputLines.set(lineNumber, {
-                        line: lineNumber,
-                        type: 'cin',
-                        variables: variables,
-                        prompt: `Waiting for cin input on line ${lineNumber}`
-                    });
-                }
-            });
+            const analysis = inputRequirementsService.analyzeInputRequirements(content, language);
+            const groupedByLine = new Map();
+            for (const req of analysis.requirements) {
+                if (!groupedByLine.has(req.line)) groupedByLine.set(req.line, []);
+                groupedByLine.get(req.line).push(req);
+            }
+            for (const [lineNumber, reqs] of groupedByLine.entries()) {
+                const variables = reqs.map(r => r.variable);
+                const expectedTypes = reqs.map(r => r.type);
+                inputLines.set(lineNumber, {
+                    line: lineNumber,
+                    type: reqs[0]?.callType || 'scanf',
+                    format: reqs[0]?.format || '',
+                    variables,
+                    expectedTypes,
+                    requests: reqs,
+                    prompt: `INPUT RECEIVED (${variables.join(', ')})`
+                });
+            }
 
             if (inputLines.size > 0) {
                 console.log(`✅ Found ${inputLines.size} input operations in source code`);

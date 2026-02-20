@@ -176,6 +176,8 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
   const groupRef = useRef<Konva.Group>(null);
   const glowRef = useRef<Konva.Rect>(null);
   const dotRef = useRef<Konva.Circle>(null);
+  const tweenRef = useRef<Konva.Tween | null>(null);
+  const dotTweenRef = useRef<Konva.Tween | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const isInitialMount = useRef(true);
   const [showingExplanation, setShowingExplanation] = useState(!!explanation);
@@ -240,16 +242,25 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
     
     if (!group) return;
 
+    if (tweenRef.current) {
+      tweenRef.current.destroy();
+      tweenRef.current = null;
+    }
+    if (dotTweenRef.current) {
+      dotTweenRef.current.destroy();
+      dotTweenRef.current = null;
+    }
+
     if (isNew && isInitialMount.current) {
       group.opacity(0);
-      group.scaleX(0.75);
-      group.scaleY(0.75);
+      group.scaleX(0.01);
+      group.scaleY(0.01);
       const origY = group.y();
       group.y(origY + 25);
 
       const playAnim = () => {
         if (!group.getLayer()) return;
-        new Konva.Tween({
+        const tween = new Konva.Tween({
           node: group,
           opacity: 1,
           scaleX: 1,
@@ -258,25 +269,44 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
           duration: 0.6,
           easing: Konva.Easings.BackEaseOut,
           onFinish: () => {
-            if (glow && varState !== 'declared') {
+            if (glow && varState !== 'declared' && glow.getLayer()) {
               glow.to({ opacity: 0.7, duration: 0.4 });
             }
-            if (dot) {
-              new Konva.Tween({
+
+            if (dot && dot.getLayer()) {
+              const dotTween = new Konva.Tween({
                 node: dot,
                 scaleX: 1.6,
                 scaleY: 1.6,
                 duration: 0.25,
-                onFinish: () => dot.to({ scaleX: 1, scaleY: 1, duration: 0.25 })
-              }).play();
+                onFinish: () => {
+                  if (dot && dot.getLayer()) {
+                    dot.to({ scaleX: 1, scaleY: 1, duration: 0.25 });
+                  }
+                }
+              });
+              dotTweenRef.current = dotTween;
+              dotTween.play();
             }
           }
-        }).play();
+        });
+        tweenRef.current = tween;
+        tween.play();
       };
 
       if (enterDelay > 0) {
         const t = setTimeout(playAnim, enterDelay);
-        return () => clearTimeout(t);
+        return () => {
+          clearTimeout(t);
+          if (tweenRef.current) {
+            tweenRef.current.destroy();
+            tweenRef.current = null;
+          }
+          if (dotTweenRef.current) {
+            dotTweenRef.current.destroy();
+            dotTweenRef.current = null;
+          }
+        };
       } else {
         playAnim();
       }
@@ -287,6 +317,17 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
       if (glow && varState !== 'declared') glow.opacity(0.7);
       isInitialMount.current = false;
     }
+
+    return () => {
+      if (tweenRef.current) {
+        tweenRef.current.destroy();
+        tweenRef.current = null;
+      }
+      if (dotTweenRef.current) {
+        dotTweenRef.current.destroy();
+        dotTweenRef.current = null;
+      }
+    };
   }, [isNew, varState, enterDelay]);
 
   // Color transition for explanation
@@ -326,7 +367,7 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
   return (
     <Group
       ref={groupRef}
-      id={`${id}-step-${stepNumber || 0}`}
+      id={id}
       x={x}
       y={y}
       onMouseEnter={handleMouseEnter}

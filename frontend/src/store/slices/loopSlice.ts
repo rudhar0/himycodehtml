@@ -4,6 +4,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { useExecutionStore } from './executionSlice';
+import type { ExecutionTrace } from '../../types';
 
 export interface LoopInfo {
   loopId: number;
@@ -28,6 +29,7 @@ export interface LoopState {
   
   // Actions
   setToggleMode: (enabled: boolean) => void;
+  syncFromTrace: (trace: ExecutionTrace | null, currentStep: number) => void;
   
   // Loop tracking
   enterLoop: (loopInfo: Omit<LoopInfo, 'isActive'>) => void;
@@ -55,6 +57,84 @@ export const useLoopStore = create<LoopState>()(
     setToggleMode: (enabled: boolean) =>
       set((state) => {
         state.toggleMode = enabled;
+      }),
+
+    syncFromTrace: (trace: ExecutionTrace | null, currentStep: number) =>
+      set((state) => {
+        if (!trace || !Array.isArray(trace.steps) || trace.steps.length === 0) {
+          state.activeLoops = [];
+          return;
+        }
+
+        const stepTypeOf = (step: any) => (step?.eventType || step?.type || '') as string;
+
+        const endStepByLoopId = new Map<number, number>();
+        for (let i = 0; i < trace.steps.length; i++) {
+          const step: any = trace.steps[i];
+          if (stepTypeOf(step) === 'loop_end' && typeof step.loopId === 'number') {
+            endStepByLoopId.set(step.loopId, i);
+          }
+        }
+
+        const stack: LoopInfo[] = [];
+        const limit = Math.min(currentStep, trace.steps.length - 1);
+        for (let i = 0; i <= limit; i++) {
+          const step: any = trace.steps[i];
+          const type = stepTypeOf(step);
+
+          if (type === 'loop_start' && typeof step.loopId === 'number') {
+            const loopId = step.loopId as number;
+            const loopType = (step.loopType || 'for') as LoopInfo['loopType'];
+            stack.push({
+              loopId,
+              loopType,
+              currentIteration: 0,
+              totalIterations: 0,
+              startStepIndex: i,
+              endStepIndex: endStepByLoopId.get(loopId),
+              isActive: true,
+            });
+            continue;
+          }
+
+          if (type === 'loop_body_start' && typeof step.loopId === 'number') {
+            const loopId = step.loopId as number;
+            const iteration = typeof step.iteration === 'number' ? step.iteration : 0;
+            for (let s = stack.length - 1; s >= 0; s--) {
+              if (stack[s].loopId === loopId) {
+                stack[s].currentIteration = iteration;
+                stack[s].totalIterations = Math.max(stack[s].totalIterations, iteration);
+                break;
+              }
+            }
+            continue;
+          }
+
+          if (type === 'loop_iteration_end' && typeof step.loopId === 'number') {
+            const loopId = step.loopId as number;
+            const iteration = typeof step.iteration === 'number' ? step.iteration : 0;
+            for (let s = stack.length - 1; s >= 0; s--) {
+              if (stack[s].loopId === loopId) {
+                stack[s].totalIterations = Math.max(stack[s].totalIterations, iteration);
+                break;
+              }
+            }
+            continue;
+          }
+
+          if (type === 'loop_end' && typeof step.loopId === 'number') {
+            const loopId = step.loopId as number;
+            for (let s = stack.length - 1; s >= 0; s--) {
+              if (stack[s].loopId === loopId) {
+                stack.splice(s, 1);
+                break;
+              }
+            }
+            continue;
+          }
+        }
+
+        state.activeLoops = stack;
       }),
 
     enterLoop: (loopInfo) =>
@@ -92,16 +172,9 @@ export const useLoopStore = create<LoopState>()(
       if (!currentLoop || !currentLoop.endStepIndex) return;
 
       const executionStore = useExecutionStore.getState();
-      
-      // Calculate skip target (90% to end)
-      const currentStep = executionStore.currentStep;
-      const loopDuration = currentLoop.endStepIndex - currentLoop.startStepIndex;
-      const skipPercentage = 0.9; // Skip 90%
-      const skipSteps = Math.floor(loopDuration * skipPercentage);
-      const targetStep = Math.min(
-        currentStep + skipSteps,
-        currentLoop.endStepIndex
-      );
+
+      // Skip to the loop end deterministically (matches in-canvas skip behavior)
+      const targetStep = currentLoop.endStepIndex;
 
       set((state) => {
         state.isSkipping = true;

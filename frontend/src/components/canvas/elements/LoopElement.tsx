@@ -1,9 +1,10 @@
 // frontend/src/components/canvas/elements/LoopElement.tsx
 // COMPLETE - Loop visualization with toggle mode and skip functionality
 
-import React, { useRef, useEffect, useState, memo } from 'react';
+import React, { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { Group, Rect, Text, Line, Circle, Path } from 'react-konva';
 import Konva from 'konva';
+import { resizeContainer } from '../utils/resizeContainer';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -123,9 +124,13 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
   const progressRef = useRef<Konva.Rect>(null);
   const [isHovered, setIsHovered] = useState(false);
   const isInitialMount = useRef(true);
+  const tweenRef = useRef<Konva.Tween | null>(null);
 
-  const totalWidth = width || BOX_WIDTH;
-  const totalHeight = height || 200;
+  const baseWidth = width || BOX_WIDTH;
+  const baseHeight = height || 200;
+  const [autoSize, setAutoSize] = useState({ width: baseWidth, height: baseHeight });
+  const totalWidth = Math.max(baseWidth, autoSize.width);
+  const totalHeight = Math.max(baseHeight, autoSize.height);
 
   const colorScheme = isComplete 
     ? COLORS.complete 
@@ -152,17 +157,21 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
     const glow = glowRef.current;
 
     if (!group) return;
+    if (tweenRef.current) {
+      tweenRef.current.destroy();
+      tweenRef.current = null;
+    }
 
     if (isNew && isInitialMount.current) {
-      group.opacity(0);
-      group.scaleX(0.85);
-      group.scaleY(0.85);
+      group.opacity(0); // Make invisible initially
+      group.scaleX(0.01); // Start at tiny scale, not zero
+      group.scaleY(0.01);
       const origY = group.y();
       group.y(origY + 30);
 
       const playAnim = () => {
         if (!group.getLayer()) return;
-        new Konva.Tween({
+        const tween = new Konva.Tween({
           node: group,
           opacity: 1,
           scaleX: 1,
@@ -171,16 +180,29 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
           duration: 0.5,
           easing: Konva.Easings.BackEaseOut,
           onFinish: () => {
-            if (glow) glow.to({ opacity: 0.7, duration: 0.3 });
+            if (glow && glow.getLayer()) {
+              glow.to({ opacity: 0.7, duration: 0.3 });
+            }
+            // FORCE resize after animation
+            resizeContainer(group, { padding: 16, minWidth: baseWidth, minHeight: baseHeight });
+            group.getLayer()?.batchDraw();
           }
-        }).play();
+        });
+        tweenRef.current = tween;
+        tween.play();
       };
 
       if (enterDelay > 0) {
         const t = setTimeout(playAnim, enterDelay);
-        return () => clearTimeout(t);
+        return () => {
+          clearTimeout(t);
+          if (tweenRef.current) {
+            tweenRef.current.destroy();
+            tweenRef.current = null;
+          }
+        };
       } else {
-        playAnim();
+        requestAnimationFrame(playAnim);
       }
     } else if (isInitialMount.current) {
       group.opacity(1);
@@ -189,20 +211,86 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
       if (glow) glow.opacity(0.7);
       isInitialMount.current = false;
     }
-  }, [isNew, enterDelay]);
+
+    return () => {
+      if (tweenRef.current) {
+        tweenRef.current.destroy();
+        tweenRef.current = null;
+      }
+    };
+  }, [isNew, enterDelay, baseWidth, baseHeight]);
+
+  const measureContent = useCallback(() => {
+    const group = groupRef.current;
+    if (!group || !group.getLayer()) return;
+    if (group.scaleX() < 0.9 || group.scaleY() < 0.9 || group.opacity() < 1) return;
+
+    const content = group.findOne<Konva.Node>('.content-bounds');
+    if (!content) return;
+
+    const bounds = content.getClientRect({
+      relativeTo: group,
+      skipTransform: true,
+      skipShadow: true,
+    });
+    const padding = 16;
+    const bottomReserve = 60; // space for result badge / done badge / step number
+
+    const desiredWidth = Math.ceil(Math.max(0, bounds.x + bounds.width) + padding);
+    const desiredHeight = Math.ceil(
+      Math.max(0, bounds.y + bounds.height) + padding + bottomReserve,
+    );
+
+    setAutoSize((prev) => {
+      const nextWidth = Math.max(baseWidth, desiredWidth);
+      const nextHeight = Math.max(baseHeight, desiredHeight);
+      if (prev.width === nextWidth && prev.height === nextHeight) {
+        return prev;
+      }
+      return { width: nextWidth, height: nextHeight };
+    });
+  }, [baseWidth, baseHeight]);
+
+  useEffect(() => {
+    setAutoSize((prev) => {
+      if (prev.width === baseWidth && prev.height === baseHeight) {
+        return prev;
+      }
+      return { width: baseWidth, height: baseHeight };
+    });
+    const raf = requestAnimationFrame(measureContent);
+    return () => cancelAnimationFrame(raf);
+  }, [
+    baseWidth,
+    baseHeight,
+    measureContent,
+    children,
+    loopType,
+    initialization,
+    condition,
+    update,
+    conditionResult,
+    currentIteration,
+    totalIterations,
+    isActive,
+    isComplete,
+  ]);
 
   // ============================================
   // ACTIVE STATE ANIMATION
   // ============================================
   useEffect(() => {
-    if (isActive && glowRef.current) {
-      glowRef.current.to({
+    const glow = glowRef.current;
+    if (!glow || !glow.getLayer()) return;
+
+    if (isActive) {
+      glow.to({
         shadowBlur: 28,
         opacity: 0.85,
         duration: 0.25
       });
-    } else if (glowRef.current) {
-      glowRef.current.to({
+    } else {
+      glow.to({
         shadowBlur: 16,
         opacity: 0.7,
         duration: 0.25
@@ -214,9 +302,12 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
   // PROGRESS BAR ANIMATION
   // ============================================
   useEffect(() => {
-    if (progressRef.current && totalIterations && totalIterations > 0) {
+    const progress = progressRef.current;
+    if (!progress || !progress.getLayer()) return;
+
+    if (totalIterations && totalIterations > 0) {
       const targetWidth = (progressPercent / 100) * (totalWidth - PADDING * 2);
-      progressRef.current.to({
+      progress.to({
         width: targetWidth,
         duration: 0.4,
         easing: Konva.Easings.EaseInOut
@@ -243,15 +334,17 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
   return (
     <Group
       ref={groupRef}
-      id={`${id}-step-${stepNumber || 0}`}
+      id={id}
       x={x}
       y={y}
+      name="auto-resize"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Glow Effect */}
       <Rect
         ref={glowRef}
+        name="glow-bg"
         x={-5}
         y={-5}
         width={totalWidth + 10}
@@ -266,6 +359,7 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
 
       {/* Main Background */}
       <Rect
+        name="main-bg"
         width={totalWidth}
         height={totalHeight}
         fill="rgba(15, 23, 42, 0.96)"
@@ -277,6 +371,7 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
         shadowOffsetY={3}
       />
 
+      <Group name="content-bounds">
       {/* Header Background */}
       <Rect
         width={totalWidth}
@@ -483,6 +578,7 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
         {children}
       </Group>
 
+      </Group>
       {/* Condition Result Indicator */}
       {conditionResult !== undefined && (
         <Group x={PADDING} y={totalHeight - 28}>

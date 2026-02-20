@@ -1,8 +1,14 @@
 // backend/src/cpp/trace.h
 #pragma once
 
+#ifdef __cplusplus
 #include <cstdio>
 #include <cstdlib>
+#else
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#endif
 
 #ifdef _WIN32
 #ifdef __cplusplus

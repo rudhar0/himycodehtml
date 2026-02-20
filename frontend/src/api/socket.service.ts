@@ -183,8 +183,8 @@ class SocketService {
   /**
    * Generate execution trace
    */
-  generateTrace(code: string, language: string) {
-    this.emit(SOCKET_EVENTS.CODE_TRACE_GENERATE, { code, language });
+  generateTrace(code: string, language: string, inputs: Array<string | number> = []) {
+    this.emit(SOCKET_EVENTS.CODE_TRACE_GENERATE, { code, language, inputs });
   }
 
   /**

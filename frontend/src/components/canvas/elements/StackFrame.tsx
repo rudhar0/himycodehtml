@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Group, Rect, Text } from 'react-konva';
 import Konva from 'konva';
+import { resizeContainer } from '../utils/resizeContainer';
 
 interface StackFrameProps {
   id: string;
@@ -31,15 +32,21 @@ export const StackFrame: React.FC<StackFrameProps> = ({
   children
 }) => {
   const groupRef = useRef<Konva.Group>(null);
+  const tweenRef = useRef<Konva.Tween | null>(null);
 
   useEffect(() => {
     const node = groupRef.current;
     if (!node) return;
 
+    if (tweenRef.current) {
+      tweenRef.current.destroy();
+      tweenRef.current = null;
+    }
+
     if (isNew) {
       console.log(`[StackFrame] Animating new frame: ${functionName}`);
       node.opacity(0);
-      node.scaleY(0);
+      node.scaleY(0.01);
       
       const anim = new Konva.Tween({
         node,
@@ -47,19 +54,36 @@ export const StackFrame: React.FC<StackFrameProps> = ({
         scaleY: 1,
         duration: 0.4,
         easing: Konva.Easings.EaseOut,
+        onFinish: () => {
+          resizeContainer(node, { padding: 16, minWidth: width, minHeight: 80 });
+          node.getLayer()?.batchDraw();
+        },
       });
+      tweenRef.current = anim;
       anim.play();
     } else {
       // Ensure final state
       node.opacity(1);
       node.scaleY(1);
+      requestAnimationFrame(() => {
+        resizeContainer(node, { padding: 16, minWidth: width, minHeight: 80 });
+        node.getLayer()?.batchDraw();
+      });
     }
-  }, [isNew, functionName]);
+
+    return () => {
+      if (tweenRef.current) {
+        tweenRef.current.destroy();
+        tweenRef.current = null;
+      }
+    };
+  }, [isNew, functionName, width]);
 
   return (
-    <Group ref={groupRef} id={id} x={x} y={y}>
+    <Group ref={groupRef} id={id} x={x} y={y} name="auto-resize">
       {/* Frame Background */}
       <Rect
+        name="main-bg"
         width={width}
         height={Math.max(height, 80)} // Ensure minimum height and respect passed height
         fill={COLORS.bg}
@@ -72,27 +96,29 @@ export const StackFrame: React.FC<StackFrameProps> = ({
       />
 
       {/* Function Name Header */}
-      <Rect
-        width={width}
-        height={40}
-        fill={COLORS.border}
-        fillOpacity={0.2}
-        cornerRadius={[8, 8, 0, 0]}
-      />
-      
-      <Text
-        text={functionName}
-        x={20}
-        y={12}
-        fontSize={18}
-        fontStyle="bold"
-        fill={COLORS.text.primary}
-        fontFamily="monospace"
-      />
+      <Group name="content-bounds">
+        <Rect
+          width={width}
+          height={40}
+          fill={COLORS.border}
+          fillOpacity={0.2}
+          cornerRadius={[8, 8, 0, 0]}
+        />
+        
+        <Text
+          text={functionName}
+          x={20}
+          y={12}
+          fontSize={18}
+          fontStyle="bold"
+          fill={COLORS.text.primary}
+          fontFamily="monospace"
+        />
 
-      {/* Children Container */}
-      <Group x={0} y={40}>
-        {children}
+        {/* Children Container */}
+        <Group x={0} y={40}>
+          {children}
+        </Group>
       </Group>
     </Group>
   );

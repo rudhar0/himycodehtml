@@ -1,5 +1,7 @@
-import React, { memo } from 'react';
-import { Group, Rect, Text, Line } from 'react-konva';
+import React, { memo, useEffect, useRef } from 'react';
+import { Group, Rect, Text } from 'react-konva';
+import Konva from 'konva';
+import { resizeContainer } from '../utils/resizeContainer';
 
 interface SwitchElementProps {
   id: string;
@@ -21,10 +23,23 @@ export const SwitchElement: React.FC<SwitchElementProps> = memo(({
   expression,
   children
 }) => {
+  const groupRef = useRef<Konva.Group>(null);
+
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const raf = requestAnimationFrame(() => {
+      resizeContainer(group, { padding: 12, minWidth: width, minHeight: height });
+      group.getLayer()?.batchDraw();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [width, height, expression, children]);
+
   return (
-    <Group x={x} y={y}>
+    <Group ref={groupRef} x={x} y={y} id={id} name="auto-resize">
       {/* Container Background */}
       <Rect
+        name="main-bg"
         width={width}
         height={height}
         stroke="#8B5CF6"
@@ -34,28 +49,30 @@ export const SwitchElement: React.FC<SwitchElementProps> = memo(({
         fill="rgba(139, 92, 246, 0.05)"
       />
       
-      {/* Header */}
-      <Group>
-        <Rect
-          width={width}
-          height={30}
-          fill="rgba(139, 92, 246, 0.1)"
-          cornerRadius={[5, 5, 0, 0]}
-        />
-        <Text
-          text={`switch (${expression})`}
-          x={10}
-          y={8}
-          fontFamily="'SF Mono', monospace"
-          fontSize={12}
-          fill="#8B5CF6"
-          fontStyle="bold"
-        />
-      </Group>
+      <Group name="content-bounds">
+        {/* Header */}
+        <Group>
+          <Rect
+            width={width}
+            height={30}
+            fill="rgba(139, 92, 246, 0.1)"
+            cornerRadius={[5, 5, 0, 0]}
+          />
+          <Text
+            text={`switch (${expression})`}
+            x={10}
+            y={8}
+            fontFamily="'SF Mono', monospace"
+            fontSize={12}
+            fill="#8B5CF6"
+            fontStyle="bold"
+          />
+        </Group>
 
-      {/* Children (Cases) */}
-      <Group y={35}>
-        {children}
+        {/* Children (Cases) */}
+        <Group y={35}>
+          {children}
+        </Group>
       </Group>
     </Group>
   );

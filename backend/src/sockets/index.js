@@ -1,6 +1,7 @@
 import instrumentationTracer from '../services/instrumentation-tracer.service.js';
 import { SOCKET_EVENTS } from '../constants/events.js';
 import { sessionRegistry } from './session-registry.js';
+import inputRequirementsService from '../services/input-requirements.service.js';
 
 /**
  * Setup Socket.io event handlers with GCC Instrumentation Tracer
@@ -47,7 +48,7 @@ export function setupSocketHandlers(io) {
     socket.on(SOCKET_EVENTS.CODE_TRACE_GENERATE, async (data) => {
       try {
         sessionRegistry.touch(socket.id);
-        const { code, language = 'cpp' } = data;
+        const { code, language = 'cpp', inputs = [] } = data;
 
         if (!code || !code.trim()) {
           socket.emit(SOCKET_EVENTS.CODE_TRACE_ERROR, {
@@ -79,8 +80,21 @@ export function setupSocketHandlers(io) {
           message: 'Analyzing execution trace...'
         });
 
+        const inputAnalysis = inputRequirementsService.analyzeInputRequirements(code, language);
+        const normalizedInputs = inputRequirementsService.normalizeProvidedInputs(
+          inputs,
+          inputAnalysis.requirements
+        );
+        if (normalizedInputs.warnings.length > 0) {
+          console.warn(`[Input] ${normalizedInputs.warnings.join(' | ')}`);
+        }
+
         // Generate trace
-        const traceResult = await instrumentationTracer.generateTrace(code, language);
+        const traceResult = await instrumentationTracer.generateTrace(
+          code,
+          language,
+          normalizedInputs.values
+        );
 
         if (!traceResult || !traceResult.steps || traceResult.steps.length === 0) {
           throw new Error('No execution steps generated');

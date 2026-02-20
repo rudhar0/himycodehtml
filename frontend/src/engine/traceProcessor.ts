@@ -79,7 +79,10 @@ const STEP_TYPE_MAP: Record<string, string> = {
   pointer_deref: 'pointer_deref',
   heap_allocation: 'heap_allocation',
   output: 'output',
+  input: 'input_request',
   input_request: 'input_request',
+  input_call: 'input_call',
+  input_assign: 'input_assign',
 
   // Backend primitive types → var
   int: 'var',
@@ -102,8 +105,10 @@ const STEP_TYPE_MAP: Record<string, string> = {
   // Extended semantic types the plan requires
   arg_bind: 'arg_bind',
   expression_eval: 'expression_eval',
-  branch_taken: 'branch_taken',
+  condition_eval: 'condition',
+  branch_taken: 'branch',
   pointer_alias: 'pointer_alias',
+  pointer_deref_write: 'pointer_write',
 };
 
 // ---------------------------------------------------------------------------
@@ -145,6 +150,88 @@ function normalizeLocals(locals: any): Record<string, Variable> {
   return result;
 }
 
+function isRuntimeCleanupStep(raw: any): boolean {
+  const eventType = String(raw?.eventType || raw?.type || '')
+    .toLowerCase()
+    .trim();
+  const fn = String(raw?.function || raw?.func || '')
+    .toLowerCase()
+    .trim();
+  const file = String(raw?.file || '')
+    .toLowerCase()
+    .trim();
+
+  if (eventType === 'heap_free') return true;
+  if (fn.includes('operator delete')) return true;
+  if ((file === '??' || file === 'unknown') && fn.startsWith('std::')) return true;
+  if (file.includes('libc++') || file.includes('libstdc++')) return true;
+
+  return false;
+}
+
+const NON_VISUAL_EVENTS = new Set([
+  'program_start',
+  'program_end',
+  'func_exit',
+  'scope_exit',
+  'heap_free',
+  'cleanup',
+  'block_enter',
+  'block_exit',
+]);
+
+const ALWAYS_VISUAL_EVENTS = new Set([
+  'func_enter',
+  'return',
+  'output',
+  'input_request',
+  'input',
+  'input_call',
+  'input_assign',
+  'var',
+  'var_declare',
+  'var_assign',
+  'declare',
+  'assign',
+  'assignment',
+  'array_declaration',
+  'array_initialization',
+  'array_assignment',
+  'loop_start',
+  'loop_body_start',
+  'loop_iteration',
+  'loop_iteration_end',
+  'loop_end',
+  'loop_condition',
+  'loop_break',
+  'loop_continue',
+  'condition',
+  'branch',
+  'conditional_start',
+  'conditional_branch',
+  'condition_eval',
+  'branch_taken',
+  'pointer_alias',
+  'pointer_write',
+  'pointer_deref',
+  'pointer_deref_write',
+  'heap_alloc',
+  'heap_write',
+  'function_call',
+  'function_return',
+]);
+
+function hasVisualChange(prevState: MemoryState, nextState: MemoryState, step: any): boolean {
+  const eventType = String(step?.type || step?.eventType || '')
+    .toLowerCase()
+    .trim();
+
+  if (NON_VISUAL_EVENTS.has(eventType)) return false;
+  if (ALWAYS_VISUAL_EVENTS.has(eventType)) return true;
+
+  return JSON.stringify(prevState) !== JSON.stringify(nextState);
+}
+
 // ---------------------------------------------------------------------------
 // Array state tracker (used during processing)
 // ---------------------------------------------------------------------------
@@ -170,6 +257,43 @@ function calculateFlatIndex(indices: number[], dimensions: number[]): number {
     );
   }
   return indices[0];
+}
+
+// ---------------------------------------------------------------------------
+// Input step merger
+// ---------------------------------------------------------------------------
+
+/**
+ * Merges consecutive input_call + input_assign steps emitted by the backend
+ * into a single unified 'input' step for visualization.
+ * This must run ONLY in the frontend — do NOT move to backend.
+ */
+function mergeInputSteps(steps: any[]): any[] {
+  const merged: any[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const nextStep = steps[i + 1];
+
+    if (step.type === 'input_call' && nextStep?.type === 'input_assign') {
+      merged.push({
+        ...step,
+        type: 'input',
+        assignments: nextStep.assignments,
+        returnValue: nextStep.returnValue,
+        returnValueVar: nextStep.returnValueVar,
+        returnNote: nextStep.returnValueVar
+          ? `returned ${nextStep.returnValue} → stored in ${nextStep.returnValueVar}`
+          : undefined,
+        // carry over id from the call step; re-assign after merge
+        id: step.id,
+      });
+      i++; // skip input_assign
+      continue;
+    }
+
+    merged.push(step);
+  }
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,9 +355,25 @@ export function processRawTrace(
   const arrayRegistry = new Map<string, ArrayState>();
   const variableBirthStepMap = new Map<string, number>();
   const processedSteps: ExecutionStep[] = [];
+  let inferredScopeDepth = 0;
 
   for (let index = 0; index < limit; index++) {
     const raw = expandedSteps[index];
+    const rawEventType = String(raw?.eventType || raw?.type || "")
+      .toLowerCase()
+      .trim();
+
+    if (rawEventType === 'block_enter') {
+      inferredScopeDepth += 1;
+      continue;
+    }
+    if (rawEventType === 'block_exit') {
+      inferredScopeDepth = Math.max(0, inferredScopeDepth - 1);
+      continue;
+    }
+
+    if (isRuntimeCleanupStep(raw)) continue;
+    const logicalIndex = processedSteps.length;
 
     // Clone — structuredClone replaces JSON round-trip
     const step: any = structuredClone(raw);
@@ -243,6 +383,9 @@ export function processRawTrace(
     if (step.eventType && !step.type) step.type = step.eventType;
     if (step.eventType) step.originalEventType = step.eventType;
     if (step.stdout && step.type === 'output') step.value = step.stdout;
+    if (step.scopeDepth === undefined || step.scopeDepth === null) {
+      step.scopeDepth = inferredScopeDepth;
+    }
 
     const originalType = step.type;
     step.type = normalizeStepType(step.type) as StepType;
@@ -279,7 +422,7 @@ export function processRawTrace(
           dimensions: dims,
           values: new Array(totalSize).fill(0),
           address: addr,
-          birthStep: index,
+          birthStep: logicalIndex,
           owner: functionName || 'main',
         });
         step.arrayData = arrayRegistry.get(name);
@@ -331,9 +474,9 @@ export function processRawTrace(
               scope: 'local',
               isInitialized: true,
               isAlive: true,
-              birthStep: index,
+              birthStep: logicalIndex,
             } as Variable;
-            variableBirthStepMap.set(varName, index);
+            variableBirthStepMap.set(varName, logicalIndex);
           } else {
             existing.value = step.value;
           }
@@ -350,9 +493,9 @@ export function processRawTrace(
               scope: 'global',
               isInitialized: true,
               isAlive: true,
-              birthStep: index,
+              birthStep: logicalIndex,
             } as Variable;
-            variableBirthStepMap.set(varName, index);
+            variableBirthStepMap.set(varName, logicalIndex);
           } else {
             existing.value = step.value;
           }
@@ -365,6 +508,26 @@ export function processRawTrace(
           (nextMemoryState.stdout || '') + (step.value ?? '');
         break;
 
+      case 'condition': {
+        step.condition = step.condition || step.expression || '';
+        const rawResult = step.result ?? step.value ?? null;
+        step.result = rawResult;
+        if (rawResult !== null && rawResult !== undefined) {
+          step.conditionResult = Boolean(rawResult);
+        }
+        break;
+      }
+
+      case 'branch': {
+        step.branch = step.branch || step.branchType || 'if';
+        break;
+      }
+
+      case 'pointer_write': {
+        step.target = step.target || step.name || step.symbol || '';
+        break;
+      }
+
       // declare / assign — handled by LayoutEngine, just pass through
       default:
         break;
@@ -375,10 +538,22 @@ export function processRawTrace(
 
     // Build final step
     step.state = nextMemoryState;
-    step.id = index;
     if (!step.explanation) {
       step.explanation = `Executing ${step.type} at line ${step.line}`;
     }
+
+    const stepEventType = String(step.type || step.eventType || '')
+      .toLowerCase()
+      .trim();
+    const isReturnEvent = stepEventType === 'return' || stepEventType === 'function_return';
+
+    if (!hasVisualChange(currentMemoryState, nextMemoryState, step) && !isReturnEvent) {
+      currentMemoryState = nextMemoryState;
+      continue;
+    }
+
+    step.id = processedSteps.length;
+    step.hasVisualChange = true;
 
     processedSteps.push(step as ExecutionStep);
     currentMemoryState = nextMemoryState;
@@ -389,9 +564,16 @@ export function processRawTrace(
     throw new Error('No valid steps after processing.');
   }
 
+  // Merge consecutive input_call + input_assign into a single 'input' step
+  const mergedSteps = mergeInputSteps(validSteps);
+  // Remove any empty/noop steps that should not appear as visual timeline entries
+  const finalSteps = mergedSteps.filter(
+    (s) => s && s.type !== 'noop' && s.type !== 'empty'
+  );
+
   const trace: ExecutionTrace = {
-    steps: validSteps,
-    totalSteps: validSteps.length,
+    steps: finalSteps,
+    totalSteps: finalSteps.length,
     globals: rawChunks[0]?.globals || [],
     functions: rawChunks[0]?.functions || [],
     metadata: {

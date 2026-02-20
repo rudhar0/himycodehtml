@@ -134,6 +134,7 @@ class ToolchainService {
 
   getIncludeFlags(language = 'cpp') {
     const flags = [];
+    const isCpp = language === 'cpp' || language === 'c++';
 
     // Bundled header paths
     const absLibCxx = path.resolve(path.join(this.headersPath, 'c++', 'v1'));
@@ -149,17 +150,19 @@ class ToolchainService {
 
     // Hard isolate: never use host headers
     flags.push('-nostdinc');
-    if (language === 'cpp' || language === 'c++') flags.push('-nostdinc++');
+    if (isCpp) flags.push('-nostdinc++');
 
     // Validate internal headers path gracefully
     if (!this.internalHeadersPath || !fssync.existsSync(this.internalHeadersPath)) {
       console.warn('[ToolchainService] internal headers not found; continuing with best-effort includes');
     }
 
-    // 1) libc++ C++ headers first (includes #include_next)
-    flags.push('-isystem', absLibCxx);
+    // 1) libc++ C++ headers only for C++ compilation
+    if (isCpp) {
+      flags.push('-isystem', absLibCxx);
+    }
 
-    // 2) libc++ C wrappers + platform C headers
+    // 2) platform C headers
     flags.push('-isystem', absCHeaders);
 
     // 4) Clang builtin headers (__stddef_size_t.h, __limits.h, etc.)

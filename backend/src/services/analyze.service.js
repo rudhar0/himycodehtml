@@ -1,4 +1,6 @@
 
+import inputRequirementsService from './input-requirements.service.js';
+
 class AnalyzeService {
   async analyze({ code, language = 'c' }) {
     throw new Error('The analyze function is deprecated. Please use the debugger service.');
@@ -9,7 +11,7 @@ class AnalyzeService {
   }
 
   async getInputRequirements({ code, language = 'c' }) {
-    return { requirements: [], needsInput: false };
+    return inputRequirementsService.analyzeInputRequirements(code, language);
   }
 }
 

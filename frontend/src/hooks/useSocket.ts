@@ -142,13 +142,13 @@ export function useSocket() {
     };
   }, [setTrace, setAnalyzing, setAnalysisProgress, setGCCStatus]);
 
-  const generateTrace = useCallback((code: string, language: string) => {
+  const generateTrace = useCallback((code: string, language: string, inputs: Array<string | number> = []) => {
     if (!isConnected) {
       toast.error('Not connected to server');
       return;
     }
     setAnalyzing(true);
-    socketService.generateTrace(code, language);
+    socketService.generateTrace(code, language, inputs);
   }, [isConnected, setAnalyzing]);
 
   const requestGCCStatus = useCallback(() => {
@@ -161,7 +161,7 @@ export function useSocket() {
       toast.error('Not connected to server');
       return;
     }
-    socketService.emit('send_input', { input });
+    socketService.provideInput(input);
   }, [isConnected]);
 
   return {

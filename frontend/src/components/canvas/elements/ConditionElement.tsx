@@ -1,9 +1,10 @@
 // frontend/src/components/canvas/elements/ConditionElement.tsx
 // COMPLETE - Conditional visualization for if/else/switch statements
 
-import React, { useRef, useEffect, useState, memo } from 'react';
+import React, { useRef, useEffect, useMemo, useState, memo, useCallback } from 'react';
 import { Group, Rect, Text, Line, Circle, Path } from 'react-konva';
 import Konva from 'konva';
+import { resizeContainer } from '../utils/resizeContainer';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -30,6 +31,11 @@ export interface ConditionElementProps {
   isNew?: boolean;
   stepNumber?: number;
   enterDelay?: number;
+  headerOnly?: boolean;
+
+  // Caller / trigger (used by arrow rendering / alignment)
+  triggerElementId?: string;
+  triggerStepId?: number;
   
   // Children
   children?: React.ReactNode;
@@ -46,48 +52,53 @@ export interface ConditionElementProps {
 const BOX_WIDTH = 400;
 const HEADER_HEIGHT = 75;
 const MIN_BODY_HEIGHT = 100;
+const FOOTER_HEIGHT = 52;
 const PADDING = 16;
 const CORNER_RADIUS = 10;
 
+// Layout tuning for nested conditions
+export const HORIZONTAL_GAP = 160;
+export const SAFE_MARGIN = 24;
+
 const COLORS = {
   if: {
-    primary: '#3B82F6',
-    light: '#60A5FA',
-    bg: 'rgba(59, 130, 246, 0.12)',
-    glow: 'rgba(59, 130, 246, 0.6)',
-    accent: '#93C5FD'
+    primary: '#FF7A18',
+    light: '#FFB347',
+    bg: 'rgba(255, 140, 0, 0.10)',
+    glow: 'rgba(255,140,0,0.6)',
+    accent: '#FFD08A',
   },
   'if-else': {
-    primary: '#8B5CF6',
-    light: '#A78BFA',
-    bg: 'rgba(139, 92, 246, 0.12)',
-    glow: 'rgba(139, 92, 246, 0.6)',
-    accent: '#C084FC'
+    primary: '#FF7A18',
+    light: '#FFB347',
+    bg: 'rgba(255, 140, 0, 0.10)',
+    glow: 'rgba(255,140,0,0.6)',
+    accent: '#FFD08A',
   },
   'if-else-if': {
-    primary: '#A855F7',
-    light: '#C084FC',
-    bg: 'rgba(168, 85, 247, 0.12)',
-    glow: 'rgba(168, 85, 247, 0.6)',
-    accent: '#D8B4FE'
+    primary: '#FF7A18',
+    light: '#FFB347',
+    bg: 'rgba(255, 140, 0, 0.10)',
+    glow: 'rgba(255,140,0,0.6)',
+    accent: '#FFD08A',
   },
   switch: {
-    primary: '#EC4899',
-    light: '#F472B6',
-    bg: 'rgba(236, 72, 153, 0.12)',
-    glow: 'rgba(236, 72, 153, 0.6)',
-    accent: '#F9A8D4'
+    primary: '#FF7A18',
+    light: '#FFB347',
+    bg: 'rgba(255, 140, 0, 0.10)',
+    glow: 'rgba(255,140,0,0.6)',
+    accent: '#FFD08A',
   },
   true: {
-    primary: '#10B981',
-    light: '#34D399',
-    glow: 'rgba(16, 185, 129, 0.7)'
+    primary: '#FFD166',
+    light: '#FFE3A3',
+    glow: 'rgba(255, 209, 102, 0.7)',
   },
   false: {
-    primary: '#EF4444',
-    light: '#F87171',
-    glow: 'rgba(239, 68, 68, 0.6)'
-  }
+    primary: '#FF6B6B',
+    light: '#FF9A9A',
+    glow: 'rgba(255, 107, 107, 0.6)',
+  },
 };
 
 // ============================================
@@ -112,14 +123,34 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
   children,
   switchExpression,
   totalCases,
+  triggerElementId,
+  triggerStepId,
+  headerOnly = false,
 }) => {
   const groupRef = useRef<Konva.Group>(null);
   const glowRef = useRef<Konva.Rect>(null);
   const [isHovered, setIsHovered] = useState(false);
   const isInitialMount = useRef(true);
+  const tweenRef = useRef<Konva.Tween | null>(null);
 
-  const totalWidth = width || BOX_WIDTH;
-  const totalHeight = height || 200;
+  const hasBodyContent = useMemo(() => React.Children.count(children) > 0, [children]);
+  // Header must always render; body only when executed and not header-only.
+  // Body renders only when an actual branch was taken for this condition
+  // (branchTaken is provided by the trace and indicates the executed branch).
+  const executedBranch = Boolean(branchTaken);
+  const shouldRenderBody = executedBranch && hasBodyContent && !headerOnly;
+
+  const baseWidth = width || BOX_WIDTH;
+  // Prevent false/skipped branches from reserving body space (compact header-only).
+  const headerOnlyHeight = HEADER_HEIGHT + FOOTER_HEIGHT;
+  const defaultBodyHeight = HEADER_HEIGHT + 10 + MIN_BODY_HEIGHT + FOOTER_HEIGHT;
+  const baseHeight = shouldRenderBody
+    ? Math.max(height || 0, defaultBodyHeight)
+    : headerOnlyHeight;
+
+  const [autoSize, setAutoSize] = useState({ width: baseWidth, height: baseHeight });
+  const totalWidth = Math.max(baseWidth, autoSize.width);
+  const totalHeight = Math.max(baseHeight, autoSize.height);
 
   const colorScheme = COLORS[conditionType];
   const resultColor = conditionResult !== undefined 
@@ -138,6 +169,10 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
     const glow = glowRef.current;
 
     if (!group) return;
+    if (tweenRef.current) {
+      tweenRef.current.destroy();
+      tweenRef.current = null;
+    }
 
     if (isNew && isInitialMount.current) {
       group.opacity(0);
@@ -148,7 +183,7 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
 
       const playAnim = () => {
         if (!group.getLayer()) return;
-        new Konva.Tween({
+        const tween = new Konva.Tween({
           node: group,
           opacity: 1,
           scaleX: 1,
@@ -158,13 +193,23 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
           easing: Konva.Easings.BackEaseOut,
           onFinish: () => {
             if (glow) glow.to({ opacity: 0.7, duration: 0.3 });
+            resizeContainer(group, { padding: 16, minWidth: baseWidth, minHeight: baseHeight });
+            group.getLayer()?.batchDraw();
           }
-        }).play();
+        });
+        tweenRef.current = tween;
+        tween.play();
       };
 
       if (enterDelay > 0) {
         const t = setTimeout(playAnim, enterDelay);
-        return () => clearTimeout(t);
+        return () => {
+          clearTimeout(t);
+          if (tweenRef.current) {
+            tweenRef.current.destroy();
+            tweenRef.current = null;
+          }
+        };
       } else {
         playAnim();
       }
@@ -175,7 +220,70 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
       if (glow) glow.opacity(0.7);
       isInitialMount.current = false;
     }
-  }, [isNew, enterDelay]);
+
+    return () => {
+      if (tweenRef.current) {
+        tweenRef.current.destroy();
+        tweenRef.current = null;
+      }
+    };
+  }, [isNew, enterDelay, baseWidth, baseHeight]);
+
+  const measureContent = useCallback(() => {
+    const group = groupRef.current;
+    if (!group || !group.getLayer()) return;
+    if (!shouldRenderBody) return;
+    if (group.scaleX() < 0.9 || group.scaleY() < 0.9 || group.opacity() < 1) return;
+
+    const content = group.findOne<Konva.Node>('.content-bounds');
+    if (!content) return;
+
+    const bounds = content.getClientRect({
+      relativeTo: group,
+      skipTransform: true,
+      skipShadow: true,
+    });
+    const padding = 16;
+    const bottomReserve = FOOTER_HEIGHT; // space for result/branch/step indicators
+
+    const desiredWidth = Math.ceil(Math.max(0, bounds.x + bounds.width) + padding);
+    const desiredHeight = Math.ceil(
+      Math.max(0, bounds.y + bounds.height) + padding + bottomReserve,
+    );
+
+    setAutoSize((prev) => {
+      const nextWidth = Math.max(baseWidth, desiredWidth);
+      const nextHeight = Math.max(baseHeight, desiredHeight);
+      if (prev.width === nextWidth && prev.height === nextHeight) {
+        return prev;
+      }
+      return { width: nextWidth, height: nextHeight };
+    });
+  }, [baseWidth, baseHeight, shouldRenderBody]);
+
+  useEffect(() => {
+    setAutoSize((prev) => {
+      if (prev.width === baseWidth && prev.height === baseHeight) {
+        return prev;
+      }
+      return { width: baseWidth, height: baseHeight };
+    });
+    const raf = requestAnimationFrame(measureContent);
+    return () => cancelAnimationFrame(raf);
+  }, [
+    baseWidth,
+    baseHeight,
+    measureContent,
+    children,
+    conditionType,
+    condition,
+    conditionResult,
+    branchTaken,
+    caseValue,
+    switchExpression,
+    totalCases,
+    isActive,
+  ]);
 
   // ============================================
   // ACTIVE STATE ANIMATION
@@ -195,6 +303,21 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
       });
     }
   }, [isActive]);
+
+  // Attach trigger metadata to the group so arrow/flow layout logic
+  // (implemented elsewhere) can read the origin/step for accurate arrows.
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    try {
+      if ((group as any).setAttr) {
+        (group as any).setAttr('triggerElementId', ("" + (triggerElementId || '')) || undefined);
+        (group as any).setAttr('triggerStepId', triggerStepId);
+      }
+    } catch (e) {
+      // no-op
+    }
+  }, [triggerElementId, triggerStepId]);
 
   // ============================================
   // CONDITION TYPE ICON
@@ -234,15 +357,17 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
   return (
     <Group
       ref={groupRef}
-      id={`${id}-step-${stepNumber || 0}`}
+      id={id}
       x={x}
       y={y}
+      name="auto-resize"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Glow Effect */}
       <Rect
         ref={glowRef}
+        name="glow-bg"
         x={-5}
         y={-5}
         width={totalWidth + 10}
@@ -257,6 +382,7 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
 
       {/* Main Background */}
       <Rect
+        name="main-bg"
         width={totalWidth}
         height={totalHeight}
         fill="rgba(15, 23, 42, 0.96)"
@@ -268,12 +394,16 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
         shadowOffsetY={3}
       />
 
+      <Group name="content-bounds">
       {/* Header Background */}
       <Rect
         width={totalWidth}
         height={HEADER_HEIGHT}
-        fill={colorScheme.bg}
+        fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+        fillLinearGradientEndPoint={{ x: totalWidth, y: HEADER_HEIGHT }}
+        fillLinearGradientColorStops={[0, '#FF7A18', 1, '#FFB347']}
         cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+        opacity={0.9}
       />
 
       {/* Accent Line */}
@@ -289,9 +419,10 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
         <Rect
           width={140}
           height={24}
-          fill={colorScheme.primary}
+          fill="rgba(15,23,42,0.34)"
+          stroke="rgba(255,220,170,0.7)"
+          strokeWidth={1}
           cornerRadius={12}
-          opacity={0.35}
         />
         <Text
           text={`${getConditionIcon()} ${conditionType.toUpperCase()}`}
@@ -299,7 +430,7 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
           y={5}
           fontSize={12}
           fontStyle="bold"
-          fill={colorScheme.light}
+          fill="#FFF0D9"
           fontFamily="'SF Pro Display', system-ui"
         />
       </Group>
@@ -354,20 +485,19 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
       )}
 
       {/* Body Section */}
-      <Group y={HEADER_HEIGHT + 10}>
-        {children}
-      </Group>
+      {shouldRenderBody ? (
+        <Group y={HEADER_HEIGHT + 10}>{children}</Group>
+      ) : null}
 
+      </Group>
       {/* Condition Result */}
       {conditionResult !== undefined && (
         <Group x={PADDING} y={totalHeight - 32}>
           <Rect
             width={conditionResult ? 100 : 110}
             height={22}
-            fill={conditionResult 
-              ? 'rgba(16, 185, 129, 0.2)' 
-              : 'rgba(239, 68, 68, 0.2)'}
-            stroke={conditionResult ? '#10B981' : '#EF4444'}
+            fill={conditionResult ? 'rgba(255, 209, 102, 0.18)' : 'rgba(255, 107, 107, 0.18)'}
+            stroke={conditionResult ? COLORS.true.primary : COLORS.false.primary}
             strokeWidth={1.5}
             cornerRadius={11}
           />
@@ -377,7 +507,7 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
             y={5}
             fontSize={10}
             fontStyle="bold"
-            fill={conditionResult ? '#34D399' : '#FCA5A5'}
+            fill={conditionResult ? COLORS.true.primary : COLORS.false.primary}
             align="center"
             fontFamily="'SF Pro Display', system-ui"
           />

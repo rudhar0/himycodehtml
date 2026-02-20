@@ -62,7 +62,7 @@ export default function KonvaWrapper() {
           <SkipForward size={20} />
         </button>
         <span className="text-xs text-slate-500 font-mono">
-          Step: {currentStep + 1} / {executionTrace.totalSteps}
+          Step: {currentStep} / {Math.max(executionTrace.totalSteps - 1, 0)}
         </span>
         <select 
           className="ml-auto bg-slate-800 text-xs text-slate-300 rounded p-1 border border-slate-700"

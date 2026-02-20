@@ -182,8 +182,15 @@ async function startServer() {
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully...');
 
+  // Forced exit fallback
+  setTimeout(() => {
+    logger.warn('Graceful shutdown timed out, forcing exit.');
+    process.exit(1);
+  }, 2000).unref();
+
   try {
     await workerPool.shutdown();
+    instrumentationTracer.stop();
     // destroy any active sessions
     for (const s of sessionManager.listActive()) {
       await sessionManager.destroySession(s.id);
@@ -203,8 +210,15 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully...');
 
+  // Forced exit fallback
+  setTimeout(() => {
+    logger.warn('Graceful shutdown timed out, forcing exit.');
+    process.exit(1);
+  }, 2000).unref();
+
   try {
     await workerPool.shutdown();
+    instrumentationTracer.stop();
     for (const s of sessionManager.listActive()) {
       await sessionManager.destroySession(s.id);
     }
@@ -224,8 +238,15 @@ process.on('SIGINT', async () => {
 process.on('SIGUSR2', async () => {
   logger.info('SIGUSR2 received, shutting down gracefully...');
 
+  // Forced exit fallback
+  setTimeout(() => {
+    logger.warn('Graceful shutdown timed out, forcing exit.');
+    process.exit(1);
+  }, 2000).unref();
+
   try {
     await workerPool.shutdown();
+    instrumentationTracer.stop();
     for (const s of sessionManager.listActive()) {
       await sessionManager.destroySession(s.id);
     }
