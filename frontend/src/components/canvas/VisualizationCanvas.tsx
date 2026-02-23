@@ -1280,10 +1280,6 @@ export default function VisualizationCanvas() {
             return null;
           }
 
-          if (role === "body") {
-            return null;
-          }
-
           const callerBody = filterChildren(children).find(
             (child) => child.data?.controlRole === "body",
           );

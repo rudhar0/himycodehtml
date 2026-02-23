@@ -281,6 +281,21 @@ class InputRequirementsService {
     const requirements = [];
     let sequence = 0;
 
+    // First pass: extract variable types from declarations
+    const variableTypes = new Map();
+    // Match common C/C++ types: int, float, double, char, string, bool, etc.
+    const declRe = /\b(int|float|double|char|string|bool|long|short)\s+([A-Za-z_][\w,\s*]*);/g;
+    let declMatch;
+    while ((declMatch = declRe.exec(sanitized)) !== null) {
+      const baseType = declMatch[1];
+      const varsPart = declMatch[2];
+      // handle multiple variables declared in one line, e.g. int a, b, c;
+      const vars = varsPart.split(',').map(v => v.trim().replace(/[*&]/g, '').split('=')[0].trim().split('[')[0].trim());
+      for (const v of vars) {
+        if (v) variableTypes.set(v, baseType);
+      }
+    }
+
     const shouldSkipLine = (offset) => {
       const line = offsetToLine(offset, lineStarts);
       const lineStart = lineStarts[line - 1] || 0;
@@ -312,14 +327,16 @@ class InputRequirementsService {
       specs.forEach((spec, idx) => {
         const arg = args[idx] || '';
         const variable = normalizeVariableToken(arg, `input_${line}_${idx + 1}`);
+        const declType = variableTypes.get(variable);
+        const resolvedType = declType || spec.type || 'int';
         pushReq({
           callType: 'scanf',
           line,
           variable,
-          type: spec.type,
+          type: resolvedType,
           format,
           specifier: spec.specifier,
-          prompt: `Enter value for ${variable} (${spec.type})`
+          prompt: `Enter value for ${variable} (${resolvedType})`
         });
       });
     }
@@ -335,12 +352,13 @@ class InputRequirementsService {
         .map(v => normalizeVariableToken(v, ''))
         .filter(Boolean);
       vars.forEach((variable, idx) => {
+        const resolvedType = variableTypes.get(variable) || 'int';
         pushReq({
           callType: 'cin',
           line,
           variable,
-          type: 'int',
-          prompt: `Enter value for ${variable} (int)`
+          type: resolvedType,
+          prompt: `Enter value for ${variable} (${resolvedType})`
         });
       });
     }
@@ -381,12 +399,29 @@ class InputRequirementsService {
       if (shouldSkipLine(match.index)) continue;
       const line = offsetToLine(match.index, lineStarts);
       const variable = match[1] || `string_input_${line}`;
+      const resolvedType = variableTypes.get(variable) || 'string';
       pushReq({
         callType: 'gets',
         line,
         variable,
-        type: 'string',
-        prompt: `Enter value for ${variable} (string)`
+        type: resolvedType,
+        prompt: `Enter value for ${variable} (${resolvedType})`
+      });
+    }
+
+    // getline (C++) -> getline(cin, str)
+    const getlineRe = /\bgetline\s*\(\s*(?:std::)?cin\s*,\s*([A-Za-z_]\w*)\s*\)/g;
+    while ((match = getlineRe.exec(sanitized)) !== null) {
+      if (shouldSkipLine(match.index)) continue;
+      const line = offsetToLine(match.index, lineStarts);
+      const variable = match[1] || `string_input_${line}`;
+      const resolvedType = variableTypes.get(variable) || 'string';
+      pushReq({
+        callType: 'getline',
+        line,
+        variable,
+        type: resolvedType,
+        prompt: `Enter value for ${variable} (${resolvedType})`
       });
     }
 

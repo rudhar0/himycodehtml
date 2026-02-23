@@ -27,20 +27,20 @@ class StepFilterService {
    */
   filterAndProcessSteps(rawSteps, sourceFile, programOutput) {
     console.log(`📊 Filtering ${rawSteps.length} raw steps...`);
-    
+
     this.reset();
     this.userSourceFile = sourceFile;
     this.outputBuffer = programOutput || '';
-    
+
     const filteredSteps = [];
     let stepIndex = 0;
 
     for (let i = 0; i < rawSteps.length; i++) {
       const step = rawSteps[i];
-      
+
       // Process step and determine if we should keep it
       const processedStep = this.processStep(step, i, rawSteps);
-      
+
       if (processedStep) {
         processedStep.id = stepIndex++;
         filteredSteps.push(processedStep);
@@ -70,7 +70,7 @@ class StepFilterService {
       this.mainStarted = true;
       this.globalInitPhase = false;
       console.log(`✅ Main entry at step ${index}`);
-      
+
       return {
         ...processed,
         type: 'program_start',
@@ -90,7 +90,7 @@ class StepFilterService {
         this.seenVariables.add(processed.name);
         return processed;
       }
-      
+
       // Filter everything else before main
       console.log(`🔇 Filtered pre-main: ${processed.function || processed.type}`);
       return null;
@@ -134,7 +134,7 @@ class StepFilterService {
       if (this.isInternalFunction(processed.function)) {
         return null;
       }
-      
+
       processed.explanation = `Entering function ${processed.function}()`;
       processed.scope = 'local';
       return processed;
@@ -144,7 +144,7 @@ class StepFilterService {
       if (this.isInternalFunction(processed.function)) {
         return null;
       }
-      
+
       processed.explanation = `Exiting function ${processed.function}()`;
       return processed;
     }
@@ -213,7 +213,7 @@ class StepFilterService {
 
     const varName = step.name;
     const isFirstOccurrence = !this.seenVariables.has(varName);
-    
+
     // Determine correct scope
     let scope = 'local';
     if (this.globalInitPhase || step.scope === 'global') {
@@ -290,7 +290,7 @@ class StepFilterService {
    */
   cleanOutputText(text) {
     if (!text) return '';
-    
+
     let cleaned = String(text);
 
     // Remove common metadata patterns
@@ -327,10 +327,10 @@ class StepFilterService {
    */
   isUserSourceFile(file) {
     if (!file || !this.userSourceFile) return false;
-    
+
     const userBase = this.getBasename(this.userSourceFile);
     const stepBase = this.getBasename(file);
-    
+
     return userBase === stepBase;
   }
 
@@ -339,13 +339,13 @@ class StepFilterService {
    */
   isSystemCode(step) {
     if (!step.file) return false;
-    
+
     const file = step.file.toLowerCase();
     const func = (step.function || '').toLowerCase();
 
     // System paths
     const systemPaths = [
-      '/usr/', '/lib/', 'libc', 'libstdc++', 
+      '/usr/', '/lib/', 'libc', 'libstdc++',
       'mingw', 'include/c++', 'include/bits',
       'stl_', 'iostream', 'ostream', 'streambuf'
     ];
@@ -372,7 +372,7 @@ class StepFilterService {
    */
   isInternalFunction(funcName) {
     if (!funcName) return false;
-    
+
     const internal = [
       '__', '_M_', 'std::__', 'std::basic_',
       'operator<<', 'operator>>', '__ostream_insert',
@@ -386,8 +386,8 @@ class StepFilterService {
    * Check if step is main() entry
    */
   isMainEntry(step) {
-    return step.function === 'main' && 
-           (step.type === 'func_enter' || step.type === 'program_start');
+    return step.function === 'main' &&
+      (step.type === 'func_enter' || step.type === 'program_start');
   }
 
   /**
@@ -411,10 +411,10 @@ class StepFilterService {
    */
   isOutputEvent(step) {
     if (step.type === 'output') return true;
-    
+
     const func = step.function || '';
     const outputFuncs = ['printf', 'puts', 'cout', 'cerr', 'operator<<'];
-    
+
     return outputFuncs.some(f => func.includes(f));
   }
 
@@ -423,15 +423,15 @@ class StepFilterService {
    */
   inferType(value) {
     if (value === null || value === undefined) return 'unknown';
-    
+
     const type = typeof value;
-    
+
     if (type === 'number') {
       return Number.isInteger(value) ? 'int' : 'double';
     }
     if (type === 'string') return 'string';
     if (type === 'boolean') return 'bool';
-    
+
     return 'unknown';
   }
 
@@ -475,14 +475,14 @@ class InstrumentationTracerIntegration {
     // ===================================================================
     const stepFilter = new StepFilterService();
     const filteredSteps = stepFilter.filterAndProcessSteps(
-      rawSteps, 
+      rawSteps,
       sourceFile,
       programOutput.stdout
     );
 
     console.log(`✅ Generated ${filteredSteps.length} clean execution steps`);
     console.log(`🔍 Filtered out ${rawSteps.length - filteredSteps.length} internal steps`);
-    
+
     return filteredSteps;
   }
 }
@@ -498,11 +498,11 @@ class InstrumentationTracerIntegration {
 function processFrontendStep(step) {
   // Clone step immutably
   const processed = JSON.parse(JSON.stringify(step));
-  
+
   // ===================================================================
   // FIX: Accept BOTH simple and compound assignments
   // ===================================================================
-  
+
   // Map backend types to frontend types
   if (processed.originalEventType === 'var' || processed.type === 'var') {
     // Determine if declaration or assignment based on isDeclaration flag
@@ -532,10 +532,10 @@ function processFrontendStep(step) {
 // Backend: In your trace generation
 async function generateTrace(code, language) {
   // ... compile and execute code ...
-  
+
   const rawEvents = await parseTraceFile(traceOutput);
   const { stdout, stderr } = programOutput;
-  
+
   // Apply filtering
   const stepFilter = new StepFilterService();
   const steps = stepFilter.filterAndProcessSteps(
@@ -543,7 +543,7 @@ async function generateTrace(code, language) {
     sourceFile,
     stdout
   );
-  
+
   return {
     steps,
     totalSteps: steps.length,
@@ -558,14 +558,14 @@ async function generateTrace(code, language) {
 // Frontend: In your useSocket hook
 function handleTraceChunk(chunk) {
   const processedSteps = chunk.steps.map(step => processFrontendStep(step));
-  
+
   // Now all steps are properly categorized:
   // - variable_declaration: int x = 5; (first occurrence)
   // - assignment: x = 10; (subsequent)
   // - assignment: x = y + 3; (compound)
   // - output: clean text only
   // - Correct scope: global vs local
-  
+
   setTrace({ steps: processedSteps });
 }
 

@@ -181,7 +181,12 @@ export function isInputStep(step: any): boolean {
   const exp = step.explanation?.toLowerCase() || '';
   return exp.includes('cin') || 
          exp.includes('scanf') || 
-         exp.includes('waiting for input');
+         exp.includes('fgets') ||
+         exp.includes('getline') ||
+         exp.includes('getchar') ||
+         exp.includes('gets') ||
+         exp.includes('waiting for input') ||
+         exp.includes('input received');
 }
 
 /**

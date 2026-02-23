@@ -5,7 +5,7 @@ export interface InputRequirement {
   line: number;
   variable: string;
   type: InputValueType;
-  callType: 'scanf' | 'cin' | 'getchar' | 'fgets' | 'gets';
+  callType: 'scanf' | 'cin' | 'getchar' | 'fgets' | 'gets' | 'getline';
   format?: string;
   specifier?: string;
   prompt: string;
@@ -139,6 +139,28 @@ export function detectInputRequirements(code: string): InputRequirement[] {
   let inBlockComment = false;
   let sequence = 0;
 
+  // First pass: extract variable types from declarations
+  const variableTypes = new Map<string, InputValueType>();
+  const declRe = /\b(int|float|double|char|string|bool|long|short)\s+([A-Za-z_][\w,\s*]*);/g;
+  
+  // Create a clean code string to run regex
+  const cleanCode = lines.map(stripLineComment).join('\n');
+  let declMatch;
+  while ((declMatch = declRe.exec(cleanCode)) !== null) {
+      // Map C/C++ base types to InputValueType
+      let baseTypeStr = declMatch[1];
+      let inputType: InputValueType = 'int';
+      if (baseTypeStr === 'float' || baseTypeStr === 'double') inputType = 'float';
+      else if (baseTypeStr === 'char') inputType = 'char';
+      else if (baseTypeStr === 'string') inputType = 'string';
+      
+      const varsPart = declMatch[2];
+      const vars = varsPart.split(',').map(v => v.trim().replace(/[*&]/g, '').split('=')[0].trim().split('[')[0].trim());
+      for (const v of vars) {
+          if (v) variableTypes.set(v, inputType);
+      }
+  }
+
   const pushReq = (req: Omit<InputRequirement, 'id'>) => {
     requirements.push({ id: `input-${sequence++}`, ...req });
   };
@@ -184,14 +206,15 @@ export function detectInputRequirements(code: string): InputRequirement[] {
           args[argIdx] || '',
           `input_${lineNo}_${argIdx + 1}`,
         );
+        const resolvedType = variableTypes.get(variable) || spec.type || 'int';
         pushReq({
           line: lineNo,
           variable,
-          type: spec.type,
+          type: resolvedType,
           callType: 'scanf',
           format,
           specifier: spec.specifier,
-          prompt: `Enter value for ${variable} (${spec.type})`,
+          prompt: `Enter value for ${variable} (${resolvedType})`,
         });
       });
     }
@@ -203,12 +226,13 @@ export function detectInputRequirements(code: string): InputRequirement[] {
         .map((token) => normalizeVariableToken(token, ''))
         .filter(Boolean);
       vars.forEach((variable) => {
+        const resolvedType = variableTypes.get(variable) || 'int';
         pushReq({
           line: lineNo,
           variable,
-          type: 'int',
+          type: resolvedType,
           callType: 'cin',
-          prompt: `Enter value for ${variable} (int)`,
+          prompt: `Enter value for ${variable} (${resolvedType})`,
         });
       });
     }
@@ -228,24 +252,40 @@ export function detectInputRequirements(code: string): InputRequirement[] {
     const fgetsMatch = trimmed.match(/fgets\s*\(\s*([A-Za-z_]\w*)\s*,/);
     if (fgetsMatch) {
       const variable = fgetsMatch[1] || `string_input_${lineNo}`;
+      const resolvedType = variableTypes.get(variable) || 'string';
       pushReq({
         line: lineNo,
         variable,
-        type: 'string',
+        type: resolvedType,
         callType: 'fgets',
-        prompt: `Enter value for ${variable} (string)`,
+        prompt: `Enter value for ${variable} (${resolvedType})`,
       });
     }
 
     const getsMatch = trimmed.match(/gets\s*\(\s*([A-Za-z_]\w*)\s*\)/);
     if (getsMatch) {
       const variable = getsMatch[1] || `string_input_${lineNo}`;
+      const resolvedType = variableTypes.get(variable) || 'string';
       pushReq({
         line: lineNo,
         variable,
-        type: 'string',
+        type: resolvedType,
         callType: 'gets',
-        prompt: `Enter value for ${variable} (string)`,
+        prompt: `Enter value for ${variable} (${resolvedType})`,
+      });
+    }
+    
+    // getline (C++)
+    const getlineMatch = trimmed.match(/getline\s*\(\s*(?:std::)?cin\s*,\s*([A-Za-z_]\w*)\s*\)/);
+    if (getlineMatch) {
+      const variable = getlineMatch[1] || `string_input_${lineNo}`;
+      const resolvedType = variableTypes.get(variable) || 'string';
+      pushReq({
+        line: lineNo,
+        variable,
+        type: resolvedType,
+        callType: 'getline',
+        prompt: `Enter value for ${variable} (${resolvedType})`,
       });
     }
   }

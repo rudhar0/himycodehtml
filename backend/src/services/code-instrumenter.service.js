@@ -346,19 +346,19 @@ class CodeInstrumenter {
           out.push(line);
           const paramMatch = pendingFunctionDef.match(/\(([^)]*)\)/);
           if (paramMatch) {
-              const params = paramMatch[1].split(',').map(p => p.trim()).filter(p => p && p.toLowerCase() !== 'void');
-              for (const p of params) {
-                  if (p.includes('*') || p.includes('[]')) {
-                      const parts = p.replace(/\[\]/g, '*').split(/\s+/);
-                      const namePart = parts.pop();
-                      const varName = namePart.replace(/^\*+/, '');
-                      const isArrayDecay = p.includes('[]');
-                      out.push(`${indent}  __trace_pointer_alias(${varName}, ${varName}, ${isArrayDecay}, ${i + 1});`);
-                  }
+            const params = paramMatch[1].split(',').map(p => p.trim()).filter(p => p && p.toLowerCase() !== 'void');
+            for (const p of params) {
+              if (p.includes('*') || p.includes('[]')) {
+                const parts = p.replace(/\[\]/g, '*').split(/\s+/);
+                const namePart = parts.pop();
+                const varName = namePart.replace(/^\*+/, '');
+                const isArrayDecay = p.includes('[]');
+                out.push(`${indent}  __trace_pointer_alias(${varName}, ${varName}, ${isArrayDecay}, ${i + 1});`);
               }
+            }
           }
           pendingFunctionDef = null;
-          continue; 
+          continue;
         }
       }
 
@@ -636,11 +636,11 @@ class CodeInstrumenter {
 
       if (trimmed === '}' && this.loopStack.length > 0) {
         const loopInfo = this.loopStack[this.loopStack.length - 1];
-        
+
         const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
         if (!nextLine.match(/^\s*while\s*\(/)) {
           this.loopStack.pop();
-          
+
           if (loopInfo.varName && loopInfo.increment) {
             out.push(`${indent}  __trace_assign(${loopInfo.varName}, ${loopInfo.varName}, ${loopInfo.lineNum});`);
           }

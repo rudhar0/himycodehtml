@@ -59,6 +59,18 @@ const expandTrace = (steps: ExecutionStep[]): ExecutionStep[] => {
     if ((step.type as string) === 'loop_body_summary' && (step as any).events) {
        expanded.push(...expandTrace((step as any).events as ExecutionStep[]));
     } else {
+       const eventType = ((step as any).eventType || (step as any).type || '').toLowerCase();
+       if (eventType === 'branch_taken' || eventType === 'branch') {
+         const branchTakenRaw = String((step as any).branch || (step as any).branchType || (step as any).branchTaken || '');
+         if (branchTakenRaw.trim().toLowerCase() === 'else') {
+           // Inject an earlier evaluation step for else
+           expanded.push({
+             ...step,
+             eventType: 'else_eval',
+             type: 'else_eval',
+           } as any);
+         }
+       }
        expanded.push(step);
     }
   }

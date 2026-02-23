@@ -140,6 +140,7 @@ interface ControlGroupState {
   activeBodyId?: string;
   lastStep: number;
   lastLine: number;
+  switchStartStepIndex?: number;
 }
 
 class ProgressiveArrayTracker {
@@ -1078,7 +1079,7 @@ export class LayoutEngine {
   }
 
   private static isControlEvaluationStep(stepType: string, step: ExecutionStep): boolean {
-    if (stepType === "condition_eval" || stepType === "condition") return true;
+    if (stepType === "condition_eval" || stepType === "condition" || stepType === "else_eval") return true;
     if (stepType === "conditional_start" && (step as any).conditionType === "switch") {
       return true;
     }
@@ -1106,8 +1107,7 @@ export class LayoutEngine {
 
     if (
       recent &&
-      stepIndex - recent.stepIndex <= 3 &&
-      Math.abs(line - recent.line) <= 2 &&
+      stepIndex - recent.stepIndex <= 20 &&
       scopeDepth === recent.scopeDepth &&
       !hasActiveParent &&
       this.activeControlGroups.has(recent.groupId)
@@ -1127,6 +1127,7 @@ export class LayoutEngine {
       stepIndex,
       line,
       scopeDepth,
+      
     });
     return groupId;
   }
@@ -1484,63 +1485,6 @@ export class LayoutEngine {
     };
     caller.stepId = stepIndex;
 
-    const fromX = caller.x + caller.width / 2;
-    const fromY = caller.y + caller.height;
-    const toX = body.x + body.width / 2;
-    const toY = body.y;
-    this.pushControlArrow(
-      `control-arrow-caller-body-${caller.id}`,
-      stepIndex,
-      fromX,
-      fromY,
-      toX,
-      toY,
-      {
-        kind: "condition_to_body",
-        dashed: false,
-        opacity: 0.94,
-        strokeWidth: 2,
-        animated: true,
-        pointerLength: 8,
-        pointerWidth: 8,
-        c1x: fromX - 30,
-        c1y: fromY + 16,
-        c2x: toX - 30,
-        c2y: toY - 16,
-        sourceNodeId: caller.id,
-        targetNodeId: body.id,
-      },
-    );
-
-    const originId = String(caller.data?.triggerElementId || "");
-    const origin = originId ? this.elementHistory.get(originId) : null;
-    if (origin) {
-      const end = this.getControlConnectorPoint(origin);
-      const returnFromX = body.x + body.width / 2;
-      const returnFromY = body.y + body.height;
-      this.pushControlArrow(
-        `control-arrow-body-return-${caller.id}`,
-        stepIndex,
-        returnFromX,
-        returnFromY,
-        end.x,
-        end.y,
-        {
-          kind: "return_flow",
-          dashed: false,
-          opacity: 0.9,
-          strokeWidth: 2,
-          animated: true,
-          c1x: returnFromX + 60,
-          c1y: returnFromY,
-          c2x: end.x - 60,
-          c2y: end.y,
-          sourceNodeId: body.id,
-          targetNodeId: origin.id,
-        },
-      );
-    }
-
     groupState.activeCallerId = caller.id;
     groupState.activeBodyId = body.id;
     this.syncControlGroupHeight(container);
@@ -1579,7 +1523,7 @@ export class LayoutEngine {
       y: placement.y,
       width: Math.max(240, Math.min(CONTROL_BASE_WIDTH, placement.width)),
       height: CONTROL_CALLER_HEIGHT,
-      parentId: parent.id,
+      parentId: ownerFrame.id,
       stepId: stepIndex,
       children: [],
       data: {
@@ -1595,10 +1539,10 @@ export class LayoutEngine {
       },
     };
 
-    if (!parent.children) {
-      parent.children = [];
+    if (!ownerFrame.children) {
+      ownerFrame.children = [];
     }
-    parent.children.push(container);
+    ownerFrame.children.push(container);
 
     layout.elements.push(container);
     this.elementHistory.set(container.id, container);
@@ -1658,6 +1602,56 @@ export class LayoutEngine {
       return true;
     }
 
+    if (stepType === "else_eval") {
+      const conditionIdRaw = (step as any).conditionId ?? `${frameId}-cond-${stepIndex - 1}`;
+      const conditionId = String(conditionIdRaw);
+      const groupState = this.resolveIfGroupForBranch(frameId, conditionId);
+      if (!groupState) return true;
+
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const inFlowElseId = `condition-caller-${groupState.groupId}-${stepIndex}-else`;
+
+      const inFlowElseCaller: LayoutElement = {
+        id: inFlowElseId,
+        type: "condition_caller",
+        x: placement.x,
+        y: placement.y,
+        width: placement.width - 40,
+        height: 50,
+        parentId: placement.parent.id,
+        stepId: stepIndex,
+        data: {
+          condition: "else",
+          conditionResult: true,
+          conditionId: conditionId,
+          controlGroupId: groupState.groupId,
+          controlKind: "else",
+          controlRole: "caller",
+          birthStep: stepIndex,
+          isActive: true
+        }
+      };
+
+      this.appendElementToPlacement(ownerFrame, placement, inFlowElseCaller);
+      layout.elements.push(inFlowElseCaller);
+      this.elementHistory.set(inFlowElseId, inFlowElseCaller);
+      this.createdInStep.set(inFlowElseId, stepIndex);
+      groupState.members.push(inFlowElseId);
+
+      this.activeConditions.set(conditionId, {
+        conditionId,
+        conditionType: "if",
+        startStep: stepIndex,
+        elementId: inFlowElseId,
+        parentFrameId: frameId,
+        conditionResult: true,
+        expression: "else",
+        kind: "else"
+      });
+
+      return true;
+    }
+
     if (stepType === "condition_eval" || stepType === "condition") {
       const expression = String((step as any).condition || (step as any).expression || "");
       const rawResult = (step as any).result ?? (step as any).value;
@@ -1665,9 +1659,10 @@ export class LayoutEngine {
         rawResult === undefined || rawResult === null
           ? undefined
           : Boolean(rawResult);
+      
+      const line = Number((step as any).line ?? 0);
       const conditionIdRaw = (step as any).conditionId ?? `${frameId}-cond-${stepIndex}`;
       const conditionId = String(conditionIdRaw);
-      const line = Number((step as any).line ?? 0);
       const groupId = this.resolveIfGroupId(frameId, scopeDepth, stepIndex, line);
 
       const { groupState } = this.createOrGetControlGroupContainer(
@@ -1682,33 +1677,37 @@ export class LayoutEngine {
 
       const kind: ControlKind = groupState.members.length === 0 ? "if" : "else_if";
       
-      const indent = getIndentSize(ownerFrame);
-      const lane = this.getLane(ownerFrame, "LOCALS");
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       const callerId = `condition-caller-${groupState.groupId}-${stepIndex}`;
 
       const callerElement: LayoutElement = {
         id: callerId,
         type: "condition_caller",
-        x: ownerFrame.x + indent,
-        y: ownerFrame.y + lane.startY + lane.usedHeight,
-        width: ownerFrame.width - indent * 2,
+        x: placement.x,
+        y: placement.y,
+        width: placement.width - 40,
         height: 50,
-        parentId: ownerFrame.id,
+        parentId: placement.parent.id,
         stepId: stepIndex,
         data: {
           condition: expression,
           conditionResult: conditionResult,
           conditionId: conditionId,
           controlGroupId: groupState.groupId,
-          controlKind: kind
+          controlKind: kind,
+          controlRole: "caller",
+          birthStep: stepIndex,
+          isActive: true
         }
       };
 
-      lane.usedHeight += callerElement.height + ELEMENT_SPACING;
-      ownerFrame.children?.push(callerElement);
+      this.appendElementToPlacement(ownerFrame, placement, callerElement);
       layout.elements.push(callerElement);
       this.elementHistory.set(callerElement.id, callerElement);
       this.createdInStep.set(callerElement.id, stepIndex);
+      
+      // CRITICAL: Register as member so branch_taken can find it!
+      groupState.members.push(callerElement.id);
 
       this.activeConditions.set(conditionId, {
         conditionId,
@@ -1725,9 +1724,8 @@ export class LayoutEngine {
     }
 
     if (stepType === "branch_taken" || stepType === "branch") {
-      const conditionId = (step as any).conditionId
-        ? String((step as any).conditionId)
-        : undefined;
+      const conditionIdRaw = (step as any).conditionId ?? `${frameId}-cond-${stepIndex - 1}`;
+      const conditionId = String(conditionIdRaw);
       const branchTakenRaw = String(
         (step as any).branch || (step as any).branchType || (step as any).branchTaken || "if",
       );
@@ -1775,16 +1773,18 @@ export class LayoutEngine {
         return true;
       }
 
-      const condState = conditionId ? this.activeConditions.get(conditionId) : undefined;
-      let target = conditionId ? this.findGroupMemberByConditionId(groupState, conditionId) : null;
+      const condState = this.activeConditions.get(conditionId);
+      let target = this.findGroupMemberByConditionId(groupState, conditionId);
 
       const shouldExpand =
         target?.data?.conditionResult === true ||
-        condState?.conditionResult === true ||
-        branchTaken === "if" ||
-        branchTaken === "else_if";
+        condState?.conditionResult === true;
 
-      if (!target && condState && shouldExpand) {
+      // If we only have the in-flow caller (type: condition_caller), we still need to
+      // create the actual execution caller and body on the right-flow canvas.
+      const isOnlyInFlow = target?.type === "condition_caller";
+
+      if ((!target || isOnlyInFlow) && condState && shouldExpand) {
         target = this.appendControlCaller(
           layout,
           groupState,
@@ -1798,7 +1798,7 @@ export class LayoutEngine {
           line,
           "active",
           true,
-          condState.elementId
+          isOnlyInFlow ? target?.id : condState.elementId
         );
       }
 
@@ -1806,7 +1806,9 @@ export class LayoutEngine {
 
       const nextBranchState: BranchState = shouldExpand ? "active" : "skipped";
       target.stepId = stepIndex;
-      target.height = CONTROL_CALLER_HEIGHT;
+      if (target.type === "condition") {
+        target.height = CONTROL_CALLER_HEIGHT;
+      }
       target.data = {
         ...target.data,
         branchTaken: branchTakenRaw,
@@ -1844,7 +1846,8 @@ export class LayoutEngine {
     }
 
     if (stepType === "conditional_start") {
-      const conditionId = String((step as any).conditionId ?? `${frameId}-switch-${stepIndex}`);
+      const conditionIdRaw = (step as any).conditionId ?? `${frameId}-switch-${stepIndex}`;
+      const conditionId = String(conditionIdRaw);
       const expression = String((step as any).expression || (step as any).condition || "switch");
       const groupId = `switch-group-${frameId}-${conditionId}`;
       const { groupState, container } = this.createOrGetControlGroupContainer(
@@ -1856,6 +1859,7 @@ export class LayoutEngine {
         groupId,
         "switch",
       );
+      groupState.switchStartStepIndex = stepIndex;
 
       if (groupState.members.length === 0) {
         const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
@@ -1892,11 +1896,32 @@ export class LayoutEngine {
     }
 
     if (stepType === "conditional_branch") {
-      const conditionId = String((step as any).conditionId ?? "");
+      const explicitConditionId = (step as any).conditionId;
+      let groupState: ControlGroupState | undefined;
+      let conditionIdRaw = explicitConditionId;
+
+      if (!explicitConditionId) {
+        let latestSwitchGroup: ControlGroupState | undefined;
+        for (const [id, state] of this.activeControlGroups.entries()) {
+          if (state.frameId === frameId && state.controlType === "switch") {
+            if (!latestSwitchGroup || (state.switchStartStepIndex ?? -1) >= (latestSwitchGroup.switchStartStepIndex ?? -1)) {
+              latestSwitchGroup = state;
+            }
+          }
+        }
+        groupState = latestSwitchGroup;
+        conditionIdRaw = groupState?.switchStartStepIndex
+          ? `${frameId}-switch-${groupState.switchStartStepIndex}`
+          : `${frameId}-switch-${stepIndex}`;
+      }
+
+      const conditionId = String(conditionIdRaw);
       const branchLabel = String((step as any).label || "default");
       const isMatched = Boolean((step as any).isMatched);
       const groupId = `switch-group-${frameId}-${conditionId}`;
-      const groupState = this.activeControlGroups.get(groupId);
+      if (!groupState) {
+        groupState = this.activeControlGroups.get(groupId);
+      }
       if (!groupState) return true;
       const container = this.elementHistory.get(groupState.containerElementId);
       if (!container) return true;
