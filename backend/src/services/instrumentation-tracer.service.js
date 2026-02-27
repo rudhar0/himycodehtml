@@ -108,20 +108,26 @@ class InstrumentationTracer {
                 frameId: 'main-0',
                 functionName: 'main',
                 callDepth: 0,
-                callIndex: this.globalCallIndex++,
+                callIndex: this.globalCallIndex, // PURE: remove ++
                 parentFrameId: undefined,
-                parentId: 'main-0'
+                parentId: 'main-0',
+                conditionId: null
             };
         }
 
         const current = this.frameStack[this.frameStack.length - 1];
+        const activeConditionId = (current.conditionStack && current.conditionStack.length > 0)
+            ? current.conditionStack[current.conditionStack.length - 1]
+            : null;
+
         return {
             frameId: current.frameId,
             functionName: current.functionName,
             callDepth: current.callDepth,
-            callIndex: this.globalCallIndex++,
+            callIndex: this.globalCallIndex, // PURE: remove ++
             parentFrameId: current.parentFrameId,
-            parentId: current.frameId
+            parentId: current.frameId,
+            conditionId: activeConditionId
         };
     }
 
@@ -951,6 +957,12 @@ class InstrumentationTracer {
 
             return false;
         };
+        const pushStep = (step) => {
+            if (!step || step.stepIndex === -1) return;
+            this.globalCallIndex++;
+            steps.push(step);
+        };
+        const nextTime = () => (lastKnownTimestamp += timestampIncrement);
 
         // NEW: Loop Buffering Stack
         const loopStack = [];
@@ -994,7 +1006,7 @@ class InstrumentationTracer {
             });
             const snapshot = loopContext.frameMetadataSnapshot || {};
 
-            steps.push({
+            pushStep({
                 stepIndex: stepIndex++,
                 eventType: 'loop_body_summary',
                 line: loopContext.startLine || lineFallback || 0,
@@ -1018,7 +1030,7 @@ class InstrumentationTracer {
             if (rawText.length === 0) return false;
 
             const { rendered, escapes } = this.parseEscapeSequences(rawText);
-            steps.push({
+            pushStep({
                 stepIndex: stepIndex++,
                 eventType: 'output',
                 line: line || 0,
@@ -1105,7 +1117,7 @@ class InstrumentationTracer {
         stepIndex = 0;
         const mainFrameInit = enterFunctionFrame('main');
         functionSet.add('main');
-        steps.push({
+        pushStep({
             stepIndex: stepIndex++,
             eventType: 'program_start',
             line: 0,
@@ -1122,7 +1134,7 @@ class InstrumentationTracer {
             parentId: mainFrameInit.frameId,
             isFunctionEntry: true
         });
-        steps.push({
+        pushStep({
             stepIndex: stepIndex++,
             eventType: 'func_enter',
             line: 0,
@@ -1134,7 +1146,7 @@ class InstrumentationTracer {
             internalEvents: [],
             frameId: mainFrameInit.frameId,
             callDepth: mainFrameInit.callDepth,
-            callIndex: this.globalCallIndex++,
+            callIndex: this.globalCallIndex,
             parentFrameId: mainFrameInit.parentFrameId,
             parentId: mainFrameInit.frameId,
             isFunctionEntry: true
@@ -1188,33 +1200,6 @@ class InstrumentationTracer {
 
             // Helpers to manage step increments conditionally
             const nextIndex = () => isEventNoise ? -1 : stepIndex++;
-            const nextTime = () => isEventNoise ? lastKnownTimestamp : (lastKnownTimestamp += timestampIncrement);
-
-            // --- Helper to push step to correct buffer ---
-            const pushStep = (step) => {
-                if (isEventNoise || step.stepIndex === -1) return; // Skip noise events
-
-                if (STRUCTURAL_EVENTS.has(step.eventType)) {
-                    steps.push(step);
-                    return;
-                }
-                // Only buffer steps that belong to the SAME frame as the active loop.
-                // Steps from other frames (recursive calls, nested functions called inside a loop)
-                // must go directly to steps[] so they render individually.
-                if (loopStack.length > 0) {
-                    const activeLoop = loopStack[loopStack.length - 1];
-                    const loopFrameId = activeLoop.frameMetadataSnapshot && activeLoop.frameMetadataSnapshot.frameId;
-                    if (loopFrameId && step.frameId === loopFrameId) {
-                        // Same frame as the loop — put it in the buffer (for summary/toggle mode)
-                        // AND also push to steps[] so it renders individually
-                        activeLoop.buffer.push(step);
-                        steps.push(step);
-                        return;
-                    }
-                }
-                // Not inside a loop, or from a different frame — always emit directly
-                steps.push(step);
-            };
 
             // ==========================================
             // STEP 1: Detect main() entry
@@ -1273,6 +1258,9 @@ class InstrumentationTracer {
             // ==========================================
 
             if (ev.type === 'func_enter' && info.function !== 'main') {
+                // Capture caller's metadata including conditionId before pushing new frame
+                const parentMetadata = this.getCurrentFrameMetadata();
+
                 const newFrame = enterFunctionFrame(info.function);
                 validateFrameStack(`Entering ${info.function}`);
 
@@ -1290,6 +1278,7 @@ class InstrumentationTracer {
                     explanation: `➡️ Entering ${info.function}`,
                     internalEvents: [],
                     frameId: newFrame.frameId,
+                    conditionId: parentMetadata.conditionId, // Inherit caller's active branch
                     callDepth: newFrame.callDepth,
                     callIndex: newFrame.entryCallIndex,
                     parentFrameId: newFrame.parentFrameId,
@@ -1317,10 +1306,10 @@ class InstrumentationTracer {
                         : depthEntry.max;
                 }
             }
-            const currentFrame = this.frameStack[this.frameStack.length - 1];
+            currentFrame = this.frameStack[this.frameStack.length - 1]; // Use existing outer variable
             if (!isStructural && !isEventNoise && currentFrame && ev.addr && !this.isMainFunction(info.function)) {
-                 // Orphan event detection: if an event is credited to a frame that isn't the current top
-                 // though in this simple stack tracer, we assume the top is always correct.
+                // Orphan event detection: if an event is credited to a frame that isn't the current top
+                // though in this simple stack tracer, we assume the top is always correct.
             }
             const frameMetadata = { ...this.getCurrentFrameMetadata(), scopeDepth };
 
@@ -1365,9 +1354,11 @@ class InstrumentationTracer {
                     continue;
                 }
 
-                // Safety guard - clear condition stack on func_exit
-                exitingFrame.conditionStack = [];
-                exitingFrame.activeConditionId = null;
+                // Preserve condition context for the exit/return steps
+                // FALLBACK: Use activeConditionId if the stack was already popped by a block_exit
+                const frameConditionId = (exitingFrame.conditionStack && exitingFrame.conditionStack.length > 0)
+                    ? exitingFrame.conditionStack[exitingFrame.conditionStack.length - 1]
+                    : exitingFrame.activeConditionId;
 
                 if (exitingFrame.scopeStack.length > 0) {
                     const allDestroyedSymbols = new Set();
@@ -1392,7 +1383,7 @@ class InstrumentationTracer {
                             internalEvents: [],
                             frameId: exitingFrame.frameId,
                             callDepth: exitingFrame.callDepth,
-                            callIndex: this.globalCallIndex++,
+                            callIndex: this.globalCallIndex, // PURE: remove ++
                             parentFrameId: exitingFrame.parentFrameId,
                             parentId: exitingFrame.frameId
                         });
@@ -1412,8 +1403,9 @@ class InstrumentationTracer {
                     explanation: `⬅️ Exiting ${info.function}`,
                     internalEvents: [],
                     frameId: exitingFrame.frameId,
+                    conditionId: frameConditionId,
                     callDepth: exitingFrame.callDepth,
-                    callIndex: this.globalCallIndex++,
+                    callIndex: this.globalCallIndex, // PURE: remove ++
                     parentFrameId: exitingFrame.parentFrameId,
                     parentId: exitingFrame.frameId,
                     isFunctionExit: true
@@ -1437,8 +1429,9 @@ class InstrumentationTracer {
                             : `⬅️ return ${pr.value}`,
                         internalEvents: [],
                         frameId: exitingFrame.frameId,
+                        conditionId: frameConditionId,
                         callDepth: exitingFrame.callDepth,
-                        callIndex: this.globalCallIndex++,
+                        callIndex: this.globalCallIndex, // PURE: remove ++
                         parentFrameId: exitingFrame.parentFrameId,
                         parentId: exitingFrame.frameId
                     });
@@ -1512,17 +1505,8 @@ class InstrumentationTracer {
                 };
 
             } else if (ev.type === 'branch_taken') {
-                // FIX 5: Always use conditionStack top, remove ALL fallbacks
-                const conditionId = (currentFrame && currentFrame.conditionStack.length > 0)
-                    ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1]
-                    : null;
-
-                // FIX 4: Close condition lifecycle after branch
-                if (currentFrame?.conditionStack?.length) {
-                    currentFrame.conditionStack.pop();
-                    currentFrame.activeConditionId =
-                        currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
-                }
+                // Use captured conditionId from frameMetadata (stack top)
+                const conditionId = frameMetadata.conditionId;
 
                 step = {
                     stepIndex: nextIndex(),
@@ -1541,17 +1525,8 @@ class InstrumentationTracer {
                 };
 
             } else if (ev.type === 'conditional_branch') {
-                // FIX 5: Always use conditionStack top, remove ALL fallbacks
-                const conditionId = (currentFrame && currentFrame.conditionStack.length > 0)
-                    ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1]
-                    : null;
-
-                // FIX 4: Close condition lifecycle after branch
-                if (currentFrame?.conditionStack?.length) {
-                    currentFrame.conditionStack.pop();
-                    currentFrame.activeConditionId =
-                        currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
-                }
+                // Use captured conditionId from frameMetadata (stack top)
+                const conditionId = frameMetadata.conditionId;
 
                 step = {
                     stepIndex: nextIndex(),
@@ -2241,7 +2216,7 @@ class InstrumentationTracer {
                         if (s.variables) for (const v of s.variables) allDestroyed.add(v);
                     }
                     if (allDestroyed.size > 0) {
-                        steps.push({
+                        pushStep({
                             stepIndex: stepIndex++,
                             eventType: 'scope_exit',
                             line: 0,
@@ -2255,7 +2230,7 @@ class InstrumentationTracer {
                             internalEvents: [],
                             frameId: exitingMain.frameId,
                             callDepth: exitingMain.callDepth,
-                            callIndex: this.globalCallIndex++,
+                            callIndex: this.globalCallIndex, // PURE: remove ++
                             parentFrameId: exitingMain.parentFrameId,
                             parentId: exitingMain.frameId
                         });
@@ -2263,7 +2238,7 @@ class InstrumentationTracer {
                 }
 
                 // Emit synthetic func_exit for main
-                steps.push({
+                pushStep({
                     stepIndex: stepIndex++,
                     eventType: 'func_exit',
                     line: 0,
@@ -2275,7 +2250,7 @@ class InstrumentationTracer {
                     internalEvents: [],
                     frameId: exitingMain ? exitingMain.frameId : this.generateFrameId('main'),
                     callDepth: exitingMain ? exitingMain.callDepth : 0,
-                    callIndex: this.globalCallIndex++,
+                    callIndex: this.globalCallIndex,
                     parentFrameId: exitingMain ? exitingMain.parentFrameId : undefined,
                     parentId: exitingMain ? exitingMain.frameId : 'main-0',
                     isFunctionExit: true
@@ -2296,7 +2271,7 @@ class InstrumentationTracer {
                     fileName: sourceFile,
                     nextIndex: fallbackNextIndex,
                     nextTime: fallbackNextTime,
-                    emit: (step) => steps.push(step)
+                    emit: (step) => pushStep(step)
                 });
             }
             inputLines.clear();
@@ -2314,7 +2289,7 @@ class InstrumentationTracer {
         // STEP 5: Add program_end
         // ==========================================
         const finalFrameMetadata = this.getCurrentFrameMetadata();
-        steps.push({
+        pushStep({
             stepIndex: stepIndex++,
             eventType: 'program_end',
             line: 0,

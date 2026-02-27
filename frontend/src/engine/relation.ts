@@ -165,10 +165,12 @@ export class RelationManager {
         this.handleLoopEnd(raw, index);
         break;
       case 'condition':
+      case 'condition_eval':    // Added raw backend type
       case 'conditional_start':
         this.handleConditionStart(raw, index);
         break;
       case 'branch':
+      case 'branch_taken':       // Added raw backend type
       case 'conditional_branch':
         this.handleConditionBranch(raw, index);
         break;
@@ -265,9 +267,21 @@ export class RelationManager {
     return this.frameStack.length > 0 ? this.frameStack[this.frameStack.length - 1] : 'frame-main-0';
   }
 
-  private getActiveParent(): string {
+  private getActiveParent(raw?: any): string {
     const frameId = this.getCurrentFrameId();
     const frameNode = this.nodes.get(frameId);
+    
+    // Safety: if the step has an explicit conditionId, use it to find the correct parent
+    if (raw && raw.conditionId) {
+      const condNodeId = `node-condition-${raw.conditionId}`;
+      const condNode = this.nodes.get(condNodeId);
+      if (condNode) {
+        // Find the active branch container for this condition
+        const activeBranchId = Array.from(condNode.children).find(id => id.startsWith('branch-'));
+        if (activeBranchId) return activeBranchId;
+        return condNodeId;
+      }
+    }
     
     if (frameNode && frameNode.data.containerStack && frameNode.data.containerStack.length > 0) {
       const stack = frameNode.data.containerStack;
@@ -324,12 +338,13 @@ export class RelationManager {
       const returnId = `return-${nodeId.replace('frame-', '')}`;
       if (!this.nodes.has(returnId)) {
         console.log("CREATE RETURN:", returnId);
-        this.createNode(returnId, 'function_return', nodeId, {
+        const returnParentId = this.getActiveParent(raw); // FIX: Respect branch context
+        this.createNode(returnId, 'function_return', returnParentId, {
           frameId,
           functionName: raw.function || node.data.functionName,
           returnValue: returnValue,
         });
-        this.addChild(nodeId, returnId);
+        this.addChild(returnParentId, returnId);
       }
     }
 
@@ -355,7 +370,7 @@ export class RelationManager {
     const nodeId = `var-${frameId}-${varName}-${index}`;
     if (this.nodes.has(nodeId)) return;
 
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
 
     // Determine if this is a pointer
     const varType = raw.varType || 'int';
@@ -385,7 +400,7 @@ export class RelationManager {
 
     // Try to find existing variable — search backwards for most recent
     let existing: RelationNode | undefined;
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
     const parent = this.nodes.get(parentNodeId);
     if (parent) {
       for (let i = parent.children.length - 1; i >= 0; i--) {
@@ -438,7 +453,7 @@ export class RelationManager {
     const nodeId = `array-${frameId}-${name}-${index}`;
     if (this.nodes.has(nodeId)) return;
 
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
     const dims = raw.dimensions || [1];
 
     this.createNode(nodeId, 'array', parentNodeId, {
@@ -503,7 +518,7 @@ export class RelationManager {
     const nodeId = `output-${frameId}-${index}`;
     if (this.nodes.has(nodeId)) return;
 
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
     this.createNode(nodeId, 'output', parentNodeId, {
       text: raw.value || raw.stdout || '',
       birthStep: index,
@@ -517,7 +532,7 @@ export class RelationManager {
     const nodeId = `input-${frameId}-${index}`;
     if (this.nodes.has(nodeId)) return;
 
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
     this.createNode(nodeId, 'input', parentNodeId, {
       prompt: raw.prompt || '',
       format: raw.format || '',
@@ -543,7 +558,7 @@ export class RelationManager {
       return;
     }
 
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
     this.createNode(nodeId, 'loop', parentNodeId, {
       loopId,
       loopType: raw.loopType || 'for',
@@ -608,7 +623,7 @@ export class RelationManager {
     }
 
     console.log("CREATE CONDITION:", nodeId);
-    const parentNodeId = this.getActiveParent();
+    const parentNodeId = this.getActiveParent(raw);
     this.createNode(nodeId, 'condition', parentNodeId, {
       conditionId: raw.conditionId || `cond-${line}`,
       conditionType: raw.conditionType || 'if',
