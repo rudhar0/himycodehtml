@@ -7,6 +7,10 @@ import { GlobalPanel } from '../elements/GlobalPanel';
 import { Variable } from '../elements/Variable';
 import { Class } from '../elements/Class';
 import { FunctionCall } from '../elements/FunctionCall';
+import { Condition } from '../elements/Condition';
+import { Loop } from '../elements/Loop';
+import { Output } from '../elements/Output';
+import { Input } from '../elements/Input';
 import { VerticalFlowLayout } from '../managers/VerticalFlowLayout';
 import { CanvasElement } from '../core/CanvasElement';
 
@@ -57,54 +61,98 @@ export class VerticalFlowRenderer {
     this.state.elements.set(globals.id, globals);
   }
 
-  public renderScene(memoryState: MemoryState, currentStep: number): void {
-    console.log(`[VerticalFlowRenderer] Rendering scene for step ${currentStep}`);
+  public renderScene(tree: any, currentStep: number): void {
+    const relationTree = tree as { root: any, nodes: Map<string, any> };
+    console.log(`[VerticalFlowRenderer] Rendering scene from RelationTree for step ${currentStep}`);
     this.clearNonRootElements();
 
-    if (!memoryState) {
+    if (!relationTree || !relationTree.nodes) {
         this.layer.draw();
         return;
     }
 
-    // Render globals
-    if (memoryState.globals && this.state.globalPanel) {
-      for (const variable of Object.values(memoryState.globals)) {
-        if (variable.birthStep <= currentStep) {
-          this.renderVariable(variable, this.state.globalPanel);
-        }
-      }
+    // Process nodes by type to render appropriate elements
+    // We start from root children to maintain layout order
+    const root = relationTree.nodes.get('root');
+    if (root) {
+      this.renderChildren(root, 'root', relationTree, currentStep);
     }
-
-    // Render stack frames
-    if (memoryState.callStack && this.state.mainFunction) {
-      // We iterate in reverse to draw from top of the stack down
-      for (let i = memoryState.callStack.length - 1; i >= 0; i--) {
-        const frame = memoryState.callStack[i];
-        
-        // TODO: This assumes the top-level function is the main entry point.
-        const parent = this.state.mainFunction;
-
-        // Create a container for the function frame
-        const frameId = `frame-${frame.function}-${i}`;
-        const frameElement = new FunctionCall(frameId, parent.id, this.layer, frame);
-        VerticalFlowLayout.place(frameElement, parent);
-        parent.addChild(frameElement);
-        this.state.elements.set(frameId, frameElement);
-
-        for (const variable of Object.values(frame.locals)) {
-          if (variable.birthStep <= currentStep) {
-            this.renderVariable(variable, frameElement);
-          }
-        }
-        // After adding all locals, update the frame's size
-        VerticalFlowLayout.updateParentSize(frameElement);
-      }
-    }
-    
-    // TODO: Render heap elements
 
     this.layer.batchDraw();
     this.state.currentStep = currentStep;
+  }
+
+  private renderChildren(parentRelationNode: any, parentCanvasId: string, tree: any, currentStep: number): void {
+    const parentElement = this.state.elements.get(parentCanvasId);
+    if (!parentElement) return;
+
+    for (const childId of parentRelationNode.children) {
+      const node = tree.nodes.get(childId);
+      if (!node || node.birthStep > currentStep) continue;
+      if (node.deathStep !== null && node.deathStep <= currentStep) continue;
+
+      let canvasElement: CanvasElement | undefined;
+
+      switch (node.type) {
+        case 'stack_frame': {
+          canvasElement = new FunctionCall(node.id, parentCanvasId, this.layer, node.data);
+          break;
+        }
+        case 'variable':
+        case 'pointer': {
+          if (node.data.primitive === 'class' || node.data.type?.includes('class')) {
+             canvasElement = new Class(node.id, parentCanvasId, this.layer, node.data);
+          } else {
+             canvasElement = new Variable(node.id, parentCanvasId, this.layer, node.data);
+          }
+          break;
+        }
+        case 'array': {
+          // Placeholder for Array element if it existed in this renderer's elements
+          break;
+        }
+        case 'condition': {
+          canvasElement = new Condition(node.id, parentCanvasId, this.layer, node.data);
+          break;
+        }
+        case 'loop': {
+          canvasElement = new Loop(node.id, parentCanvasId, this.layer, node.data);
+          break;
+        }
+        case 'output': {
+          canvasElement = new Output(node.id, parentCanvasId, this.layer, node.data);
+          break;
+        }
+        case 'input': {
+          canvasElement = new Input(node.id, parentCanvasId, this.layer, node.data);
+          break;
+        }
+        case 'function_return': {
+           // Create a return-styled element if it exists, or just use a specialized variable box
+           canvasElement = new Variable(node.id, parentCanvasId, this.layer, {
+              ...node.data,
+              type: 'return',
+              isReturn: true
+           });
+           break;
+        }
+      }
+
+      if (canvasElement) {
+        VerticalFlowLayout.place(canvasElement, parentElement);
+        parentElement.addChild(canvasElement);
+        this.state.elements.set(node.id, canvasElement);
+        
+        // Recursively render children of this node
+        this.renderChildren(node, node.id, tree, currentStep);
+        
+        // Update size after children are added
+        VerticalFlowLayout.updateParentSize(canvasElement);
+      } else if (node.type === 'root' && node.data.isBranchContainer) {
+         // It's a branch container, just pass through to its children
+         this.renderChildren(node, parentCanvasId, tree, currentStep);
+      }
+    }
   }
 
   private renderVariable(variable: VariableData, parent: CanvasElement): void {

@@ -79,7 +79,10 @@ const getBodyOffsetY = (type: LayoutElement["type"], subtype?: string) => {
     case "function_call":
       return 55; // FunctionElement children start at y=55
     case "loop":
+    case "loop_caller":
       return subtype === "iteration" ? 25 : 80; // IterationElement y=25; LoopElement y=70+10
+    case "loop_body":
+      return 0; // Body is a container, no header offset
     case "condition":
       if (subtype === "switch") return 35; // SwitchElement children start at y=35
       if (subtype === "case") return 28; // CaseElement children start at y=28
@@ -132,6 +135,8 @@ const getElementSignature = (element: LayoutElement): string => {
         String(data.returnValue ?? ""),
       ].join("|");
     case "loop":
+    case "loop_caller":
+    case "loop_body":
       return [
         element.type,
         element.subtype ?? "",
@@ -704,7 +709,7 @@ export default function VisualizationCanvas() {
   const isControlNodeElement = (element: LayoutElement | undefined) =>
     Boolean(
       element &&
-        element.type === "condition" &&
+        (element.type === "condition" || element.type === "loop" || element.type === "loop_caller" || element.type === "loop_body") &&
         element.data?.controlKind,
     );
   const isControlGroupContainer = (element: LayoutElement | undefined) =>
@@ -717,7 +722,7 @@ export default function VisualizationCanvas() {
   const isControlBodyElement = (element: LayoutElement | undefined) =>
     Boolean(
       element &&
-        element.type === "condition" &&
+        (element.type === "condition" || element.type === "loop_body") &&
         element.data?.controlKind &&
         element.data?.controlRole === "body",
     );
@@ -775,7 +780,7 @@ export default function VisualizationCanvas() {
       visibleLayout?.elements
         .filter(
           (el) =>
-            el.type === "condition" &&
+            (el.type === "condition" || el.type === "loop" || el.type === "loop_caller") &&
             el.data?.controlKind &&
             el.data?.controlRole === "caller" &&
             !isNestedControlCaller(el),
@@ -1198,6 +1203,7 @@ export default function VisualizationCanvas() {
           </ClassView>
         );
 
+      case "loop_caller":
       case "loop": {
         if (element.subtype === 'iteration') {
              return (
@@ -1210,7 +1216,7 @@ export default function VisualizationCanvas() {
                 width={width}
                 height={height}
                >
-                 {filterFlowChildren(children).map((child) => {
+                 {children?.map((child) => {
                    const relativeX = child.x - x;
                    const relativeY =
                      child.y - y - getBodyOffsetY(element.type, element.subtype);
@@ -1227,6 +1233,29 @@ export default function VisualizationCanvas() {
               </IterationElement>
             );
         }
+
+        if (element.subtype === 'condition_check' || element.subtype === 'update_step') {
+            return (
+                <Group key={id} x={x} y={y}>
+                    <Rect 
+                        width={width || 300} 
+                        height={height || 30} 
+                        fill="rgba(51, 65, 85, 0.3)" 
+                        cornerRadius={4} 
+                    />
+                    <Text 
+                        text={data?.explanation || (element.subtype === 'condition_check' ? "Check" : "Update")}
+                        x={8}
+                        y={8}
+                        fontSize={10}
+                        fill={data?.conditionResult === false ? "#FCA5A5" : "#CBD5E1"}
+                        fontFamily="'SF Mono', monospace"
+                    />
+                </Group>
+            );
+        }
+
+        const callerBody = (children || []).find(c => c.type === 'loop_body');
 
         return (
           <LoopElement
@@ -1255,7 +1284,12 @@ export default function VisualizationCanvas() {
               }
             }}
           >
-            {filterFlowChildren(children).map((child) => {
+            {callerBody && (
+                <Group x={callerBody.x - x} y={callerBody.y - y - getBodyOffsetY(element.type, element.subtype)}>
+                    {renderElement({ ...callerBody, x: 0, y: 0 }, x, y)}
+                </Group>
+            )}
+            {children?.filter(c => c !== callerBody && !isControlNodeElement(c)).map((child) => {
               const relativeX = child.x - x;
               const relativeY =
                 child.y - y - getBodyOffsetY(element.type, element.subtype);
@@ -1270,6 +1304,26 @@ export default function VisualizationCanvas() {
               );
             })}
           </LoopElement>
+        );
+      }
+
+      case "loop_body": {
+        return (
+          <Group key={id} id={id} x={x} y={y}>
+            {(children || []).map((child) => {
+              const relativeX = child.x - x;
+              const relativeY = child.y - y;
+              return (
+                <Group key={child.id} x={relativeX} y={relativeY}>
+                  {renderElement(
+                    { ...child, x: 0, y: 0 },
+                    x,
+                    y,
+                  )}
+                </Group>
+              );
+            })}
+          </Group>
         );
       }
 

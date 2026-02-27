@@ -8,6 +8,7 @@ import { v4 as uuid } from 'uuid';
 let loopIdCounter = 0;
 let blockDepthCounter = 0;
 let conditionIdCounter = 0;
+let switchIdCounter = 0;
 
 class CodeInstrumenter {
   constructor() {
@@ -17,6 +18,8 @@ class CodeInstrumenter {
     this.pointerAliases = new Map();
     this.blockDepth = 0;
     this.loopStack = [];
+    this.switchStack = [];
+    this.pendingSwitches = [];
   }
 
   async instrumentCode(code, language = 'cpp') {
@@ -222,16 +225,147 @@ class CodeInstrumenter {
     return { open, close };
   }
 
+  stripLineComments(line) {
+    let inString = false;
+    let inChar = false;
+    let escape = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      const next = i + 1 < line.length ? line[i + 1] : '';
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (c === '\\') {
+        escape = true;
+        continue;
+      }
+
+      if (c === '"' && !inChar) {
+        inString = !inString;
+        continue;
+      }
+
+      if (c === "'" && !inString) {
+        inChar = !inChar;
+        continue;
+      }
+
+      if (!inString && !inChar && c === '/' && next === '/') {
+        return line.slice(0, i);
+      }
+    }
+
+    return line;
+  }
+
+  escapeString(text) {
+    return String(text ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
+  }
+
+  extractSwitchExpression(line) {
+    const match = line.match(/^\s*switch\s*\(([^)]*)\)\s*(\{)?/);
+    if (!match) return null;
+    return {
+      expression: match[1].trim(),
+      hasBrace: Boolean(match[2]) || line.includes('{')
+    };
+  }
+
+  collectSwitchCases(lines, startIndex) {
+    const cases = [];
+    let foundOpen = false;
+    let depth = 0;
+    let currentCase = null;
+
+    for (let i = startIndex; i < lines.length; i++) {
+      const rawLine = lines[i];
+      const line = this.stripLineComments(rawLine);
+      const trimmed = line.trim();
+      const { open, close } = this.countBraces(line);
+
+      if (!foundOpen) {
+        if (open > 0) {
+          foundOpen = true;
+          const extraOpens = Math.max(0, open - 1);
+          depth = 1 + extraOpens - close;
+        }
+        continue;
+      }
+
+      if (depth === 1) {
+        const caseMatch = trimmed.match(/^case\s+(.+?)\s*:/);
+        if (caseMatch) {
+          const label = caseMatch[1].trim();
+          currentCase = { label, line: i + 1, hasBreak: false };
+          cases.push(currentCase);
+
+          const colonIndex = trimmed.indexOf(':');
+          if (colonIndex >= 0) {
+            const remainder = trimmed.slice(colonIndex + 1);
+            if (/\bbreak\s*;/.test(remainder)) {
+              currentCase.hasBreak = true;
+            }
+          }
+        } else if (/^default\s*:/.test(trimmed)) {
+          currentCase = { label: 'default', line: i + 1, hasBreak: false };
+          cases.push(currentCase);
+
+          const colonIndex = trimmed.indexOf(':');
+          if (colonIndex >= 0) {
+            const remainder = trimmed.slice(colonIndex + 1);
+            if (/\bbreak\s*;/.test(remainder)) {
+              currentCase.hasBreak = true;
+            }
+          }
+        }
+      }
+
+      if (currentCase && depth === 1) {
+        if (/^\s*break\s*;/.test(trimmed) || /\bbreak\s*;/.test(trimmed)) {
+          currentCase.hasBreak = true;
+        }
+      }
+
+      depth += open - close;
+      if (depth <= 0) break;
+    }
+
+    return cases;
+  }
+
   isFunctionDefinitionStart(line, globalBraceDepth) {
     if (globalBraceDepth !== 0) return null;
 
     const trimmed = line.trim();
     if (trimmed.startsWith('#') || trimmed.startsWith('//')) return null;
 
-    const funcPattern = /^\s*(static\s+)?(inline\s+)?(const\s+)?(unsigned\s+|signed\s+)?(void|int|long|float|double|char|bool|auto|short|size_t)\s*\**\s*(\w+)\s*\([^;]*$/;
+    // Pattern handles ALL of these return type forms:
+    //   int, long, void, float, double, char, bool, short, size_t
+    //   long long int, long long, long int, unsigned long long int,
+    //   unsigned long long, unsigned int, unsigned long, unsigned char,
+    //   signed long long, signed int, etc.
+    // The type is captured as a group of words/stars before the function name.
+    // The function name is the last \w+ before the opening paren.
+    // NOTE: Must end with [^;]*$ to ensure we do NOT match prototypes ending in ';'
+    const funcPattern = /^\s*(?:static\s+)?(?:inline\s+)?(?:extern\s+)?(?:const\s+)?(?:(?:unsigned|signed|long|short)\s+)*(?:void|int|long|float|double|char|bool|auto|short|size_t|long\s+long)\s*\**\s*(\w+)\s*\([^;]*$/;
     const match = trimmed.match(funcPattern);
     if (match) {
-      return match[6];
+      // match[1] is the function name (last word before the paren)
+      const funcName = match[1];
+      // Exclude C keywords that can appear in this position
+      const notAFuncName = new Set([
+        'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'return',
+        'break', 'continue', 'goto', 'typedef', 'struct', 'enum', 'union',
+        'sizeof', 'const', 'static', 'inline', 'extern', 'register', 'volatile'
+      ]);
+      if (notAFuncName.has(funcName)) return null;
+      return funcName;
     }
 
     return null;
@@ -257,9 +391,13 @@ class CodeInstrumenter {
     loopIdCounter = 0;
     blockDepthCounter = 0;
     conditionIdCounter = 0;
+    switchIdCounter = 0;
     this.blockDepth = 0;
     this.loopStack = [];
+    this.switchStack = [];
+    this.pendingSwitches = [];
     const pendingElseIfWrapperIndents = [];
+    let lastIfConditionId = null; // tracks the conditionId of the most recent if/else-if for else linkage
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -349,16 +487,44 @@ class CodeInstrumenter {
             const params = paramMatch[1].split(',').map(p => p.trim()).filter(p => p && p.toLowerCase() !== 'void');
             for (const p of params) {
               if (p.includes('*') || p.includes('[]')) {
-                const parts = p.replace(/\[\]/g, '*').split(/\s+/);
-                const namePart = parts.pop();
-                const varName = namePart.replace(/^\*+/, '');
+                // Pointer / array parameter — trace as alias.
+                // FIX: Rather than replacing [] with * and hoping split+pop gives the
+                // right token, extract the pure identifier with a regex. This correctly
+                // handles: int arr[], int *ptr, int* ptr, char arr[], etc.
                 const isArrayDecay = p.includes('[]');
-                out.push(`${indent}  __trace_pointer_alias(${varName}, ${varName}, ${isArrayDecay}, ${i + 1});`);
+                // Match the last word-only token (the parameter name) in the declaration.
+                const nameMatch = p.replace(/\[\]/g, '').replace(/\*/g, ' ').trim().match(/(\w+)\s*$/);
+                const varName = nameMatch ? nameMatch[1] : null;
+                if (varName && /^\w+$/.test(varName) && varName !== 'void') {
+                  out.push(`${indent}  __trace_pointer_alias(${varName}, ${varName}, ${isArrayDecay}, ${i + 1});`);
+                }
+              } else {
+                // Scalar parameter (int n, long x, long long int val, etc.)
+                // Extract the parameter name: it is always the last word token
+                const tokens = p.trim().split(/\s+/);
+                const varName = tokens[tokens.length - 1].replace(/^\*+/, '');
+                // Extract the type: everything before the last token
+                const varType = tokens.slice(0, tokens.length - 1).join(' ') || 'int';
+                // Only trace if varName looks like a valid identifier
+                if (varName && /^\w+$/.test(varName) && varName !== 'void') {
+                  out.push(`${indent}  __trace_declare(${varName}, ${varType}, ${i + 1});`);
+                  out.push(`${indent}  __trace_assign(${varName}, ${varName}, ${i + 1});`);
+                }
               }
             }
           }
           pendingFunctionDef = null;
           continue;
+        }
+      }
+
+      if (openBraces > 0 && this.pendingSwitches.length > 0) {
+        const pendingSwitch = this.pendingSwitches.shift();
+        if (pendingSwitch) {
+          this.switchStack.push({
+            switchId: pendingSwitch.switchId,
+            braceDepth: this.blockDepth
+          });
         }
       }
 
@@ -370,6 +536,15 @@ class CodeInstrumenter {
           if (this.blockDepth > 0) {
             this.blockDepth--;
           }
+        }
+      }
+
+      if (this.switchStack.length > 0) {
+        while (
+          this.switchStack.length > 0 &&
+          this.blockDepth < this.switchStack[this.switchStack.length - 1].braceDepth
+        ) {
+          this.switchStack.pop();
         }
       }
 
@@ -388,8 +563,21 @@ class CodeInstrumenter {
       const returnStmt = trimmed.match(/^\s*return\s+([^;]+);/);
       if (returnStmt) {
         const returnValue = returnStmt[1];
-        this.appendOutputFlush(out, indent, i + 1);
-        out.push(`${indent}__trace_return(${returnValue}, "auto", "", ${i + 1});`);
+        const tmpVar = `__rv_${i}`;
+        const isSimple = /^\w+$/.test(returnValue.trim());
+        const destSymbol = isSimple ? returnValue.trim() : '__expr';
+        out.push(`${indent}{`);
+        out.push(`${indent}  __auto_type ${tmpVar} = (${returnValue});`);
+        out.push(`${indent}  __trace_assign(${tmpVar}, ${tmpVar}, ${i + 1});`);
+        out.push(`${indent}  __trace_return(${tmpVar}, "auto", "${destSymbol}", ${i + 1});`);
+        out.push(`${indent}  return ${tmpVar};`);
+        out.push(`${indent}}`);
+        continue;
+      }
+
+      const returnVoidStmt = trimmed.match(/^\s*return\s*;/);
+      if (returnVoidStmt) {
+        out.push(`${indent}__trace_return(0, "void", "", ${i + 1});`);
         out.push(line);
         continue;
       }
@@ -411,7 +599,7 @@ class CodeInstrumenter {
       if (ptrDeref) {
         const [, ptrName, value] = ptrDeref;
         out.push(line);
-        out.push(`${indent}__trace_pointer_deref_write(${ptrName}, ${value}, ${i + 1});`);
+        out.push(`${indent}__trace_pointer_deref_write(${ptrName}, *${ptrName}, ${i + 1});`);
         continue;
       }
 
@@ -425,6 +613,16 @@ class CodeInstrumenter {
             const arrayInfo = this.parseArrayDeclaration(type, varDecl);
             if (arrayInfo) {
               const { name, dimensions, hasInitializer, initValues, isStringLiteral } = arrayInfo;
+
+              if (hasInitializer && dimensions.length === 1 && dimensions[0] === '0') {
+                if (isStringLiteral) {
+                  dimensions[0] = (initValues.length + 1).toString();
+                } else if (initValues) {
+                  const initList = initValues.split(',').map(v => v.trim()).filter(Boolean);
+                  dimensions[0] = initList.length.toString();
+                }
+              }
+
               const dimArgs = dimensions.slice(0, 3).join(',');
               const paddedDims = dimensions.length === 1 ? `${dimArgs},0,0` : dimensions.length === 2 ? `${dimArgs},0` : dimArgs;
               out.push(`${indent}${type} ${varDecl};`);
@@ -434,7 +632,8 @@ class CodeInstrumenter {
                 else if (initValues) {
                   const totalSize = dimensions.reduce((a, b) => a * (parseInt(b) || 1), 1);
                   const initList = initValues.split(',').map(v => v.trim()).filter(Boolean);
-                  const paddedInit = [...initList, ...Array(totalSize - initList.length).fill('0')].join(',');
+                  const padCount = Math.max(0, totalSize - initList.length);
+                  const paddedInit = [...initList, ...Array(padCount).fill('0')].join(',');
                   out.push(`${indent}{ int __temp_${name}[] = {${paddedInit}}; __trace_array_init(${name}, __temp_${name}, ${totalSize}, ${i + 1}); }`);
                 }
               }
@@ -530,7 +729,7 @@ class CodeInstrumenter {
         if (assign) {
           const [, varName, value] = assign;
           out.push(line);
-          out.push(`${indent}__trace_assign(${varName}, ${value}, ${i + 1});`);
+          out.push(`${indent}__trace_assign(${varName}, ${varName}, ${i + 1});`);
           const addrMatch = value.trim().match(/^&\s*(\w+)$/);
           if (addrMatch) {
             const source = addrMatch[1];
@@ -551,6 +750,14 @@ class CodeInstrumenter {
         const match = trimmed.match(/^\s*(\+\+|--)?(\w+)(\+\+|--)?;/);
         if (match) {
           const varName = match[2];
+          const reserved = new Set([
+            'return', 'break', 'continue', 'if', 'else', 'for', 'while',
+            'switch', 'case', 'default', 'do', 'goto'
+          ]);
+          if (reserved.has(varName)) {
+            out.push(line);
+            continue;
+          }
           out.push(line);
           out.push(`${indent}__trace_assign(${varName}, ${varName}, ${i + 1});`);
         } else out.push(line);
@@ -569,14 +776,16 @@ class CodeInstrumenter {
           out.push(`${indent}__trace_declare(${varName}, ${type}, ${i + 1});`);
           this.markVariableDeclared(varName, currentScopeId);
         }
-        out.push(`${indent}${varName} = ${initValue};`);
+        out.push(`${indent}${varName} = ${initValue.trim()};`);
         out.push(`${indent}__trace_assign(${varName}, ${varName}, ${i + 1});`);
         out.push(`${indent}__trace_loop_start(${loopId}, "for", ${i + 1});`);
-        out.push(`${indent}for (; ${condition}; ${increment}) {`);
-        out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition}) ? 1 : 0, ${i + 1});`);
-        out.push(`${indent}  if (!(${condition})) { __trace_loop_end(${loopId}, ${i + 1}); break; }`);
+        // Move increment into loop body so it is traced AFTER execution, not before
+        out.push(`${indent}for (; ${condition.trim()}; ) {`);
+        out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition.trim()}) ? 1 : 0, ${i + 1});`);
+        out.push(`${indent}  if (!(${condition.trim()})) { break; }`);
         out.push(`${indent}  __trace_loop_body_start(${loopId}, ${i + 1});`);
-        this.loopStack.push({ loopId, varName, increment, lineNum: i + 1 });
+        // Store increment so the closing brace handler can emit it and trace it
+        this.loopStack.push({ loopId, varName, increment: increment.trim(), lineNum: i + 1 });
         continue;
       }
 
@@ -586,14 +795,15 @@ class CodeInstrumenter {
         const [, varName, initValue, condition, increment] = forLoopPreDeclared;
         const loopId = loopIdCounter++;
 
-        out.push(`${indent}${varName} = ${initValue};`);
+        out.push(`${indent}${varName} = ${initValue.trim()};`);
         out.push(`${indent}__trace_assign(${varName}, ${varName}, ${i + 1});`);
         out.push(`${indent}__trace_loop_start(${loopId}, "for", ${i + 1});`);
-        out.push(`${indent}for (; ${condition}; ${increment}) {`);
-        out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition}) ? 1 : 0, ${i + 1});`);
-        out.push(`${indent}  if (!(${condition})) { __trace_loop_end(${loopId}, ${i + 1}); break; }`);
+        // Move increment into loop body so it is traced AFTER execution, not before
+        out.push(`${indent}for (; ${condition.trim()}; ) {`);
+        out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition.trim()}) ? 1 : 0, ${i + 1});`);
+        out.push(`${indent}  if (!(${condition.trim()})) { break; }`);
         out.push(`${indent}  __trace_loop_body_start(${loopId}, ${i + 1});`);
-        this.loopStack.push({ loopId, varName, increment, lineNum: i + 1 });
+        this.loopStack.push({ loopId, varName, increment: increment.trim(), lineNum: i + 1 });
         continue;
       }
 
@@ -634,24 +844,28 @@ class CodeInstrumenter {
         continue;
       }
 
-      if (trimmed === '}' && this.loopStack.length > 0) {
+      if (trimmed.startsWith('}') && trimmed.replace(/\s*\/\/.*$/, '').trim() === '}' && this.loopStack.length > 0) {
         const loopInfo = this.loopStack[this.loopStack.length - 1];
 
         const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
         if (!nextLine.match(/^\s*while\s*\(/)) {
           this.loopStack.pop();
 
+          // Emit the increment expression and trace it BEFORE loop_iteration_end
+          // This way the traced value reflects the post-increment state
           if (loopInfo.varName && loopInfo.increment) {
+            out.push(`${indent}  ${loopInfo.increment};`);
             out.push(`${indent}  __trace_assign(${loopInfo.varName}, ${loopInfo.varName}, ${loopInfo.lineNum});`);
           }
           out.push(`${indent}  __trace_loop_iteration_end(${loopInfo.loopId}, ${loopInfo.lineNum});`);
-          out.push(line);
+          out.push(line); // the closing brace
+          // Only ONE loop_end here. The break-guard in the for-header no longer emits one.
           out.push(`${indent}__trace_loop_end(${loopInfo.loopId}, ${loopInfo.lineNum});`);
           continue;
         }
       }
 
-      if (trimmed === '}' && pendingElseIfWrapperIndents.length > 0) {
+      if (trimmed.startsWith('}') && trimmed.replace(/\s*\/\/.*$/, '').trim() === '}' && pendingElseIfWrapperIndents.length > 0) {
         const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
         const isElseContinuation = /^(\}\s*)?else\b/.test(nextLine);
         const wrapperIndent = pendingElseIfWrapperIndents[pendingElseIfWrapperIndents.length - 1];
@@ -669,10 +883,25 @@ class CodeInstrumenter {
         }
       }
 
+      const ifStmtSingleLine = trimmed.match(/^\s*if\s*\(([^)]+)\)\s*(.+)$/);
       const ifStmt = trimmed.match(/^\s*if\s*\(([^)]+)\)\s*\{/);
+      if (ifStmtSingleLine && !ifStmt) {
+        // Single-line if: e.g. "if (n == 0) return 1;"
+        const condition = ifStmtSingleLine[1];
+        const body = ifStmtSingleLine[2].trim();
+        const condId = conditionIdCounter++;
+        lastIfConditionId = condId;
+        out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
+        out.push(`${indent}if (${condition}) {`);
+        out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
+        out.push(`${indent}  ${body}`);
+        out.push(`${indent}}`);
+        continue;
+      }
       if (ifStmt) {
         const [, condition] = ifStmt;
         const condId = conditionIdCounter++;
+        lastIfConditionId = condId;
         out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}if (${condition}) {`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
@@ -683,6 +912,7 @@ class CodeInstrumenter {
       if (elseIfStmt) {
         const [, condition] = elseIfStmt;
         const condId = conditionIdCounter++;
+        lastIfConditionId = condId;
         out.push(`${indent}} else {`);
         out.push(`${indent}  __trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}  if (${condition}) {`);
@@ -693,10 +923,57 @@ class CodeInstrumenter {
 
       const elseStmt = trimmed.match(/^\s*}\s*else\s*\{/);
       if (elseStmt) {
-        const condId = conditionIdCounter++;
+        // CRITICAL: reuse the parent if/else-if conditionId so LayoutEngine links them correctly
+        const condId = lastIfConditionId !== null ? lastIfConditionId : conditionIdCounter++;
         out.push(`${indent}} else {`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
         continue;
+      }
+
+      const switchInfo = this.extractSwitchExpression(trimmed);
+      if (switchInfo) {
+        const switchId = switchIdCounter++;
+        const safeExpr = this.escapeString(switchInfo.expression);
+        const cases = this.collectSwitchCases(lines, i);
+
+        out.push(`${indent}__trace_switch_start(${switchId}, "${safeExpr}", ${i + 1});`);
+        cases.forEach((caseEntry, idx) => {
+          const fallsThrough = !caseEntry.hasBreak && idx < cases.length - 1;
+          const safeLabel = this.escapeString(caseEntry.label);
+          out.push(
+            `${indent}__trace_switch_case_decl(${switchId}, "${safeLabel}", ${idx}, ${fallsThrough ? 1 : 0}, ${caseEntry.line});`
+          );
+        });
+
+        out.push(line);
+
+        if (switchInfo.hasBrace) {
+          this.switchStack.push({ switchId, braceDepth: this.blockDepth });
+        } else {
+          this.pendingSwitches.push({ switchId });
+        }
+        continue;
+      }
+
+      if (this.switchStack.length > 0) {
+        const activeSwitch = this.switchStack[this.switchStack.length - 1];
+        const caseMatch = trimmed.match(/^case\s+(.+?)\s*:/);
+        const isDefault = /^default\s*:/.test(trimmed);
+
+        if (caseMatch || isDefault) {
+          const label = caseMatch ? caseMatch[1].trim() : 'default';
+          const safeLabel = this.escapeString(label);
+          const colonIndex = line.indexOf(':');
+          const headerLine = colonIndex >= 0 ? line.slice(0, colonIndex + 1) : line;
+          const remainder = colonIndex >= 0 ? line.slice(colonIndex + 1).trim() : '';
+
+          out.push(headerLine);
+          out.push(`${indent}  __trace_switch_case(${activeSwitch.switchId}, "${safeLabel}", ${i + 1});`);
+          if (remainder) {
+            out.push(`${indent}  ${remainder}`);
+          }
+          continue;
+        }
       }
 
       out.push(line);

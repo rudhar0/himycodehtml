@@ -394,6 +394,59 @@ extern "C" void __trace_branch_taken_loc(int conditionId, const char* branchType
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_switch_start_loc(int switchId, const char* expression,
+                                         const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_switch_start_loc(int switchId, const char* expression,
+                                         const char* file, int line) {
+    TRACER_GUARD_ENTER();
+    if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
+    const std::string f = json_safe_path(file);
+    char extra[512];
+    snprintf(extra, sizeof(extra),
+             "\"conditionId\":%d,\"conditionType\":\"switch\",\"expression\":\"%s\",\"file\":\"%s\",\"line\":%d",
+             switchId, expression ? expression : "", f.c_str(), line);
+    write_json_event("conditional_start", nullptr, get_current_function().c_str(), g_depth, extra);
+    TRACER_GUARD_EXIT();
+}
+
+extern "C" void __trace_switch_case_decl_loc(int switchId, const char* label, int caseIndex, int fallsThrough,
+                                             const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_switch_case_decl_loc(int switchId, const char* label, int caseIndex, int fallsThrough,
+                                             const char* file, int line) {
+    TRACER_GUARD_ENTER();
+    if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
+    const std::string f = json_safe_path(file);
+    char extra[512];
+    snprintf(extra, sizeof(extra),
+             "\"conditionId\":%d,\"label\":\"%s\",\"isMatched\":false,\"isDeclaration\":true,\"caseIndex\":%d,\"fallsThrough\":%s,\"file\":\"%s\",\"line\":%d",
+             switchId,
+             label ? label : "",
+             caseIndex,
+             fallsThrough ? "true" : "false",
+             f.c_str(),
+             line);
+    write_json_event("conditional_branch", nullptr, get_current_function().c_str(), g_depth, extra);
+    TRACER_GUARD_EXIT();
+}
+
+extern "C" void __trace_switch_case_loc(int switchId, const char* label,
+                                        const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_switch_case_loc(int switchId, const char* label,
+                                        const char* file, int line) {
+    TRACER_GUARD_ENTER();
+    if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
+    const std::string f = json_safe_path(file);
+    char extra[384];
+    snprintf(extra, sizeof(extra),
+             "\"conditionId\":%d,\"label\":\"%s\",\"isMatched\":true,\"isDeclaration\":false,\"file\":\"%s\",\"line\":%d",
+             switchId,
+             label ? label : "",
+             f.c_str(),
+             line);
+    write_json_event("conditional_branch", nullptr, get_current_function().c_str(), g_depth, extra);
+    TRACER_GUARD_EXIT();
+}
+
 extern "C" void __trace_array_create_loc(const char* name, const char* baseType,
                                          void* address, int dim1, int dim2, int dim3,
                                          bool isStack, const char* file, int line) __attribute__((no_instrument_function));

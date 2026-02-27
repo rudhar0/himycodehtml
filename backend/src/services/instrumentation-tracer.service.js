@@ -63,7 +63,6 @@ class InstrumentationTracer {
         this.globalCallIndex = 0;
         this.frameCounts = new Map();
         this.addressToName = new Map();
-        this.addressToFrame = new Map();
         this.addressResolutionCache = new Map();
         this.activeProcesses = new Set();
     }
@@ -94,27 +93,35 @@ class InstrumentationTracer {
     }
 
     generateFrameId(functionName) {
-        const count = this.frameCounts.get(functionName) || 0;
-        this.frameCounts.set(functionName, count + 1);
-        return `${functionName}-${count}`;
+        // Use globalCallIndex to ensure IDs are globally unique across recursion and replay
+        return `${functionName}-${this.globalCallIndex++}`;
+    }
+
+    isMainFunction(name) {
+        if (!name) return false;
+        return name === 'main' || name === '::main' || name.endsWith('main');
     }
 
     getCurrentFrameMetadata() {
         if (this.frameStack.length === 0) {
             return {
                 frameId: 'main-0',
+                functionName: 'main',
                 callDepth: 0,
                 callIndex: this.globalCallIndex++,
-                parentFrameId: undefined
+                parentFrameId: undefined,
+                parentId: 'main-0'
             };
         }
 
         const current = this.frameStack[this.frameStack.length - 1];
         return {
             frameId: current.frameId,
+            functionName: current.functionName,
             callDepth: current.callDepth,
             callIndex: this.globalCallIndex++,
-            parentFrameId: current.parentFrameId
+            parentFrameId: current.parentFrameId,
+            parentId: current.frameId
         };
     }
 
@@ -139,7 +146,10 @@ class InstrumentationTracer {
             declaredVariables: new Map(),
             pointerAliases: new Map(),
             blockScopes: [],
-            scopeStack: []
+            scopeStack: [],
+            // FIX: Use a stack for conditions to handle nesting correctly
+            conditionStack: [],
+            activeConditionId: null // Fallback for legacy code
         };
 
         if (parentFrame && parentFrame.pointerAliases) {
@@ -286,7 +296,8 @@ class InstrumentationTracer {
         const finalInfo = result || {
             function: 'unknown',
             file: 'unknown',
-            line: 0
+            line: 0,
+            isUnresolved: true
         };
         this.addressResolutionCache.set(cacheKey, finalInfo);
         return finalInfo;
@@ -302,6 +313,7 @@ class InstrumentationTracer {
                 'loop_start', 'loop_end', 'loop_body_start', 'loop_iteration_end',
                 'loop_condition', 'loop_body_summary',
                 'condition_eval', 'branch_taken',
+                'conditional_start', 'conditional_branch',
                 'control_flow', 'block_enter', 'block_exit',
                 'heap_alloc', 'heap_free'
             ]);
@@ -666,7 +678,7 @@ class InstrumentationTracer {
     }
 
 
-    async convertToSteps(events, executable, sourceFile, programOutput, trackedFunctions, inputLinesMap = null, providedInputs = []) {
+    async convertToSteps(events, executable, sourceFile, programOutput, trackedFunctions, inputLinesMap = null, providedInputs = [], sourceNormalizedFile = null) {
         console.log(`📊 Converting ${events.length} events to beginner-correct steps...`);
 
         const steps = [];
@@ -676,6 +688,8 @@ class InstrumentationTracer {
         let lastKnownTimestamp = 0;
         let mainStarted = false;
         let currentFunction = 'main';
+        let currentFrame = null;
+        const emittedStepIds = new Set();
 
         // Reset state
         this.frameStack = [];
@@ -683,7 +697,32 @@ class InstrumentationTracer {
         this.frameCounts = new Map();
         this.functionRegistry.clear();
         this.addressToName.clear();
-        this.addressToFrame.clear();
+
+        const enterFunctionFrame = (functionName) => {
+            const frame = this.pushCallFrame(functionName);
+            currentFrame = frame || null;
+            if (DEBUG_FRAME_VALIDATION) {
+                console.log(`[Frame Stack] PUSH ${functionName}, stack depth=${this.frameStack.length}`);
+            }
+            return frame;
+        };
+
+        const exitFunctionFrame = (expectedName = null) => {
+            if (this.frameStack.length === 0) {
+                console.warn('[Frame Stack] Attempted to pop from empty stack');
+                return null;
+            }
+            const top = this.frameStack[this.frameStack.length - 1];
+            if (expectedName && top.functionName !== expectedName) {
+                console.warn(`[Frame Stack] Popping ${top.functionName} but trace event expected ${expectedName}`);
+            }
+            const exiting = this.popCallFrame();
+            currentFrame = this.frameStack[this.frameStack.length - 1] || null;
+            if (DEBUG_FRAME_VALIDATION) {
+                console.log(`[Frame Stack] POP ${exiting?.functionName}, stack depth=${this.frameStack.length}`);
+            }
+            return exiting;
+        };
 
         // Parse program output
         const outputText = typeof programOutput?.stdout === 'string' ? programOutput.stdout : '';
@@ -723,6 +762,157 @@ class InstrumentationTracer {
             return path.basename(f).toLowerCase().replace(/\\/g, '/').trim();
         };
         const userSourceBase = normalizeFile(sourceFile);
+
+        const buildScopeDepthMap = async (filePath) => {
+            if (!filePath || !existsSync(filePath)) return new Map();
+            let content = '';
+            try {
+                content = await readFile(filePath, 'utf-8');
+            } catch (_) {
+                return new Map();
+            }
+            const lines = content.split(/\r?\n/);
+            const map = new Map();
+            let depth = 0;
+            let inBlockComment = false;
+            let inString = false;
+            let inChar = false;
+            let escape = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i] || '';
+                let lineDepthStart = depth;
+                let lineDepthMax = depth;
+                let firstTokenSet = false;
+                let inLineComment = false;
+
+                for (let j = 0; j < line.length; j++) {
+                    const c = line[j];
+                    const next = j + 1 < line.length ? line[j + 1] : '';
+
+                    if (inLineComment) break;
+                    if (inBlockComment) {
+                        if (c === '*' && next === '/') {
+                            inBlockComment = false;
+                            j += 1;
+                        }
+                        continue;
+                    }
+                    if (inString) {
+                        if (escape) {
+                            escape = false;
+                            continue;
+                        }
+                        if (c === '\\') {
+                            escape = true;
+                            continue;
+                        }
+                        if (c === '"') {
+                            inString = false;
+                        }
+                        continue;
+                    }
+                    if (inChar) {
+                        if (escape) {
+                            escape = false;
+                            continue;
+                        }
+                        if (c === '\\') {
+                            escape = true;
+                            continue;
+                        }
+                        if (c === '\'') {
+                            inChar = false;
+                        }
+                        continue;
+                    }
+
+                    if (c === '/' && next === '/') {
+                        inLineComment = true;
+                        break;
+                    }
+                    if (c === '/' && next === '*') {
+                        inBlockComment = true;
+                        j += 1;
+                        continue;
+                    }
+                    if (c === '"') {
+                        inString = true;
+                        continue;
+                    }
+                    if (c === '\'') {
+                        inChar = true;
+                        continue;
+                    }
+
+                    if (!firstTokenSet && !/\s/.test(c)) {
+                        if (c === '}') {
+                            lineDepthStart = Math.max(0, depth - 1);
+                        } else {
+                            lineDepthStart = depth;
+                        }
+                        firstTokenSet = true;
+                    }
+
+                    if (c === '{') {
+                        depth += 1;
+                        lineDepthMax = Math.max(lineDepthMax, depth);
+                    } else if (c === '}') {
+                        depth = Math.max(0, depth - 1);
+                    }
+                }
+
+                map.set(i + 1, { start: lineDepthStart, max: Math.max(lineDepthStart, lineDepthMax) });
+            }
+            return map;
+        };
+
+        // CRITICAL FIX: Build scope depth map from the INSTRUMENTED file (sourceFile),
+        // because trace events carry line numbers from the instrumented file.
+        // Using sourceNormalizedFile caused a line-number mismatch that put every
+        // element at the wrong scope depth.
+        const scopeDepthByLine = await buildScopeDepthMap(sourceFile);
+        const computeHeaderInsertIndex = async (filePath) => {
+            if (!filePath || !existsSync(filePath)) return null;
+            let content = '';
+            try {
+                content = await readFile(filePath, 'utf-8');
+            } catch (_) {
+                return null;
+            }
+            // If trace.h is already present in the normalized source, there is no line shift.
+            if (content.includes('trace.h')) return null;
+            const lines = content.split(/\r?\n/);
+            let insertIdx = 0;
+            for (let i = 0; i < lines.length; i++) {
+                const t = lines[i].trim();
+                if (t.startsWith('#include')) {
+                    insertIdx = i + 1;
+                } else if (t && !t.startsWith('#') && !t.startsWith('//')) {
+                    break;
+                }
+            }
+            return insertIdx;
+        };
+        const headerInsertIdx = await computeHeaderInsertIndex(sourceNormalizedFile || sourceFile);
+        const normalizeScopeLine = (lineNum) => {
+            // No offset needed: we now build the scope depth map from the instrumented file directly.
+            return lineNum;
+        };
+
+        // Precompute which input lines actually appear in trace events.
+        // If a line never appears in events (e.g., plain scanf line), we will
+        // emit the input step when we pass it.
+        const eventLinesInUserFile = new Set();
+        for (const ev of events) {
+            if (!ev || !ev.line || !ev.file) continue;
+            if (normalizeFile(ev.file) !== userSourceBase) continue;
+            eventLinesInUserFile.add(ev.line);
+        }
+        const inputLinesWithEvents = new Set();
+        for (const line of inputLines.keys()) {
+            if (eventLinesInUserFile.has(line)) inputLinesWithEvents.add(line);
+        }
 
         console.log(`🔍 User source file: ${userSourceBase}`);
 
@@ -766,11 +956,14 @@ class InstrumentationTracer {
         const loopStack = [];
         // Track active loop iterations via the frame scope stack
         const activeLoopIterationStack = [];
-        // Loop summary must never include structural events; expand set comprehensively
+        // Loop summary must never include structural events; expand set comprehensively.
+        // condition_eval and branch_taken are included here because they must always
+        // reach steps[] directly (they are needed by the LayoutEngine's control hierarchy).
         const STRUCTURAL_EVENTS = new Set([
             'func_enter', 'func_exit', 'return', 'scope_exit',
             'loop_start', 'loop_end', 'loop_body_start', 'loop_iteration_end', 'loop_condition', 'loop_body_summary',
-            'block_enter', 'block_exit'
+            'block_enter', 'block_exit',
+            'condition_eval', 'branch_taken', 'conditional_start', 'conditional_branch'
         ]);
 
         // When addr2line fails (common on Windows) we must not fabricate user source locations.
@@ -844,6 +1037,49 @@ class InstrumentationTracer {
             return true;
         };
 
+        const emitInputStep = ({ line, inputInfo, functionName, frameMetadata, fileName, nextIndex, nextTime, emit }) => {
+            if (!inputInfo) return false;
+
+            const inputRequest = {
+                type: inputInfo.type,
+                variables: inputInfo.variables,
+                format: inputInfo.format || undefined,
+                expectedTypes: inputInfo.expectedTypes || [],
+                line
+            };
+
+            const consumedValues = (inputInfo.variables || []).map(() => {
+                if (pendingInputQueue.length === 0) return '';
+                return pendingInputQueue.shift();
+            });
+            const pairs = (inputInfo.variables || []).map((name, idx) => ({
+                variable: name,
+                value: consumedValues[idx] ?? ''
+            }));
+            const explainText = pairs.length > 0
+                ? `INPUT RECEIVED: ${pairs.map(p => `${p.variable} = ${p.value}`).join(', ')}`
+                : inputInfo.prompt;
+
+            emit({
+                stepIndex: nextIndex(),
+                eventType: 'input',
+                line,
+                function: functionName || currentFunction,
+                scope: 'block',
+                file: normalizeFile(fileName || sourceFile),
+                timestamp: nextTime(),
+                explanation: explainText,
+                value: consumedValues.length <= 1 ? (consumedValues[0] ?? '') : consumedValues,
+                variable: (inputInfo.variables || [])[0] || '',
+                inputRequest,
+                inputValues: pairs,
+                internalEvents: [],
+                ...(frameMetadata || this.getCurrentFrameMetadata())
+            });
+
+            return true;
+        };
+
         const DEBUG_LOOP_VALIDATION = false;
         const validateLoopInvariants = (context) => {
             if (!DEBUG_LOOP_VALIDATION) return;
@@ -854,17 +1090,20 @@ class InstrumentationTracer {
 
         // Optional: Enable debug assertions during development
         // Uncomment to validate frame stack consistency
-        const DEBUG_FRAME_VALIDATION = false;
-        const validateFrameStack = () => {
-            if (DEBUG_FRAME_VALIDATION && this.frameStack.length !== (currentFunction === 'main' ? 1 : this.frameStack.length)) {
-                console.warn('[Frame Validation] Frame depth mismatch detected');
+        const DEBUG_FRAME_VALIDATION = true;
+        const validateFrameStack = (context = '') => {
+            if (DEBUG_FRAME_VALIDATION) {
+                const expectedDepth = this.frameStack.length;
+                if (expectedDepth > 500) { // Arbitrary limit for sanity
+                    console.warn(`[Frame Validation] Extremely deep stack detected (${expectedDepth}) at ${context}`);
+                }
             }
         };
 
         // Proactively start main frame so Windows builds (where addr2line / function
         // names may be missing) still produce a consistent step sequence.
         stepIndex = 0;
-        const mainFrameInit = this.pushCallFrame('main');
+        const mainFrameInit = enterFunctionFrame('main');
         functionSet.add('main');
         steps.push({
             stepIndex: stepIndex++,
@@ -880,6 +1119,7 @@ class InstrumentationTracer {
             callDepth: mainFrameInit.callDepth,
             callIndex: mainFrameInit.entryCallIndex,
             parentFrameId: mainFrameInit.parentFrameId,
+            parentId: mainFrameInit.frameId,
             isFunctionEntry: true
         });
         steps.push({
@@ -896,6 +1136,7 @@ class InstrumentationTracer {
             callDepth: mainFrameInit.callDepth,
             callIndex: this.globalCallIndex++,
             parentFrameId: mainFrameInit.parentFrameId,
+            parentId: mainFrameInit.frameId,
             isFunctionEntry: true
         });
         mainStarted = true;
@@ -904,12 +1145,19 @@ class InstrumentationTracer {
         for (let i = 0; i < events.length; i++) {
             const ev = events[i];
             if (ev.type) ev.type = ev.type.toLowerCase();
+            const isSyntheticReturnTempAssign =
+                ev.type === 'assign' &&
+                typeof ev.name === 'string' &&
+                /^__rv_\d+$/.test(ev.name);
+            if (isSyntheticReturnTempAssign) {
+                continue;
+            }
 
             // Get file/line info
             let info;
             if (ev.file && ev.line) {
                 info = {
-                    function: this.normalizeFunctionName(ev.func || ev.name || 'unknown'),
+                    function: this.normalizeFunctionName(ev.func || 'unknown'),
                     file: ev.file,
                     line: ev.line
                 };
@@ -945,21 +1193,37 @@ class InstrumentationTracer {
             // --- Helper to push step to correct buffer ---
             const pushStep = (step) => {
                 if (isEventNoise || step.stepIndex === -1) return; // Skip noise events
+
                 if (STRUCTURAL_EVENTS.has(step.eventType)) {
                     steps.push(step);
                     return;
                 }
+                // Only buffer steps that belong to the SAME frame as the active loop.
+                // Steps from other frames (recursive calls, nested functions called inside a loop)
+                // must go directly to steps[] so they render individually.
                 if (loopStack.length > 0) {
-                    loopStack[loopStack.length - 1].buffer.push(step);
-                } else {
-                    steps.push(step);
+                    const activeLoop = loopStack[loopStack.length - 1];
+                    const loopFrameId = activeLoop.frameMetadataSnapshot && activeLoop.frameMetadataSnapshot.frameId;
+                    if (loopFrameId && step.frameId === loopFrameId) {
+                        // Same frame as the loop — put it in the buffer (for summary/toggle mode)
+                        // AND also push to steps[] so it renders individually
+                        activeLoop.buffer.push(step);
+                        steps.push(step);
+                        return;
+                    }
                 }
+                // Not inside a loop, or from a different frame — always emit directly
+                steps.push(step);
             };
 
             // ==========================================
             // STEP 1: Detect main() entry
             // ==========================================
-            if (!mainStarted && ev.type === 'func_enter') {
+            // FIX: Also check ev.func === 'main' so that on Windows (where addr2line
+            // may return 'unknown'), the first func_enter is still correctly consumed
+            // and never handed off to the non-main handler below (which would push a
+            // duplicate frame).
+            if (!mainStarted && ev.type === 'func_enter' && (ev.func === 'main' || info.function === 'main')) {
                 // Synthetic main already emitted; avoid duplicate main enter
                 mainStarted = true;
                 currentFunction = 'main';
@@ -977,6 +1241,7 @@ class InstrumentationTracer {
                 'loop_start', 'loop_end', 'loop_body_start', 'loop_iteration_end',
                 'loop_condition', 'loop_body_summary',
                 'condition_eval', 'branch_taken',
+                'conditional_start', 'conditional_branch',
                 'control_flow', 'block_enter', 'block_exit'
             ].includes(ev.type);
 
@@ -1001,8 +1266,6 @@ class InstrumentationTracer {
                 continue;
             }
 
-            const currentFrame = this.frameStack[this.frameStack.length - 1];
-
             let step = null;
 
             // ==========================================
@@ -1010,17 +1273,11 @@ class InstrumentationTracer {
             // ==========================================
 
             if (ev.type === 'func_enter' && info.function !== 'main') {
-                const newFrame = this.pushCallFrame(info.function);
+                const newFrame = enterFunctionFrame(info.function);
+                validateFrameStack(`Entering ${info.function}`);
+
                 functionSet.add(info.function);
                 currentFunction = info.function;
-
-                // CRITICAL FIX: Generate frame metadata AFTER pushCallFrame
-                const frameMetadata = {
-                    frameId: newFrame.frameId,
-                    callDepth: newFrame.callDepth,
-                    callIndex: newFrame.entryCallIndex,
-                    parentFrameId: newFrame.parentFrameId
-                };
 
                 pushStep({
                     stepIndex: nextIndex(),
@@ -1036,58 +1293,64 @@ class InstrumentationTracer {
                     callDepth: newFrame.callDepth,
                     callIndex: newFrame.entryCallIndex,
                     parentFrameId: newFrame.parentFrameId,
+                    parentId: newFrame.frameId,
                     isFunctionEntry: true
                 });
                 continue;
             }
 
             // For all other events, get frameMetadata from current state
-            const frameMetadata = this.getCurrentFrameMetadata();
+            const isUserSource = info?.file && normalizeFile(info.file) === userSourceBase;
+            let scopeDepth = 0;
+            if (info?.line) {
+                const scopeLine = normalizeScopeLine(info.line);
+                const depthEntry = scopeDepthByLine.get(scopeLine);
+                if (depthEntry) {
+                    const controlEvalTypes = new Set([
+                        'condition_eval',
+                        'conditional_start',
+                        'branch_taken',
+                        'conditional_branch'
+                    ]);
+                    scopeDepth = controlEvalTypes.has(ev.type)
+                        ? depthEntry.start
+                        : depthEntry.max;
+                }
+            }
+            const currentFrame = this.frameStack[this.frameStack.length - 1];
+            if (!isStructural && !isEventNoise && currentFrame && ev.addr && !this.isMainFunction(info.function)) {
+                 // Orphan event detection: if an event is credited to a frame that isn't the current top
+                 // though in this simple stack tracer, we assume the top is always correct.
+            }
+            const frameMetadata = { ...this.getCurrentFrameMetadata(), scopeDepth };
 
             // ===================================================================
-            // Check if current line has an input operation and inject input_request
+            // Check if current position crosses an input operation and inject input
             // ===================================================================
-            if (inputLines.has(info.line) && mainStarted) {
-                const inputInfo = inputLines.get(info.line);
+            if (mainStarted && info?.line && info?.file && normalizeFile(info.file) === userSourceBase && inputLines.size > 0) {
+                const linesToEmit = [];
+                for (const [line] of inputLines.entries()) {
+                    if (inputLinesWithEvents.has(line)) {
+                        if (line === info.line) linesToEmit.push(line);
+                    } else if (line < info.line) {
+                        linesToEmit.push(line);
+                    }
+                }
 
-                const inputRequest = {
-                    type: inputInfo.type,
-                    variables: inputInfo.variables,
-                    format: inputInfo.format || undefined,
-                    expectedTypes: inputInfo.expectedTypes || [],
-                    line: info.line
-                };
-
-                const consumedValues = (inputInfo.variables || []).map(() => {
-                    if (pendingInputQueue.length === 0) return '';
-                    return pendingInputQueue.shift();
-                });
-                const pairs = (inputInfo.variables || []).map((name, idx) => ({
-                    variable: name,
-                    value: consumedValues[idx] ?? ''
-                }));
-                const explainText = pairs.length > 0
-                    ? `INPUT RECEIVED: ${pairs.map(p => `${p.variable} = ${p.value}`).join(', ')}`
-                    : inputInfo.prompt;
-
-                pushStep({
-                    stepIndex: nextIndex(),
-                    eventType: 'input',
-                    line: info.line,
-                    function: currentFunction,
-                    scope: 'block',
-                    file: normalizeFile(info.file),
-                    timestamp: nextTime(),
-                    explanation: explainText,
-                    value: consumedValues.length <= 1 ? (consumedValues[0] ?? '') : consumedValues,
-                    variable: (inputInfo.variables || [])[0] || '',
-                    inputRequest: inputRequest,
-                    inputValues: pairs,
-                    internalEvents: [],
-                    ...frameMetadata
-                });
-
-                inputLines.delete(info.line);
+                for (const line of linesToEmit) {
+                    const inputInfo = inputLines.get(line);
+                    emitInputStep({
+                        line,
+                        inputInfo,
+                        functionName: currentFunction,
+                        frameMetadata,
+                        fileName: info.file,
+                        nextIndex,
+                        nextTime,
+                        emit: pushStep
+                    });
+                    inputLines.delete(line);
+                }
             }
 
             // ==========================================
@@ -1095,17 +1358,16 @@ class InstrumentationTracer {
             // ==========================================
 
             if (ev.type === 'func_exit') {
-                // Frame stack safety check
-                if (!this.frameStack.length) {
-                    console.warn('[convertToSteps] func_exit event with empty frame stack - skipping');
-                    continue;
-                }
-
-                const exitingFrame = this.popCallFrame();
+                const exitingFrame = exitFunctionFrame(info.function);
+                validateFrameStack(`Exiting ${info.function}`);
 
                 if (!exitingFrame) {
                     continue;
                 }
+
+                // Safety guard - clear condition stack on func_exit
+                exitingFrame.conditionStack = [];
+                exitingFrame.activeConditionId = null;
 
                 if (exitingFrame.scopeStack.length > 0) {
                     const allDestroyedSymbols = new Set();
@@ -1131,7 +1393,8 @@ class InstrumentationTracer {
                             frameId: exitingFrame.frameId,
                             callDepth: exitingFrame.callDepth,
                             callIndex: this.globalCallIndex++,
-                            parentFrameId: exitingFrame.parentFrameId
+                            parentFrameId: exitingFrame.parentFrameId,
+                            parentId: exitingFrame.frameId
                         });
                     }
 
@@ -1152,8 +1415,34 @@ class InstrumentationTracer {
                     callDepth: exitingFrame.callDepth,
                     callIndex: this.globalCallIndex++,
                     parentFrameId: exitingFrame.parentFrameId,
+                    parentId: exitingFrame.frameId,
                     isFunctionExit: true
                 });
+
+                if (exitingFrame.pendingReturn) {
+                    const pr = exitingFrame.pendingReturn;
+                    pushStep({
+                        stepIndex: nextIndex(),
+                        eventType: 'return',
+                        line: pr.line || info.line,
+                        function: pr.function || info.function,
+                        scope: 'function',
+                        file: normalizeFile(pr.file || info.file),
+                        timestamp: nextTime(),
+                        returnValue: pr.value,
+                        returnType: pr.returnType || 'auto',
+                        destinationSymbol: pr.destinationSymbol || null,
+                        explanation: pr.destinationSymbol && pr.destinationSymbol !== '__expr'
+                            ? `⬅️ return ${pr.value} (stored in ${pr.destinationSymbol})`
+                            : `⬅️ return ${pr.value}`,
+                        internalEvents: [],
+                        frameId: exitingFrame.frameId,
+                        callDepth: exitingFrame.callDepth,
+                        callIndex: this.globalCallIndex++,
+                        parentFrameId: exitingFrame.parentFrameId,
+                        parentId: exitingFrame.frameId
+                    });
+                }
 
                 currentFunction = this.frameStack.length > 0
                     ? this.frameStack[this.frameStack.length - 1].functionName
@@ -1163,34 +1452,125 @@ class InstrumentationTracer {
             }
 
             if (ev.type === 'condition_eval') {
+                // Skip if symbols failed
+                if (info.isUnresolved) continue;
+
+                // FIX 3: Stable condition IDs (remove unstable callIndex)
+                const conditionId = `cond-${frameMetadata.frameId}-${info.line}-${this.globalCallIndex}`;
+                // Push to condition stack to handle nesting correctly
+                if (currentFrame) {
+                    currentFrame.conditionStack.push(conditionId);
+                    currentFrame.activeConditionId = conditionId;
+                }
+
                 step = {
                     stepIndex: nextIndex(),
                     eventType: 'condition_eval',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
-                    conditionId: ev.conditionId,
+                    conditionId: conditionId,
                     expression: ev.expression,
                     result: ev.result === 1,
+                    controlRole: 'caller',
                     explanation: `🔍 Condition (${ev.expression}) = ${ev.result === 1 ? 'true' : 'false'}`,
                     internalEvents: [],
                     ...frameMetadata
                 };
 
+            } else if (ev.type === 'conditional_start') {
+                // Skip if symbols failed
+                if (info.isUnresolved) continue;
+
+                // FIX 3: Stable condition IDs
+                const conditionId = `cond-${frameMetadata.frameId}-${info.line}-${this.globalCallIndex}`;
+                // Push to condition stack to handle nesting correctly
+                if (currentFrame) {
+                    currentFrame.conditionStack.push(conditionId);
+                    currentFrame.activeConditionId = conditionId;
+                }
+
+                step = {
+                    stepIndex: nextIndex(),
+                    eventType: 'conditional_start',
+                    line: info.line,
+                    function: frameMetadata.functionName || currentFunction,
+                    scope: 'block',
+                    file: normalizeFile(info.file),
+                    timestamp: nextTime(),
+                    conditionId: conditionId,
+                    conditionType: ev.conditionType || 'switch',
+                    expression: ev.expression,
+                    controlRole: 'caller',
+                    explanation: ev.conditionType === 'switch'
+                        ? `🔀 switch (${ev.expression || ''})`
+                        : `🔀 condition start (${ev.expression || ''})`,
+                    internalEvents: [],
+                    ...frameMetadata
+                };
+
             } else if (ev.type === 'branch_taken') {
+                // FIX 5: Always use conditionStack top, remove ALL fallbacks
+                const conditionId = (currentFrame && currentFrame.conditionStack.length > 0)
+                    ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1]
+                    : null;
+
+                // FIX 4: Close condition lifecycle after branch
+                if (currentFrame?.conditionStack?.length) {
+                    currentFrame.conditionStack.pop();
+                    currentFrame.activeConditionId =
+                        currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
+                }
+
                 step = {
                     stepIndex: nextIndex(),
                     eventType: 'branch_taken',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
-                    conditionId: ev.conditionId,
+                    conditionId: conditionId,
                     branchType: ev.branchType,
+                    controlRole: 'body',
                     explanation: `➡️ Taking ${ev.branchType} branch`,
+                    internalEvents: [],
+                    ...frameMetadata
+                };
+
+            } else if (ev.type === 'conditional_branch') {
+                // FIX 5: Always use conditionStack top, remove ALL fallbacks
+                const conditionId = (currentFrame && currentFrame.conditionStack.length > 0)
+                    ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1]
+                    : null;
+
+                // FIX 4: Close condition lifecycle after branch
+                if (currentFrame?.conditionStack?.length) {
+                    currentFrame.conditionStack.pop();
+                    currentFrame.activeConditionId =
+                        currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
+                }
+
+                step = {
+                    stepIndex: nextIndex(),
+                    eventType: 'conditional_branch',
+                    line: info.line,
+                    function: frameMetadata.functionName || currentFunction,
+                    scope: 'block',
+                    file: normalizeFile(info.file),
+                    timestamp: nextTime(),
+                    conditionId: conditionId,
+                    label: ev.label,
+                    isMatched: ev.isMatched,
+                    isDeclaration: ev.isDeclaration,
+                    caseIndex: ev.caseIndex,
+                    fallsThrough: ev.fallsThrough,
+                    controlRole: 'body',
+                    explanation: ev.isDeclaration
+                        ? `📌 case ${ev.label}`
+                        : `➡️ case ${ev.label}`,
                     internalEvents: [],
                     ...frameMetadata
                 };
@@ -1200,7 +1580,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'arg_bind',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1216,7 +1596,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'expression_eval',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1237,7 +1617,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'loop_start',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1289,7 +1669,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'loop_end',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1308,7 +1688,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'loop_condition',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1346,7 +1726,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'loop_body_start',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1374,6 +1754,12 @@ class InstrumentationTracer {
                     continue;
                 }
                 activeLoopIterationStack.pop();
+
+                // FIX: Pop condition stack on loop iteration end (prevent iteration leak)
+                if (currentFrame && currentFrame.conditionStack.length > 0) {
+                    currentFrame.conditionStack.pop();
+                    currentFrame.activeConditionId = currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
+                }
                 const iterCount = topLoop.iterationCount || 0;
                 const destroyedSet = new Set();
 
@@ -1392,7 +1778,7 @@ class InstrumentationTracer {
                         stepIndex: nextIndex(),
                         eventType: 'scope_exit',
                         line: info.line,
-                        function: currentFunction,
+                        function: frameMetadata.functionName || currentFunction,
                         scope: 'block',
                         file: normalizeFile(info.file),
                         timestamp: nextTime(),
@@ -1410,7 +1796,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'loop_iteration_end',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1436,7 +1822,7 @@ class InstrumentationTracer {
                         stepIndex: nextIndex(),
                         eventType: 'loop_break',
                         line: info.line,
-                        function: currentFunction,
+                        function: frameMetadata.functionName || currentFunction,
                         scope: 'block',
                         file: normalizeFile(info.file),
                         timestamp: nextTime(),
@@ -1449,7 +1835,7 @@ class InstrumentationTracer {
                         stepIndex: nextIndex(),
                         eventType: 'loop_continue',
                         line: info.line,
-                        function: currentFunction,
+                        function: frameMetadata.functionName || currentFunction,
                         scope: 'block',
                         file: normalizeFile(info.file),
                         timestamp: nextTime(),
@@ -1472,7 +1858,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'block_enter',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1493,7 +1879,7 @@ class InstrumentationTracer {
                                 stepIndex: nextIndex(),
                                 eventType: 'scope_exit',
                                 line: info.line,
-                                function: currentFunction,
+                                function: frameMetadata.functionName || currentFunction,
                                 scope: 'block',
                                 file: normalizeFile(info.file),
                                 timestamp: nextTime(),
@@ -1507,6 +1893,12 @@ class InstrumentationTracer {
                         }
 
                         currentFrame.scopeStack.pop();
+
+                        // FIX: Pop condition stack on scope exit (nesting safe)
+                        if (currentFrame.conditionStack.length > 0) {
+                            currentFrame.conditionStack.pop();
+                            currentFrame.activeConditionId = currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
+                        }
                     }
                 }
 
@@ -1518,7 +1910,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'block_exit',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1531,13 +1923,12 @@ class InstrumentationTracer {
             } else if (ev.type === 'array_create') {
                 if (ev.addr) {
                     this.addressToName.set(ev.addr, ev.name);
-                    if (currentFrame) this.addressToFrame.set(ev.addr, currentFrame.frameId);
                 }
                 step = {
                     stepIndex: nextIndex(),
                     eventType: 'array_create',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     symbol: ev.name,
                     file: normalizeFile(info.file),
@@ -1570,7 +1961,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'array_index_assign',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     symbol: ev.name,
                     file: normalizeFile(info.file),
@@ -1600,7 +1991,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'pointer_alias',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     symbol: ev.name,
                     file: normalizeFile(info.file),
@@ -1640,7 +2031,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'pointer_deref_write',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     symbol: ev.pointerName,
                     file: normalizeFile(info.file),
@@ -1663,7 +2054,7 @@ class InstrumentationTracer {
                         stepIndex: nextIndex(),
                         eventType: 'var_assign',
                         line: info.line,
-                        function: currentFunction,
+                        function: frameMetadata.functionName || currentFunction,
                         scope: 'block',
                         symbol: targetName,
                         file: normalizeFile(info.file),
@@ -1683,7 +2074,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'heap_write',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1706,7 +2097,6 @@ class InstrumentationTracer {
 
                         if (ev.address) {
                             this.addressToName.set(ev.address, ev.name);
-                            this.addressToFrame.set(ev.address, currentFrame.frameId);
                         }
                     }
 
@@ -1730,7 +2120,7 @@ class InstrumentationTracer {
                             stepIndex: nextIndex(),
                             eventType: 'var_declare',
                             line: info.line,
-                            function: currentFunction,
+                            function: frameMetadata.functionName || currentFunction,
                             scope: 'block',
                             symbol: ev.name,
                             file: normalizeFile(info.file),
@@ -1751,7 +2141,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'var_assign',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     symbol: ev.name,
                     file: normalizeFile(info.file),
@@ -1764,30 +2154,24 @@ class InstrumentationTracer {
                 };
 
             } else if (ev.type === 'return') {
-                step = {
-                    stepIndex: nextIndex(),
-                    eventType: 'return',
-                    line: info.line,
-                    function: currentFunction,
-                    scope: 'function',
-                    file: normalizeFile(info.file),
-                    timestamp: nextTime(),
-                    returnValue: ev.value,
-                    returnType: ev.returnType || 'auto',
-                    destinationSymbol: ev.destinationSymbol || null,
-                    explanation: ev.destinationSymbol
-                        ? `⬅️ Returning ${ev.value} to ${ev.destinationSymbol}`
-                        : `⬅️ Returning ${ev.value}`,
-                    internalEvents: [],
-                    ...frameMetadata
-                };
+                if (currentFrame) {
+                    currentFrame.pendingReturn = {
+                        value: ev.value,
+                        returnType: ev.returnType,
+                        destinationSymbol: ev.destinationSymbol,
+                        line: info.line,
+                        function: frameMetadata.functionName || currentFunction,
+                        file: info.file
+                    };
+                }
+                step = null;
 
             } else if (ev.type === 'heap_alloc' && ev.isHeap) {
                 step = {
                     stepIndex: nextIndex(),
                     eventType: 'heap_alloc',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1805,7 +2189,7 @@ class InstrumentationTracer {
                     stepIndex: nextIndex(),
                     eventType: 'heap_free',
                     line: info.line,
-                    function: currentFunction,
+                    function: frameMetadata.functionName || currentFunction,
                     scope: 'block',
                     file: normalizeFile(info.file),
                     timestamp: nextTime(),
@@ -1848,7 +2232,7 @@ class InstrumentationTracer {
             const topFrame = this.frameStack[this.frameStack.length - 1];
             if (topFrame && this.isMainFunction(topFrame.functionName)) {
                 // Pop main frame safely
-                const exitingMain = this.popCallFrame();
+                const exitingMain = exitFunctionFrame();
 
                 // Emit any scope exits for main if needed (destroy remaining symbols)
                 if (exitingMain && exitingMain.scopeStack && exitingMain.scopeStack.length > 0) {
@@ -1872,7 +2256,8 @@ class InstrumentationTracer {
                             frameId: exitingMain.frameId,
                             callDepth: exitingMain.callDepth,
                             callIndex: this.globalCallIndex++,
-                            parentFrameId: exitingMain.parentFrameId
+                            parentFrameId: exitingMain.parentFrameId,
+                            parentId: exitingMain.frameId
                         });
                     }
                 }
@@ -1892,9 +2277,29 @@ class InstrumentationTracer {
                     callDepth: exitingMain ? exitingMain.callDepth : 0,
                     callIndex: this.globalCallIndex++,
                     parentFrameId: exitingMain ? exitingMain.parentFrameId : undefined,
+                    parentId: exitingMain ? exitingMain.frameId : 'main-0',
                     isFunctionExit: true
                 });
             }
+        }
+
+        // Emit any remaining input steps (no matching trace line found).
+        if (inputLines.size > 0 && mainStarted) {
+            const fallbackNextIndex = () => stepIndex++;
+            const fallbackNextTime = () => (lastKnownTimestamp += timestampIncrement);
+            for (const [line, inputInfo] of inputLines.entries()) {
+                emitInputStep({
+                    line,
+                    inputInfo,
+                    functionName: currentFunction,
+                    frameMetadata: this.getCurrentFrameMetadata(),
+                    fileName: sourceFile,
+                    nextIndex: fallbackNextIndex,
+                    nextTime: fallbackNextTime,
+                    emit: (step) => steps.push(step)
+                });
+            }
+            inputLines.clear();
         }
 
         // ==========================================
@@ -2091,7 +2496,8 @@ class InstrumentationTracer {
             console.warn(`[Input] ${normalizedInputs.warnings.join(' | ')}`);
         }
 
-        const inputLinesMap = this.scanForInputOperations(code, language);
+        const rawInputLinesMap = this.scanForInputOperations(code, language);
+        const inputLinesMap = this._adjustInputLinesMapForHeader(code, rawInputLinesMap);
 
         let exe, src, srcOriginal, srcNormalized, traceOut, hdr;
         try {
@@ -2130,7 +2536,8 @@ class InstrumentationTracer {
                 { stdout, stderr, stdoutChunks, stdoutTimestamps },
                 functions,
                 inputLinesMap,
-                normalizedInputs.values
+                normalizedInputs.values,
+                srcNormalized
             );
 
             const result = {
@@ -2181,6 +2588,31 @@ class InstrumentationTracer {
                 try { await unlink(f); } catch (_) { }
             }
         }
+    }
+
+    _adjustInputLinesMapForHeader(originalCode, inputLinesMap) {
+        if (inputLinesMap.size === 0) return inputLinesMap;
+        // If the code already has trace.h, addTraceHeader() is a no-op — no shift needed
+        if (originalCode.includes('trace.h')) return inputLinesMap;
+
+        // Replicate addTraceHeader's insertIdx logic exactly
+        const lines = originalCode.split('\n');
+        let insertIdx = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const t = lines[i].trim();
+            if (t.startsWith('#include')) { insertIdx = i + 1; }
+            else if (t && !t.startsWith('#') && !t.startsWith('//')) break;
+        }
+
+        // insertIdx is 0-based. Original 1-based line L shifts to L+1
+        // when its 0-based index (L-1) >= insertIdx  =>  L > insertIdx
+        const adjusted = new Map();
+        for (const [lineNum, info] of inputLinesMap.entries()) {
+            const newLine = lineNum > insertIdx ? lineNum + 1 : lineNum;
+            adjusted.set(newLine, { ...info, line: newLine });
+        }
+        console.log(`[InputLinesFix] Header at idx ${insertIdx}; adjusted ${inputLinesMap.size} scanf entries`);
+        return adjusted;
     }
 
     scanForInputOperations(sourceOrCode, language = 'c') {

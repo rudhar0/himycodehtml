@@ -1,0 +1,362 @@
+﻿[ToolchainService] Initialized for platform: win32, arch: x64
+[ToolchainService] Toolchain Root: D:\testvicneusof\resources\toolchain
+[ToolchainService] Internal Headers: D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include
+[TraceService] Trace service active: instrumentation-tracer
+[TraceService] Temp directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[TraceService] Tracer source: D:\testvicneusof\backend\src\cpp\tracer.cpp
+≡ƒöº Instrumenting code (beginner-correct mode)...
+Γ£ô Function definition at line 5: long factorial(int n) {
+Γ£ô Function definition at line 12: int main() {
+Γ£à Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c++17 -fno-omit-frame-pointer -finstrument-functions -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.o
+[Compile] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Compile] Tracer compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -c -g -O0 -std=c++17 -fno-omit-frame-pointer -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\src\cpp\tracer.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_780c1581-cb8c-4a52-96ba-bfab5ac38a02.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_780c1581-cb8c-4a52-96ba-bfab5ac38a02.o -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_780c1581-cb8c-4a52-96ba-bfab5ac38a02.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: Γ£à
+[HookVerify] __cyg_profile_func_exit: Γ£à
+[Execute] Executing binary: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_780c1581-cb8c-4a52-96ba-bfab5ac38a02.exe
+[Execute] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Execute] TRACE_OUTPUT: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_780c1581-cb8c-4a52-96ba-bfab5ac38a02.json
+[TraceFile] File: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_780c1581-cb8c-4a52-96ba-bfab5ac38a02.json
+[TraceFile] Events: 41, Functions: 1
+Trace generated!
+≡ƒôè Converting 41 events to beginner-correct steps...
+≡ƒöì User source file: src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp
+[Event 0] type=func_enter, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=26
+[Event 1] type=func_enter, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[convertToSteps] FUNC ENTER: factorial(int), depth=1
+[Event 2] type=declare, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 3] type=assign, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 4] type=condition_eval, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=6
+[Event 5] type=func_enter, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[convertToSteps] FUNC ENTER: factorial(int), depth=2
+[Event 6] type=declare, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 7] type=assign, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 8] type=condition_eval, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=6
+[Event 9] type=func_enter, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[convertToSteps] FUNC ENTER: factorial(int), depth=3
+[Event 10] type=declare, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 11] type=assign, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 12] type=condition_eval, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=6
+[Event 13] type=func_enter, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[convertToSteps] FUNC ENTER: factorial(int), depth=4
+[Event 14] type=declare, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 15] type=assign, func="n", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 16] type=condition_eval, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=6
+[Event 17] type=branch_taken, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=6
+[Event 19] type=return, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=7
+[Event 20] type=func_exit, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 22] type=return, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=9
+[Event 23] type=func_exit, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 25] type=return, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=9
+[Event 26] type=func_exit, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 28] type=return, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=9
+[Event 29] type=func_exit, func="factorial(int)", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=5
+[Event 30] type=control_flow, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=13
+[Event 31] type=func_exit, func="main", file=src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp, line=26
+[Event 32] type=heap_free, func="operator delete", file=??, line=0
+[Event 33] type=heap_free, func="operator delete", file=??, line=0
+[Event 34] type=heap_free, func="operator delete", file=??, line=0
+[Event 35] type=heap_free, func="operator delete", file=??, line=0
+[Event 36] type=heap_free, func="operator delete", file=??, line=0
+[Event 37] type=heap_free, func="operator delete", file=??, line=0
+[Event 38] type=heap_free, func="operator delete", file=??, line=0
+[Event 39] type=heap_free, func="operator delete", file=??, line=0
+[Event 40] type=heap_free, func="operator delete", file=??, line=0
+Γ£à Generated 30 steps
+Γ£à Generated 30 steps
+[
+  {
+    "stepIndex": 0,
+    "eventType": "program_start",
+    "line": 0,
+    "function": "main",
+    "scope": "global",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 1,
+    "explanation": "≡ƒÜÇ Program started",
+    "internalEvents": [],
+    "frameId": "main-0",
+    "callDepth": 0,
+    "callIndex": 0,
+    "parentId": "main-0",
+    "isFunctionEntry": true
+  },
+  {
+    "stepIndex": 1,
+    "eventType": "func_enter",
+    "line": 0,
+    "function": "main",
+    "scope": "function",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 2,
+    "explanation": "Γ₧í∩╕Å Entering main",
+    "internalEvents": [],
+    "frameId": "main-0",
+    "callDepth": 0,
+    "callIndex": 1,
+    "parentId": "main-0",
+    "isFunctionEntry": true
+  },
+  {
+    "stepIndex": 2,
+    "eventType": "func_enter",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "function",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 3,
+    "explanation": "Γ₧í∩╕Å Entering factorial(int)",
+    "internalEvents": [],
+    "frameId": "factorial(int)-0",
+    "callDepth": 1,
+    "callIndex": 3,
+    "parentFrameId": "main-0",
+    "parentId": "factorial(int)-0",
+    "isFunctionEntry": true
+  },
+  {
+    "stepIndex": 3,
+    "eventType": "var_declare",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "block",
+    "symbol": "n",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 4,
+    "name": "n",
+    "varType": "int",
+    "explanation": "int n declared",
+    "internalEvents": [],
+    "frameId": "factorial(int)-0",
+    "functionName": "factorial(int)",
+    "callDepth": 1,
+    "callIndex": 4,
+    "parentFrameId": "main-0",
+    "parentId": "factorial(int)-0",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 4,
+    "eventType": "var_assign",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "block",
+    "symbol": "n",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 5,
+    "name": "n",
+    "value": 4,
+    "explanation": "n = 4",
+    "internalEvents": [],
+    "frameId": "factorial(int)-0",
+    "functionName": "factorial(int)",
+    "callDepth": 1,
+    "callIndex": 5,
+    "parentFrameId": "main-0",
+    "parentId": "factorial(int)-0",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 5,
+    "eventType": "condition_eval",
+    "line": 6,
+    "function": "factorial(int)",
+    "scope": "block",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 6,
+    "conditionId": "cond-factorial(int)-0-6",
+    "expression": "n == 1",
+    "result": false,
+    "controlRole": "caller",
+    "explanation": "≡ƒöì Condition (n == 1) = false",
+    "internalEvents": [],
+    "frameId": "factorial(int)-0",
+    "functionName": "factorial(int)",
+    "callDepth": 1,
+    "callIndex": 6,
+    "parentFrameId": "main-0",
+    "parentId": "factorial(int)-0",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 6,
+    "eventType": "func_enter",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "function",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 7,
+    "explanation": "Γ₧í∩╕Å Entering factorial(int)",
+    "internalEvents": [],
+    "frameId": "factorial(int)-1",
+    "callDepth": 2,
+    "callIndex": 7,
+    "parentFrameId": "factorial(int)-0",
+    "parentId": "factorial(int)-1",
+    "isFunctionEntry": true
+  },
+  {
+    "stepIndex": 7,
+    "eventType": "var_declare",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "block",
+    "symbol": "n",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 8,
+    "name": "n",
+    "varType": "int",
+    "explanation": "int n declared",
+    "internalEvents": [],
+    "frameId": "factorial(int)-1",
+    "functionName": "factorial(int)",
+    "callDepth": 2,
+    "callIndex": 8,
+    "parentFrameId": "factorial(int)-0",
+    "parentId": "factorial(int)-1",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 8,
+    "eventType": "var_assign",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "block",
+    "symbol": "n",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 9,
+    "name": "n",
+    "value": 3,
+    "explanation": "n = 3",
+    "internalEvents": [],
+    "frameId": "factorial(int)-1",
+    "functionName": "factorial(int)",
+    "callDepth": 2,
+    "callIndex": 9,
+    "parentFrameId": "factorial(int)-0",
+    "parentId": "factorial(int)-1",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 9,
+    "eventType": "condition_eval",
+    "line": 6,
+    "function": "factorial(int)",
+    "scope": "block",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 10,
+    "conditionId": "cond-factorial(int)-1-6",
+    "expression": "n == 1",
+    "result": false,
+    "controlRole": "caller",
+    "explanation": "≡ƒöì Condition (n == 1) = false",
+    "internalEvents": [],
+    "frameId": "factorial(int)-1",
+    "functionName": "factorial(int)",
+    "callDepth": 2,
+    "callIndex": 10,
+    "parentFrameId": "factorial(int)-0",
+    "parentId": "factorial(int)-1",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 10,
+    "eventType": "func_enter",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "function",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 11,
+    "explanation": "Γ₧í∩╕Å Entering factorial(int)",
+    "internalEvents": [],
+    "frameId": "factorial(int)-2",
+    "callDepth": 3,
+    "callIndex": 11,
+    "parentFrameId": "factorial(int)-1",
+    "parentId": "factorial(int)-2",
+    "isFunctionEntry": true
+  },
+  {
+    "stepIndex": 11,
+    "eventType": "var_declare",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "block",
+    "symbol": "n",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 12,
+    "name": "n",
+    "varType": "int",
+    "explanation": "int n declared",
+    "internalEvents": [],
+    "frameId": "factorial(int)-2",
+    "functionName": "factorial(int)",
+    "callDepth": 3,
+    "callIndex": 12,
+    "parentFrameId": "factorial(int)-1",
+    "parentId": "factorial(int)-2",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 12,
+    "eventType": "var_assign",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "block",
+    "symbol": "n",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 13,
+    "name": "n",
+    "value": 2,
+    "explanation": "n = 2",
+    "internalEvents": [],
+    "frameId": "factorial(int)-2",
+    "functionName": "factorial(int)",
+    "callDepth": 3,
+    "callIndex": 13,
+    "parentFrameId": "factorial(int)-1",
+    "parentId": "factorial(int)-2",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 13,
+    "eventType": "condition_eval",
+    "line": 6,
+    "function": "factorial(int)",
+    "scope": "block",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 14,
+    "conditionId": "cond-factorial(int)-2-6",
+    "expression": "n == 1",
+    "result": false,
+    "controlRole": "caller",
+    "explanation": "≡ƒöì Condition (n == 1) = false",
+    "internalEvents": [],
+    "frameId": "factorial(int)-2",
+    "functionName": "factorial(int)",
+    "callDepth": 3,
+    "callIndex": 14,
+    "parentFrameId": "factorial(int)-1",
+    "parentId": "factorial(int)-2",
+    "scopeDepth": 1
+  },
+  {
+    "stepIndex": 14,
+    "eventType": "func_enter",
+    "line": 5,
+    "function": "factorial(int)",
+    "scope": "function",
+    "file": "src_780c1581-cb8c-4a52-96ba-bfab5ac38a02.instrumented.cpp",
+    "timestamp": 15,
+    "explanation": "Γ₧í∩╕Å Entering factorial(int)",
+    "internalEvents": [],
+    "frameId": "factorial(int)-3",
+    "callDepth": 4,
+    "callIndex": 15,
+    "parentFrameId": "factorial(int)-2",
+    "parentId": "factorial(int)-3",
+    "isFunctionEntry": true
+  }
+]
+Done

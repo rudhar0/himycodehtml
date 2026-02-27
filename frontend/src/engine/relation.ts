@@ -57,8 +57,11 @@ export class RelationManager {
   private nodes: Map<string, RelationNode> = new Map();
   private pointerEdges: Map<string, string> = new Map();
   private frameStack: string[] = [];
+  private processedSteps: Set<number> = new Set();
+
   private root: RelationNode;
   private stepCounter: number = 0;
+  private prevScopeDepth: Map<string, number> = new Map();
 
   constructor() {
     this.root = this.createNode('root', 'root', null, {});
@@ -70,6 +73,7 @@ export class RelationManager {
       frameId: 'main-0',
       callDepth: 0,
       isActive: true,
+      containerStack: [],
     });
     this.addChild('root', mainFrame.id);
     this.frameStack.push(mainFrame.id);
@@ -81,9 +85,36 @@ export class RelationManager {
 
   applyStep(step: ExecutionStep, index: number, executionTrace?: ExecutionTrace): void {
     this.stepCounter = index;
+    if (this.processedSteps.has(index)) return;
+    this.processedSteps.add(index);
+
     const raw = step as any;
     const eventType: string = raw.eventType || raw.type || '';
     const frameId: string = raw.frameId || 'main-0';
+    const scopeDepth = Number(raw.scopeDepth ?? 0);
+
+    const frameNodeId = this.getCurrentFrameId();
+    const frameNode = this.nodes.get(frameNodeId);
+
+    console.log(`[RelationManager] applyStep: ${eventType}, frame: ${frameId}, depth: ${scopeDepth}, stack:`, frameNode?.data?.containerStack || []);
+    
+    // Auto-pop container stack if scope depth decreased within the SAME frame
+    if (frameNode) {
+      const prevDepth = this.prevScopeDepth.get(frameNodeId) ?? 0;
+      if (scopeDepth < prevDepth) {
+        const diff = prevDepth - scopeDepth;
+        for (let i = 0; i < diff; i++) {
+           if (frameNode.data.containerStack.length > 0) {
+              const topId = frameNode.data.containerStack[frameNode.data.containerStack.length - 1];
+              frameNode.data.containerStack.pop();
+              if (topId.startsWith('branch-') && frameNode.data.containerStack.length > 0) {
+                 frameNode.data.containerStack.pop();
+              }
+           }
+        }
+      }
+      this.prevScopeDepth.set(frameNodeId, scopeDepth);
+    }
 
     switch (eventType) {
       case 'func_enter':
@@ -93,15 +124,16 @@ export class RelationManager {
         this.handleFuncExit(raw, index, executionTrace);
         break;
       case 'var_declare':
-        this.handleVarDeclare(raw, index, frameId);
+        this.handleVarDeclare(raw, index);
         break;
       case 'var_assign':
       case 'var_load':
-        this.handleVarAssign(raw, index, frameId);
+      case 'assign':
+        this.handleVarAssign(raw, index);
         break;
       case 'array_declaration':
       case 'array_create':
-        this.handleArrayCreate(raw, index, frameId);
+        this.handleArrayCreate(raw, index);
         break;
       case 'array_assignment':
       case 'array_index_assign':
@@ -109,7 +141,7 @@ export class RelationManager {
         break;
       case 'heap_alloc':
       case 'heap_allocation':
-        this.handleHeapAlloc(raw, index, frameId);
+        this.handleHeapAlloc(raw, index);
         break;
       case 'heap_free':
         this.handleHeapFree(raw, index);
@@ -117,14 +149,14 @@ export class RelationManager {
       case 'output':
       case 'stdout':
       case 'print':
-        this.handleOutput(raw, index, frameId);
+        this.handleOutput(raw, index);
         break;
       case 'input_request':
       case 'input':
-        this.handleInput(raw, index, frameId);
+        this.handleInput(raw, index);
         break;
       case 'loop_start':
-        this.handleLoopStart(raw, index, frameId);
+        this.handleLoopStart(raw, index);
         break;
       case 'loop_iteration':
         this.handleLoopIteration(raw, index);
@@ -132,11 +164,19 @@ export class RelationManager {
       case 'loop_end':
         this.handleLoopEnd(raw, index);
         break;
+      case 'condition':
       case 'conditional_start':
-        this.handleConditionStart(raw, index, frameId);
+        this.handleConditionStart(raw, index);
         break;
+      case 'branch':
       case 'conditional_branch':
         this.handleConditionBranch(raw, index);
+        break;
+      case 'block_exit':
+        this.handleBlockExit(raw, index);
+        break;
+      case 'return':
+        this.handleReturn(raw, index);
         break;
       default:
         // Unknown types are preserved but not stored in the tree
@@ -173,6 +213,8 @@ export class RelationManager {
     this.nodes.clear();
     this.pointerEdges.clear();
     this.frameStack = [];
+    this.processedSteps.clear();
+    this.prevScopeDepth.clear();
     this.stepCounter = 0;
 
     this.root = this.createNode('root', 'root', null, {});
@@ -220,7 +262,18 @@ export class RelationManager {
   }
 
   private getCurrentFrameId(): string {
-    return this.frameStack[this.frameStack.length - 1] || 'frame-main-0';
+    return this.frameStack.length > 0 ? this.frameStack[this.frameStack.length - 1] : 'frame-main-0';
+  }
+
+  private getActiveParent(): string {
+    const frameId = this.getCurrentFrameId();
+    const frameNode = this.nodes.get(frameId);
+    
+    if (frameNode && frameNode.data.containerStack && frameNode.data.containerStack.length > 0) {
+      const stack = frameNode.data.containerStack;
+      return stack[stack.length - 1];
+    }
+    return frameId;
   }
 
   // -----------------------------------------------------------------------
@@ -247,6 +300,7 @@ export class RelationManager {
       parentFrameId,
       isActive: true,
       isReturning: false,
+      containerStack: [],
     });
 
     this.addChild(parentNodeId, frame.id);
@@ -261,17 +315,22 @@ export class RelationManager {
     if (node) {
       node.data.isActive = false;
       node.data.isReturning = true;
-      node.data.returnValue = raw.returnValue ?? raw.value;
+      // Use captured return value if available, else from raw
+      const returnValue = node.data.pendingReturnValue ?? raw.returnValue ?? raw.value;
+      node.data.returnValue = returnValue;
       node.lastUpdateStep = index;
 
-      // Create return element
-      const returnId = `return-${frameId}-${index}`;
-      this.createNode(returnId, 'function_return', nodeId, {
-        frameId,
-        functionName: raw.function || node.data.functionName,
-        returnValue: raw.returnValue ?? raw.value,
-      });
-      this.addChild(nodeId, returnId);
+      // Create return element - Stable ID
+      const returnId = `return-${nodeId.replace('frame-', '')}`;
+      if (!this.nodes.has(returnId)) {
+        console.log("CREATE RETURN:", returnId);
+        this.createNode(returnId, 'function_return', nodeId, {
+          frameId,
+          functionName: raw.function || node.data.functionName,
+          returnValue: returnValue,
+        });
+        this.addChild(nodeId, returnId);
+      }
     }
 
     // Pop from frame stack
@@ -279,12 +338,24 @@ export class RelationManager {
     if (idx !== -1) this.frameStack.splice(idx, 1);
   }
 
-  private handleVarDeclare(raw: any, index: number, frameId: string): void {
+  private handleReturn(raw: any, index: number): void {
+    const nodeId = this.getCurrentFrameId();
+    const node = this.nodes.get(nodeId);
+    if (node) {
+      node.data.pendingReturnValue = raw.value ?? raw.returnValue;
+      node.lastUpdateStep = index;
+    }
+  }
+
+  private handleVarDeclare(raw: any, index: number): void {
     const varName = raw.name || raw.symbol;
     if (!varName) return;
 
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
     const nodeId = `var-${frameId}-${varName}-${index}`;
-    const parentNodeId = `frame-${frameId}`;
+    if (this.nodes.has(nodeId)) return;
+
+    const parentNodeId = this.getActiveParent();
 
     // Determine if this is a pointer
     const varType = raw.varType || 'int';
@@ -308,13 +379,13 @@ export class RelationManager {
     this.addChild(parentNodeId, nodeId);
   }
 
-  private handleVarAssign(raw: any, index: number, frameId: string): void {
+  private handleVarAssign(raw: any, index: number): void {
     const varName = raw.name || raw.symbol;
     if (!varName) return;
 
     // Try to find existing variable — search backwards for most recent
     let existing: RelationNode | undefined;
-    const parentNodeId = `frame-${frameId}`;
+    const parentNodeId = this.getActiveParent();
     const parent = this.nodes.get(parentNodeId);
     if (parent) {
       for (let i = parent.children.length - 1; i >= 0; i--) {
@@ -336,7 +407,10 @@ export class RelationManager {
       }
     } else {
       // Create as new variable (initial load)
+      const frameId = this.getCurrentFrameId().replace('frame-', '');
       const nodeId = `var-${frameId}-${varName}-${index}`;
+      if (this.nodes.has(nodeId)) return;
+
       const varType = raw.varType || raw.type || 'int';
       const isPointer = varType.includes('*');
       this.createNode(nodeId, isPointer ? 'pointer' : 'variable', parentNodeId, {
@@ -356,12 +430,15 @@ export class RelationManager {
     }
   }
 
-  private handleArrayCreate(raw: any, index: number, frameId: string): void {
+  private handleArrayCreate(raw: any, index: number): void {
     const name = raw.name;
     if (!name) return;
 
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
     const nodeId = `array-${frameId}-${name}-${index}`;
-    const parentNodeId = `frame-${frameId}`;
+    if (this.nodes.has(nodeId)) return;
+
+    const parentNodeId = this.getActiveParent();
     const dims = raw.dimensions || [1];
 
     this.createNode(nodeId, 'array', parentNodeId, {
@@ -396,8 +473,12 @@ export class RelationManager {
     }
   }
 
-  private handleHeapAlloc(raw: any, index: number, frameId: string): void {
+  private handleHeapAlloc(raw: any, index: number): void {
     const nodeId = `heap-${raw.address || index}`;
+    if (this.nodes.has(nodeId)) return;
+
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
+
     this.createNode(nodeId, 'heap_object', 'root', {
       address: raw.address,
       size: raw.size,
@@ -417,9 +498,12 @@ export class RelationManager {
     }
   }
 
-  private handleOutput(raw: any, index: number, frameId: string): void {
+  private handleOutput(raw: any, index: number): void {
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
     const nodeId = `output-${frameId}-${index}`;
-    const parentNodeId = `frame-${frameId}`;
+    if (this.nodes.has(nodeId)) return;
+
+    const parentNodeId = this.getActiveParent();
     this.createNode(nodeId, 'output', parentNodeId, {
       text: raw.value || raw.stdout || '',
       birthStep: index,
@@ -428,9 +512,12 @@ export class RelationManager {
     this.addChild(parentNodeId, nodeId);
   }
 
-  private handleInput(raw: any, index: number, frameId: string): void {
+  private handleInput(raw: any, index: number): void {
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
     const nodeId = `input-${frameId}-${index}`;
-    const parentNodeId = `frame-${frameId}`;
+    if (this.nodes.has(nodeId)) return;
+
+    const parentNodeId = this.getActiveParent();
     this.createNode(nodeId, 'input', parentNodeId, {
       prompt: raw.prompt || '',
       format: raw.format || '',
@@ -440,10 +527,23 @@ export class RelationManager {
     this.addChild(parentNodeId, nodeId);
   }
 
-  private handleLoopStart(raw: any, index: number, frameId: string): void {
+  private handleLoopStart(raw: any, index: number): void {
     const loopId = raw.loopId ?? index;
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
     const nodeId = `loop-${frameId}-${loopId}`;
-    const parentNodeId = `frame-${frameId}`;
+    const frameNode = this.nodes.get(this.getCurrentFrameId());
+    
+    if (this.nodes.has(nodeId)) {
+      if (frameNode) {
+        const stack = frameNode.data.containerStack;
+        if (stack.length === 0 || stack[stack.length - 1] !== nodeId) {
+          stack.push(nodeId);
+        }
+      }
+      return;
+    }
+
+    const parentNodeId = this.getActiveParent();
     this.createNode(nodeId, 'loop', parentNodeId, {
       loopId,
       loopType: raw.loopType || 'for',
@@ -453,6 +553,9 @@ export class RelationManager {
       parentFrameId: frameId,
     });
     this.addChild(parentNodeId, nodeId);
+    if (frameNode) {
+      frameNode.data.containerStack.push(nodeId);
+    }
   }
 
   private handleLoopIteration(raw: any, index: number): void {
@@ -472,36 +575,108 @@ export class RelationManager {
       if (node.type === 'loop' && node.data.loopId === loopId && node.deathStep === null) {
         node.deathStep = index;
         node.lastUpdateStep = index;
+        
+        // Pop from container stack if it's the top
+        const frameNode = this.nodes.get(this.getCurrentFrameId());
+        if (frameNode && frameNode.data.containerStack) {
+          const stack = frameNode.data.containerStack;
+          if (stack.length > 0 && stack[stack.length - 1] === id) {
+            stack.pop();
+          }
+        }
         break;
       }
     }
   }
 
-  private handleConditionStart(raw: any, index: number, frameId: string): void {
-    const condId = raw.conditionId || `cond-${index}`;
-    const nodeId = `condition-${frameId}-${condId}`;
-    const parentNodeId = `frame-${frameId}`;
+  private handleConditionStart(raw: any, index: number): void {
+    const line = raw.line || raw.lineNumber || index;
+    const frameId = this.getCurrentFrameId().replace('frame-', '');
+    
+    // FIX: Use stable conditionId from backend to prevent collisions in loops/recursion
+    const nodeId = raw.conditionId ? `node-condition-${raw.conditionId}` : `condition-${frameId}-${line}`;
+    const frameNode = this.nodes.get(this.getCurrentFrameId());
+
+    if (this.nodes.has(nodeId)) {
+      if (frameNode) {
+        const stack = frameNode.data.containerStack;
+        if (stack.length === 0 || stack[stack.length - 1] !== nodeId) {
+          stack.push(nodeId);
+        }
+      }
+      return;
+    }
+
+    console.log("CREATE CONDITION:", nodeId);
+    const parentNodeId = this.getActiveParent();
     this.createNode(nodeId, 'condition', parentNodeId, {
-      conditionId: condId,
+      conditionId: raw.conditionId || `cond-${line}`,
       conditionType: raw.conditionType || 'if',
+      expression: raw.expression || raw.condition,
       birthStep: index,
       parentFrameId: frameId,
     });
     this.addChild(parentNodeId, nodeId);
+    if (frameNode) {
+      frameNode.data.containerStack.push(nodeId);
+    }
   }
 
   private handleConditionBranch(raw: any, index: number): void {
     const condId = raw.conditionId;
-    for (const [id, node] of this.nodes) {
-      if (
-        node.type === 'condition' &&
-        node.data.conditionId === condId &&
-        node.deathStep === null
-      ) {
-        node.data.conditionResult = raw.result;
-        node.data.branchTaken = raw.branch;
-        node.lastUpdateStep = index;
-        break;
+    const branchType = raw.branchType || (raw.result ? 'true' : 'false');
+    
+    // FIX: Use Direct lookup by conditionId for stability and performance
+    let condNodeId = condId ? `node-condition-${condId}` : '';
+    let node = condNodeId ? this.nodes.get(condNodeId) : null;
+
+    if (!node || node.deathStep !== null) {
+      // Fallback search (compatibility)
+      condNodeId = '';
+      for (const [id, n] of this.nodes) {
+        if (n.type === 'condition' && n.data.conditionId === condId && n.deathStep === null) {
+          condNodeId = id;
+          node = n;
+          break;
+        }
+      }
+    }
+
+    if (!node || !condNodeId) return;
+
+    node.data.conditionResult = raw.result;
+    node.data.branchTaken = branchType;
+    node.lastUpdateStep = index;
+
+    // Create branch container
+    const branchNodeId = `branch-${condNodeId}-${branchType}`;
+    if (!this.nodes.has(branchNodeId)) {
+      this.createNode(branchNodeId, 'root', condNodeId, {
+        branchType,
+        isBranchContainer: true
+      });
+      this.addChild(condNodeId, branchNodeId);
+    }
+    
+    // Update container stack: if we were in the condition, branch is child of condition. 
+    const frameNode = this.nodes.get(this.getCurrentFrameId());
+    if (frameNode && frameNode.data.containerStack) {
+      const stack = frameNode.data.containerStack;
+      if (stack.length > 0 && stack[stack.length - 1] === condNodeId) {
+        stack.push(branchNodeId);
+      }
+    }
+  }
+
+  private handleBlockExit(raw: any, index: number): void {
+    const frameNode = this.nodes.get(this.getCurrentFrameId());
+    if (frameNode && frameNode.data.containerStack) {
+      const stack = frameNode.data.containerStack;
+      if (stack.length > 0) {
+         const topId = stack[stack.length - 1];
+         if (topId.startsWith('branch-') || topId.startsWith('loop-')) {
+            stack.pop();
+         }
       }
     }
   }

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loop Visualization — Prototype v2</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#070c18;--surface:#0b1425;--border:#182338;--border2:#1e2d4a;
+  --for:#F59E0B;--for-l:#FCD34D;--for-glow:rgba(245,158,11,.5);--for-bg:rgba(245,158,11,.07);
+  --while:#8B5CF6;--while-l:#C084FC;--while-bg:rgba(139,92,246,.07);
+  --cond:#FF7A18;--fn:#06B6D4;--green:#10B981;--red:#EF4444;
+  --muted:#475569;--dim:#64748B;--text:#E2E8F0;--textd:#94A3B8;
+}
+body{background:var(--bg);font-family:'JetBrains Mono',monospace;color:var(--text);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(rgba(30,45,74,.4) 1px,transparent 1px);background-size:28px 28px;pointer-events:none;z-index:0}
+
+/* topbar */
+.tb{position:sticky;top:0;z-index:200;background:rgba(7,12,24,.93);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);padding:9px 24px;display:flex;align-items:center;gap:14px}
+.tb-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--dim)}
+.tb-sep{width:1px;height:14px;background:var(--border2)}
+.tb-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;color:var(--for);opacity:.75}
+
+/* viewport */
+.vp{position:relative;z-index:1;overflow:hidden;height:calc(100vh - 42px)}
+.cs{padding:32px 0 140px;will-change:transform;transition:transform .5s cubic-bezier(.4,0,.2,1)}
+
+/* trace two-column */
+.trace{display:grid;grid-template-columns:216px 1fr;max-width:860px;margin:0 auto;padding:0 22px;gap:0}
+.ch{font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:9px;border-bottom:1px solid var(--border);margin-bottom:13px}
+.ccol{padding-right:10px}
+.bcol{padding-left:14px;border-left:1px solid var(--border)}
+
+/* caller block */
+.caller{display:flex;align-items:center;height:44px;margin-bottom:9px;border-radius:8px;border:1.8px solid;overflow:hidden;cursor:pointer;transition:filter .12s,box-shadow .15s;position:relative;background:rgba(11,20,37,.97)}
+.caller:hover{filter:brightness(1.08)}
+.caller.ft{border-color:rgba(245,158,11,.45);background:linear-gradient(90deg,rgba(11,20,37,.98),rgba(245,158,11,.05))}
+.caller.wt{border-color:rgba(139,92,246,.45);background:linear-gradient(90deg,rgba(11,20,37,.98),rgba(139,92,246,.05))}
+.caller.ft.act{border-color:var(--for);box-shadow:0 0 14px var(--for-glow)}
+.caller.wt.act{border-color:var(--while);box-shadow:0 0 14px rgba(139,92,246,.4)}
+.stripe{width:4px;align-self:stretch;flex-shrink:0;border-radius:8px 0 0 8px}
+.ft .stripe{background:var(--for)}.wt .stripe{background:var(--while)}
+.ci{display:flex;align-items:center;gap:6px;padding:0 8px;flex:1;min-width:0}
+.ce{font-size:10px;color:#FFF0D9;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bdg{padding:2px 8px;border-radius:99px;font-size:8px;font-weight:700;white-space:nowrap;flex-shrink:0}
+.b-for{background:rgba(15,23,42,.5);border:1px solid rgba(252,211,77,.7);color:#FCD34D}
+.b-whl{background:rgba(15,23,42,.5);border:1px solid rgba(192,132,252,.7);color:#C084FC}
+.b-run{color:#10B981;border:1px solid rgba(16,185,129,.5);background:rgba(16,185,129,.08)}
+.b-don{color:#64748B;border:1px solid rgba(100,116,139,.4);background:rgba(100,116,139,.07)}
+.b-cnt{background:rgba(30,45,74,.55);border:1px solid rgba(255,255,255,.1);color:var(--textd)}
+.pls{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:pls 1.3s ease-in-out infinite}
+.ft .pls{background:var(--for)}.wt .pls{background:var(--while)}
+@keyframes pls{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(245,158,11,.6)}60%{transform:scale(1.2);box-shadow:0 0 0 5px rgba(245,158,11,0)}}
+.skp{padding:2px 7px;border-radius:5px;font-size:10px;font-family:inherit;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);cursor:pointer;flex-shrink:0;color:#FCA5A5;transition:background .12s}
+.skp:hover{background:rgba(239,68,68,.3)}
+
+/* loop container */
+.loop{border-radius:10px;background:rgba(11,20,37,.97);border:2px solid;margin-bottom:13px;overflow:hidden;transition:box-shadow .2s,border-color .2s}
+.loop.ft{border-color:rgba(245,158,11,.45)}
+.loop.wt{border-color:rgba(139,92,246,.45)}
+.loop.ft.act{border-color:var(--for);box-shadow:0 0 28px rgba(245,158,11,.22)}
+.loop.wt.act{border-color:var(--while);box-shadow:0 0 28px rgba(139,92,246,.22)}
+
+/* header */
+.lhdr{position:relative;overflow:hidden;padding:9px 14px 7px}
+.lhdr::before{content:'';position:absolute;inset:0;opacity:.88}
+.ft .lhdr::before{background:linear-gradient(120deg,#F59E0B,#FCD34D)}
+.wt .lhdr::before{background:linear-gradient(120deg,#8B5CF6,#C084FC)}
+.hfl{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:3;transition:opacity .06s}
+.hst{position:absolute;left:0;top:0;bottom:0;width:5px;z-index:2}
+.ft .hst{background:var(--for)}.wt .hst{background:var(--while)}
+.hr1,.hr2{position:relative;z-index:2;display:flex;align-items:center;gap:7px;flex-wrap:nowrap}
+.hr1{margin-bottom:5px}
+.hx{font-size:11px;color:#FFF0D9;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sn-h{font-size:9px;color:rgba(80,40,0,.8);font-weight:700;margin-left:auto;flex-shrink:0}
+.tgl,.skh{padding:2px 9px;border-radius:8px;font-size:8px;font-weight:700;font-family:inherit;cursor:pointer;transition:opacity .12s;flex-shrink:0}
+.tgl{background:rgba(15,23,42,.45);border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.8)}
+.tgl:hover{background:rgba(15,23,42,.7)}
+.skh{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.5);color:#FCA5A5}
+.skh:hover{background:rgba(239,68,68,.3)}
+
+/* header var chips — top-to-bottom rows of 4 */
+.hvars{position:relative;z-index:2;display:flex;flex-wrap:wrap;gap:4px;padding:5px 0 1px}
+.vc{display:flex;align-items:center;justify-content:space-between;width:78px;height:20px;padding:0 7px;border-radius:10px;background:rgba(51,65,85,.55);border:1px solid;transition:border-color .2s,background .2s}
+.ft .vc{border-color:rgba(252,211,77,.3)}.wt .vc{border-color:rgba(192,132,252,.3)}
+.vc.chg{animation:vf .5s ease forwards}
+@keyframes vf{0%{background:rgba(245,158,11,.4);border-color:rgba(245,158,11,.9)}100%{background:rgba(51,65,85,.55);border-color:rgba(252,211,77,.3)}}
+.wt .vc.chg{animation:vfw .5s ease forwards}
+@keyframes vfw{0%{background:rgba(139,92,246,.4);border-color:rgba(139,92,246,.9)}100%{background:rgba(51,65,85,.55);border-color:rgba(192,132,252,.3)}}
+.vn{font-size:8px;font-weight:700;opacity:.6;color:#FFF0D9}
+.vv{font-size:10px;font-weight:700;color:#FFF0D9}
+.ft .vc.chg .vv{color:#FCD34D}.wt .vc.chg .vv{color:#C084FC}
+
+.ldiv{height:1px;background:rgba(255,255,255,.1)}
+
+/* ── body separator (expanded only — top-to-bottom boundary marker) */
+.bsep{display:flex;align-items:center;padding:5px 10px 3px}
+.sln{flex:1;height:1px}
+.ft .sln{background:repeating-linear-gradient(90deg,rgba(245,158,11,.35) 0px,rgba(245,158,11,.35) 4px,transparent 4px,transparent 7px)}
+.wt .sln{background:repeating-linear-gradient(90deg,rgba(139,92,246,.35) 0px,rgba(139,92,246,.35) 4px,transparent 4px,transparent 7px)}
+.slbl{padding:1px 8px;border-radius:7px;margin:0 6px;font-size:8px;font-weight:700;letter-spacing:1.5px;background:rgba(15,23,42,.7);flex-shrink:0}
+.ft .slbl{border:1px solid rgba(245,158,11,.28);color:rgba(245,158,11,.6)}
+.wt .slbl{border:1px solid rgba(139,92,246,.28);color:rgba(139,92,246,.6)}
+
+/* body */
+.lbdy{padding:7px 10px 9px 12px}
+.bi{border-radius:8px;padding:7px 10px;min-height:60px}
+.ft .bi{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.15)}
+.wt .bi{background:rgba(139,92,246,.04);border:1px solid rgba(139,92,246,.15)}
+.ra{width:8px;height:8px;border-radius:50%;margin:0 0 7px 2px}
+.ft .ra{background:var(--for);box-shadow:0 0 6px var(--for-glow)}
+.wt .ra{background:var(--while);box-shadow:0 0 6px rgba(139,92,246,.5)}
+
+/* steps — strictly top-to-bottom, no horizontal layout ever */
+.step{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:5px;background:rgba(15,23,42,.6);border:1px solid var(--border2);font-size:10px;color:var(--textd);transition:border-color .2s,background .2s}
+.step:last-child{margin-bottom:0}
+.step.act{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.06);color:var(--text)}
+.wt .step.act{border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.06)}
+.sn{font-size:8px;color:var(--muted);font-weight:700;flex-shrink:0}
+.rv{margin-left:auto;font-size:9px;opacity:.7;flex-shrink:0}
+.fn{color:var(--fn)}
+
+/* nested condition inside body */
+.nc{border-radius:8px;background:rgba(15,23,42,.8);border:1.5px solid rgba(255,122,24,.32);margin-bottom:5px;overflow:hidden}
+.nc:last-child{margin-bottom:0}
+.nch{display:flex;align-items:center;gap:7px;padding:5px 9px;background:linear-gradient(90deg,rgba(255,122,24,.22),rgba(255,122,24,.05));font-size:10px}
+.ifb{padding:2px 7px;border-radius:99px;font-size:8px;font-weight:700;background:rgba(15,23,42,.45);border:1px solid rgba(255,220,170,.5);color:#FFF0D9;flex-shrink:0}
+.res-t{padding:2px 7px;border-radius:99px;font-size:8px;font-weight:700;border:1.2px solid rgba(255,209,102,.6);color:#FFD166;background:rgba(255,209,102,.07);flex-shrink:0}
+.res-f{padding:2px 7px;border-radius:99px;font-size:8px;font-weight:700;border:1.2px solid rgba(255,107,107,.6);color:#FF6B6B;background:rgba(255,107,107,.07);flex-shrink:0}
+.ncb{padding:5px 9px}
+.cx{font-size:10px;color:#FFF0D9;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* collapsed summary lane */
+.sum{margin:6px 10px;padding:8px 13px;border-radius:8px;min-height:80px;display:flex;flex-direction:column;gap:7px}
+.ft .sum{background:var(--for-bg);border:1px solid rgba(245,158,11,.18)}
+.wt .sum{background:var(--while-bg);border:1px solid rgba(139,92,246,.18)}
+.tk{display:flex;align-items:center;gap:7px}
+.td{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:pls 1.2s ease-in-out infinite}
+.ft .td{background:var(--for)}.wt .td{background:var(--while)}
+.tt{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ft .tt{color:var(--for-l)}.wt .tt{color:var(--while-l)}
+.dr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.dl{font-size:9px;color:var(--dim);flex-shrink:0}
+.dc{padding:2px 8px;border-radius:9px;font-size:9px;background:rgba(51,65,85,.55);color:#CBD5E1;border:1px solid;transition:all .25s}
+.ft .dc{border-color:rgba(245,158,11,.22)}.wt .dc{border-color:rgba(139,92,246,.22)}
+.dc.fl{animation:df .45s ease}
+@keyframes df{0%{background:rgba(245,158,11,.35);border-color:rgba(245,158,11,.9);color:#FFF0D9}100%{background:rgba(51,65,85,.55);border-color:rgba(245,158,11,.22);color:#CBD5E1}}
+.sr{display:flex;gap:5px;flex-wrap:wrap}
+.sb{padding:2px 8px;border-radius:9px;font-size:9px;font-weight:600;background:rgba(15,23,42,.55);white-space:nowrap}
+.sb.sc{border:1px solid rgba(255,122,24,.4);color:rgba(255,122,24,.9)}
+.sb.sl{border:1px solid rgba(139,92,246,.4);color:rgba(139,92,246,.9)}
+.sb.sf{border:1px solid rgba(6,182,212,.4);color:rgba(6,182,212,.9)}
+
+/* footer */
+.lftr{display:flex;align-items:center;justify-content:space-between;padding:6px 13px;background:rgba(5,10,20,.5);border-top:1px solid var(--border)}
+.upd{padding:3px 10px;border-radius:10px;font-size:10px;background:rgba(15,23,42,.5)}
+.ft .upd{border:1px solid rgba(245,158,11,.25);color:var(--for-l)}
+.wt .upd{border:1px solid rgba(139,92,246,.25);color:var(--while-l)}
+.cs{padding:3px 10px;border-radius:10px;font-size:9px;font-weight:700}
+.cok{background:rgba(16,185,129,.1);border:1.2px solid rgba(16,185,129,.5);color:#34D399}
+.cex{background:rgba(239,68,68,.1);border:1.2px solid rgba(239,68,68,.5);color:#FCA5A5}
+
+/* plain step */
+.ps{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:9px;background:rgba(11,20,37,.7);border:1px solid var(--border);font-size:10px;color:var(--textd)}
+
+/* camera flash overlay */
+.cf{position:fixed;inset:0;pointer-events:none;z-index:500;background:rgba(245,158,11,.07);opacity:0;transition:opacity .18s}
+.cf.on{opacity:1}
+
+/* controls */
+.cbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:300;background:rgba(11,20,37,.97);border:1px solid var(--border2);border-radius:12px;padding:8px 16px;display:flex;align-items:center;gap:9px;backdrop-filter:blur(16px);box-shadow:0 8px 40px rgba(0,0,0,.55);font-size:10px}
+.clb{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+.cb{padding:5px 11px;border-radius:7px;border:1px solid var(--border2);background:rgba(24,35,56,.6);color:var(--text);font-size:9px;font-family:inherit;cursor:pointer;transition:background .12s,border-color .12s}
+.cb:hover{background:rgba(24,35,56,1);border-color:var(--for);color:var(--for-l)}
+.csep{width:1px;height:18px;background:var(--border)}
+#msg{font-size:9px;color:var(--for-l);min-width:128px;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="tb">
+  <span class="tb-title">Loop Visualization</span>
+  <div class="tb-sep"></div>
+  <span class="tb-tag">v2 — CAMERA CYCLE · LIVE VARS · BODY SEPARATOR · TOP-TO-BOTTOM</span>
+</div>
+
+<div class="cf" id="cf"></div>
+
+<div class="vp" id="vp">
+<div class="cs" id="cs">
+<div class="trace">
+
+  <!-- ══════ CALLER ══════ -->
+  <div class="ccol">
+    <div class="ch">Caller Column</div>
+
+    <div class="ps"><span class="sn">#6</span><span>const arr = [3,7,1,9,2,8,4,6]</span></div>
+
+    <div class="caller ft act" id="c-for" onclick="tog('for')">
+      <div class="stripe"></div>
+      <div class="ci">
+        <span class="bdg b-for">FOR</span>
+        <span class="ce">i=0; i&lt;arr.length; i++</span>
+        <span class="bdg b-cnt" id="cc-for">3/8</span>
+        <span class="bdg b-run" id="cs-for">RUNNING</span>
+        <div class="pls ft"></div>
+        <button class="skp" onclick="skip(event,'for')">⏭</button>
+      </div>
+    </div>
+
+    <div class="caller wt" id="c-whl" style="margin-top:6px" onclick="tog('while')">
+      <div class="stripe"></div>
+      <div class="ci">
+        <span class="bdg b-whl">WHILE</span>
+        <span class="ce">left &lt;= right</span>
+        <span class="bdg b-cnt">5/?</span>
+        <span class="bdg b-don">DONE</span>
+        <button class="skp" onclick="skip(event,'while')">⏭</button>
+      </div>
+    </div>
+
+    <div class="ps" style="margin-top:9px"><span class="sn">#34</span><span>return result</span></div>
+  </div>
+
+  <!-- ══════ BODY ══════ -->
+  <div class="bcol">
+    <div class="ch">Body Column</div>
+
+    <!-- FOR loop -->
+    <div class="loop ft act" id="l-for">
+      <div class="lhdr">
+        <div class="hfl" id="hfl-for"></div>
+        <div class="hst"></div>
+        <div class="hr1">
+          <span class="bdg b-for" style="font-size:10px;padding:3px 11px">FOR</span>
+          <span class="hx">i = 0; i &lt; arr.length; i++</span>
+          <span class="bdg b-cnt" id="bc-for">3/8</span>
+          <span class="bdg b-run" id="bs-for">RUNNING</span>
+        </div>
+        <div class="hr2">
+          <button class="tgl" id="tgl-for" onclick="tog('for')">▾ COLLAPSE</button>
+          <button class="skh" onclick="skipB(event,'for')">⏭ SKIP</button>
+          <span class="sn-h">#7</span>
+        </div>
+        <!-- Live header vars: i, sum, count — any number supported, rows of 4 -->
+        <div class="hvars ft" id="hv-for">
+          <div class="vc ft chg" id="vc-i">
+            <span class="vn">i</span><span class="vv" id="vv-i">3</span>
+          </div>
+          <div class="vc ft" id="vc-sum">
+            <span class="vn">sum</span><span class="vv" id="vv-sum">21</span>
+          </div>
+          <div class="vc ft" id="vc-cnt">
+            <span class="vn">cnt</span><span class="vv" id="vv-cnt">3</span>
+          </div>
+          <div class="vc ft" id="vc-thr">
+            <span class="vn">thr</span><span class="vv" id="vv-thr">5</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ldiv"></div>
+
+      <!-- EXPANDED -->
+      <div id="exp-for">
+        <!-- Body separator — visual boundary for expanded state -->
+        <div class="bsep ft">
+          <div class="sln"></div>
+          <span class="slbl">BODY</span>
+          <div class="sln"></div>
+        </div>
+        <div class="lbdy">
+          <div class="ra ft"></div>
+          <div class="bi ft">
+            <!-- All child steps are STRICTLY top-to-bottom — no horizontal layout -->
+            <div class="nc">
+              <div class="nch">
+                <span class="ifb">IF</span>
+                <span class="cx">arr[i] &gt; threshold</span>
+                <span id="nr-for" class="res-t">TRUE</span>
+              </div>
+              <div class="ncb">
+                <div class="step act" id="st-sum">
+                  <span class="sn">#10</span>
+                  <span>sum += arr[i]</span>
+                  <span class="rv" style="color:#FFD166">sum=<span id="sv">21</span></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="step" id="st-cnt">
+              <span class="sn">#11</span><span>count++</span>
+            </div>
+
+            <div class="step" id="st-fn">
+              <span class="sn">#12</span>
+              <span class="fn">checkBoundary(i)</span>
+              <span class="rv" style="color:rgba(6,182,212,.7)">→ true</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLLAPSED summary -->
+      <div class="sum ft" id="sum-for" style="display:none">
+        <div class="tk">
+          <div class="td ft"></div>
+          <span class="tt" id="tk-for">currently: <strong>checkBoundary(i)</strong></span>
+        </div>
+        <div class="dr">
+          <span class="dl">Δ</span>
+          <span class="dc ft" id="dc-i">i: 2→<strong id="dv-i">3</strong></span>
+          <span class="dc ft" id="dc-sum">sum: 14→<strong id="dv-sum">21</strong></span>
+          <span class="dc ft" id="dc-cnt">cnt: 2→<strong id="dv-cnt">3</strong></span>
+        </div>
+        <div class="sr">
+          <span class="sb sc" id="sb-if">if arr[i]&gt;threshold: TRUE</span>
+          <span class="sb sf">checkBoundary(): true</span>
+        </div>
+      </div>
+
+      <div class="lftr ft">
+        <span class="upd ft">↺ i++</span>
+        <span class="cs cok" id="fs-for">✓ CONTINUE</span>
+      </div>
+    </div>
+
+    <!-- WHILE loop -->
+    <div class="loop wt" id="l-whl">
+      <div class="lhdr">
+        <div class="hfl" id="hfl-whl"></div>
+        <div class="hst"></div>
+        <div class="hr1">
+          <span class="bdg b-whl" style="font-size:10px;padding:3px 11px">WHILE</span>
+          <span class="hx">left &lt;= right</span>
+          <span class="bdg b-cnt">5/?</span>
+          <span class="bdg b-don">DONE</span>
+        </div>
+        <div class="hr2">
+          <button class="tgl" id="tgl-whl" onclick="tog('while')">▾ COLLAPSE</button>
+          <button class="skh" onclick="skipB(event,'while')">⏭ SKIP</button>
+          <span class="sn-h">#18</span>
+        </div>
+        <div class="hvars wt">
+          <div class="vc wt"><span class="vn">left</span><span class="vv">5</span></div>
+          <div class="vc wt"><span class="vn">right</span><span class="vv">7</span></div>
+          <div class="vc wt"><span class="vn">mid</span><span class="vv">6</span></div>
+        </div>
+      </div>
+      <div class="ldiv"></div>
+      <div id="exp-whl">
+        <div class="bsep wt">
+          <div class="sln"></div>
+          <span class="slbl">BODY</span>
+          <div class="sln"></div>
+        </div>
+        <div class="lbdy">
+          <div class="ra wt"></div>
+          <div class="bi wt">
+            <div class="step"><span class="sn">#20</span><span>mid = Math.floor((left+right)/2)</span><span class="rv" style="color:#A78BFA">mid=6</span></div>
+            <div class="nc">
+              <div class="nch"><span class="ifb">IF</span><span class="cx">arr[mid] === target</span><span class="res-f">FALSE</span></div>
+              <div class="ncb">
+                <div class="nc">
+                  <div class="nch"><span class="ifb">ELSE IF</span><span class="cx">arr[mid] &lt; target</span><span class="res-t">TRUE</span></div>
+                  <div class="ncb">
+                    <div class="step act wt"><span class="sn">#25</span><span>left = mid + 1</span><span class="rv" style="color:#C084FC">left=7</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="sum wt" id="sum-whl" style="display:none">
+        <div class="tk"><div class="td wt" style="background:#8B5CF6"></div><span class="tt" style="color:#C084FC">currently: <strong>left = mid + 1</strong></span></div>
+        <div class="dr"><span class="dl">Δ</span><span class="dc wt">left: 3→5</span><span class="dc wt">mid: 3→4</span></div>
+        <div class="sr"><span class="sb sc">if arr[mid]===target: FALSE</span><span class="sb sc">else if arr[mid]&lt;target: TRUE</span></div>
+      </div>
+      <div class="lftr wt">
+        <span class="upd wt">— (implicit)</span>
+        <span class="cs cex">✗ EXIT</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</div>
+
+<div class="cbar">
+  <span class="clb">Simulate</span>
+  <button class="cb" onclick="nextStep()">▶ Next Step</button>
+  <button class="cb" onclick="nextIter()">⤳ New Iteration</button>
+  <div class="csep"></div>
+  <button class="cb" onclick="tog('for')">⊡ FOR toggle</button>
+  <button class="cb" onclick="tog('while')">⊡ WHILE toggle</button>
+  <div class="csep"></div>
+  <span id="msg">iter 3/8  •  step 12</span>
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────────────
+const S = {
+  for:   { col:false, iter:3, total:8, v:{i:3,sum:21,cnt:3,thr:5}, pv:{i:2,sum:14,cnt:2,thr:5} },
+  while: { col:false }
+};
+
+// Step sequence for FOR loop
+const STEPS = [
+  { i:3, sum:21, cnt:3, tk:'arr[i] > threshold', cr:true,  cl:'TRUE',  ok:true,  sv:21 },
+  { i:3, sum:21, cnt:4, tk:'count++',             cr:true,  cl:'TRUE',  ok:true,  sv:21 },
+  { i:3, sum:21, cnt:4, tk:'checkBoundary(i)',    cr:true,  cl:'TRUE',  ok:true,  sv:21 },
+  // ── new iteration ──
+  { i:4, sum:21, cnt:4, tk:'arr[i] > threshold', cr:false, cl:'FALSE', ok:true,  sv:21, ni:true },
+  { i:4, sum:21, cnt:5, tk:'count++',             cr:false, cl:'FALSE', ok:true,  sv:21 },
+  { i:5, sum:29, cnt:5, tk:'sum += arr[i]',       cr:true,  cl:'TRUE',  ok:true,  sv:29, ni:true },
+  { i:6, sum:38, cnt:6, tk:'sum += arr[i]',       cr:true,  cl:'TRUE',  ok:true,  sv:38, ni:true },
+  { i:7, sum:38, cnt:7, tk:'checkBoundary(i)',    cr:false, cl:'FALSE', ok:true,  sv:38, ni:true },
+  { i:8, sum:38, cnt:7, tk:'i < arr.length',      cr:false, cl:'FALSE', ok:false, sv:38, ni:true, done:true },
+];
+let si = 0;
+
+// ── Toggle ──────────────────────────────────────────────────────────────
+function tog(t) {
+  const s = S[t]; s.col = !s.col;
+  const isFor = t === 'for';
+  const exp = document.getElementById(`exp-${isFor?'for':'whl'}`);
+  const sum = document.getElementById(`sum-${isFor?'for':'whl'}`);
+  const btn = document.getElementById(`tgl-${isFor?'for':'whl'}`);
+  if (s.col) {
+    exp.style.display = 'none';
+    sum.style.display = 'flex'; sum.style.opacity = '0';
+    requestAnimationFrame(() => { sum.style.transition='opacity .2s'; sum.style.opacity='1'; });
+    btn.textContent = '▸ EXPAND';
+  } else {
+    sum.style.display = 'none';
+    exp.style.display = 'block'; exp.style.opacity = '0';
+    requestAnimationFrame(() => { exp.style.transition='opacity .2s'; exp.style.opacity='1'; });
+    btn.textContent = '▾ COLLAPSE';
+  }
+}
+
+// ── Camera cycle-back — smooth scroll viewport to loop header ──────────
+// Mirrors onIterationCycle() in LoopElement.tsx: fired when currentIteration changes.
+function camToHdr(loopKey) {
+  const hdrId  = loopKey === 'for' ? 'hfl-for' : 'hfl-whl';
+  const loopEl = document.getElementById(loopKey === 'for' ? 'l-for' : 'l-whl');
+  const scroll = document.getElementById('cs');
+  const vp     = document.getElementById('vp');
+  if (!loopEl || !scroll || !vp) return;
+
+  // Compute where the loop header is relative to the viewport
+  const loopRect = loopEl.getBoundingClientRect();
+  const vpRect   = vp.getBoundingClientRect();
+  const relTop   = loopRect.top - vpRect.top;
+
+  // Target: header sits at ~15% from top of viewport
+  const targetShift = relTop - vpRect.height * 0.15;
+
+  // Read current translateY
+  const cur = parseFloat(
+    (scroll.style.transform || 'translateY(0)').replace(/[^-\d.]/g, '') || '0'
+  );
+  const next = cur - targetShift;
+  scroll.style.transform = `translateY(${next}px)`;
+
+  // Screen flash
+  const cf = document.getElementById('cf');
+  cf.classList.add('on');
+  setTimeout(() => cf.classList.remove('on'), 220);
+
+  // Header white flash
+  const hfl = document.getElementById(hdrId);
+  if (hfl) {
+    hfl.style.transition = 'opacity .06s';
+    hfl.style.opacity = '.6';
+    setTimeout(() => {
+      hfl.style.transition = 'opacity .5s ease';
+      hfl.style.opacity = '0';
+    }, 80);
+  }
+}
+
+// ── Update var chip ─────────────────────────────────────────────────────
+function updVC(chipId, valId, val, flash) {
+  const c = document.getElementById(chipId);
+  const v = document.getElementById(valId);
+  if (v) v.textContent = val;
+  if (flash && c) {
+    c.classList.remove('chg');
+    void c.offsetWidth;
+    c.classList.add('chg');
+  }
+}
+
+// ── Update delta chip ───────────────────────────────────────────────────
+function updDC(chipId, valId, prev, curr) {
+  const c = document.getElementById(chipId);
+  const v = document.getElementById(valId);
+  if (v) v.textContent = curr;
+  if (c && String(prev) !== String(curr)) {
+    c.classList.remove('fl');
+    void c.offsetWidth;
+    c.classList.add('fl');
+  }
+}
+
+// ── Next step ───────────────────────────────────────────────────────────
+function nextStep() {
+  if (si >= STEPS.length) return;
+  const st = STEPS[si++];
+  const s  = S.for;
+  const pv = { ...s.v };
+  s.v = { i:st.i, sum:st.sum, cnt:st.cnt, thr:s.v.thr };
+
+  if (st.ni) {
+    s.iter = Math.min(st.i + 1, s.total);
+    s.pv   = { ...pv };
+
+    // ── Camera cycles back to header ──────────────────────────────────────
+    camToHdr('for');
+
+    // ── Header var chips flash on change ──────────────────────────────────
+    updVC('vc-i',   'vv-i',   st.i,   st.i   !== pv.i);
+    updVC('vc-sum', 'vv-sum', st.sum, st.sum !== pv.sum);
+    updVC('vc-cnt', 'vv-cnt', st.cnt, st.cnt !== pv.cnt);
+
+    // Counters
+    document.getElementById('cc-for').textContent = `${s.iter}/${s.total}`;
+    document.getElementById('bc-for').textContent = `${s.iter}/${s.total}`;
+  }
+
+  // Nested cond badge
+  const nr = document.getElementById('nr-for');
+  if (nr) { nr.className = st.cr ? 'res-t' : 'res-f'; nr.textContent = st.cl; }
+  // Struct badge in summary
+  const sb = document.getElementById('sb-if');
+  if (sb) sb.textContent = `if arr[i]>threshold: ${st.cl}`;
+
+  // Ticker
+  const tk = document.getElementById('tk-for');
+  if (tk) tk.innerHTML = `currently: <strong>${st.tk}</strong>`;
+
+  // Delta chips
+  updDC('dc-i',   'dv-i',   pv.i,   st.i);
+  updDC('dc-sum', 'dv-sum', pv.sum, st.sum);
+  updDC('dc-cnt', 'dv-cnt', pv.cnt, st.cnt);
+
+  // Sum in body
+  const sv = document.getElementById('sv');
+  if (sv) sv.textContent = st.sum;
+
+  // Footer
+  const fs = document.getElementById('fs-for');
+  if (fs) {
+    fs.className = st.ok ? 'cs cok' : 'cs cex';
+    fs.textContent = st.ok ? '✓ CONTINUE' : '✗ EXIT';
+  }
+
+  // Done
+  if (st.done) {
+    ['cs-for','bs-for'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.className='bdg b-don'; el.textContent='DONE'; }
+    });
+    document.getElementById('l-for')?.classList.remove('act');
+    document.getElementById('c-for')?.classList.remove('act');
+    document.querySelector('#c-for .pls')?.remove();
+  }
+
+  document.getElementById('msg').textContent = `iter ${s.iter}/${s.total}  •  step ${si+6}`;
+}
+
+// ── Jump to next new-iteration step ────────────────────────────────────
+function nextIter() {
+  while (si < STEPS.length && !STEPS[si].ni) si++;
+  if (si < STEPS.length) nextStep();
+}
+
+// ── Skip ────────────────────────────────────────────────────────────────
+function skip(e, t)  { e.stopPropagation(); skipB(e, t); }
+function skipB(e, t) {
+  if (e) e.stopPropagation();
+  const el = document.getElementById(t === 'for' ? 'l-for' : 'l-whl');
+  if (!el) return;
+  el.style.transition='opacity .3s'; el.style.opacity='.4';
+  setTimeout(()=>el.style.opacity='1', 380);
+  document.getElementById('msg').textContent='⏭ skipped to end';
+  setTimeout(()=>document.getElementById('msg').textContent=`iter ${S.for.iter}/${S.for.total}`,2000);
+}
+</script>
+</body>
+</html>

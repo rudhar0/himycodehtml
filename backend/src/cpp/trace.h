@@ -59,6 +59,9 @@ void __trace_block_exit_loc(int blockDepth, const char* file, int line);
 void __trace_output_flush_loc(const char* file, int line);
 void __trace_condition_eval_loc(int conditionId, const char* expression, int result, const char* file, int line);
 void __trace_branch_taken_loc(int conditionId, const char* branchType, const char* file, int line);
+void __trace_switch_start_loc(int switchId, const char* expression, const char* file, int line);
+void __trace_switch_case_decl_loc(int switchId, const char* label, int caseIndex, int fallsThrough, const char* file, int line);
+void __trace_switch_case_loc(int switchId, const char* label, const char* file, int line);
 
 #ifdef __cplusplus
 }
@@ -117,6 +120,12 @@ void __trace_branch_taken_loc(int conditionId, const char* branchType, const cha
     __trace_condition_eval_loc(conditionId, expression, result, __FILE__, line)
 #define __trace_branch_taken(conditionId, branchType, line) \
     __trace_branch_taken_loc(conditionId, branchType, __FILE__, line)
+#define __trace_switch_start(switchId, expression, line) \
+    __trace_switch_start_loc(switchId, expression, __FILE__, line)
+#define __trace_switch_case_decl(switchId, label, caseIndex, fallsThrough, line) \
+    __trace_switch_case_decl_loc(switchId, label, caseIndex, fallsThrough, __FILE__, line)
+#define __trace_switch_case(switchId, label, line) \
+    __trace_switch_case_loc(switchId, label, __FILE__, line)
 
 #else
 
@@ -168,6 +177,9 @@ void __trace_block_exit_loc(int blockDepth, const char* file, int line);
 void __trace_output_flush_loc(const char* file, int line);
 void __trace_condition_eval_loc(int conditionId, const char* expression, int result, const char* file, int line);
 void __trace_branch_taken_loc(int conditionId, const char* branchType, const char* file, int line);
+void __trace_switch_start_loc(int switchId, const char* expression, const char* file, int line);
+void __trace_switch_case_decl_loc(int switchId, const char* label, int caseIndex, int fallsThrough, const char* file, int line);
+void __trace_switch_case_loc(int switchId, const char* label, const char* file, int line);
 
 #ifdef __cplusplus
 }
@@ -226,5 +238,11 @@ void __trace_branch_taken_loc(int conditionId, const char* branchType, const cha
     __trace_condition_eval_loc(conditionId, expression, result, __FILE__, line)
 #define __trace_branch_taken(conditionId, branchType, line) \
     __trace_branch_taken_loc(conditionId, branchType, __FILE__, line)
+#define __trace_switch_start(switchId, expression, line) \
+    __trace_switch_start_loc(switchId, expression, __FILE__, line)
+#define __trace_switch_case_decl(switchId, label, caseIndex, fallsThrough, line) \
+    __trace_switch_case_decl_loc(switchId, label, caseIndex, fallsThrough, __FILE__, line)
+#define __trace_switch_case(switchId, label, line) \
+    __trace_switch_case_loc(switchId, label, __FILE__, line)
 
 #endif

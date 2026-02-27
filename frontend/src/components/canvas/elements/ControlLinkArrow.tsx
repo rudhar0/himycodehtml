@@ -12,7 +12,7 @@ export interface ControlLinkArrowProps {
   c1y?: number;
   c2x?: number;
   c2y?: number;
-  arrowKind?: "caller_to_condition" | "condition_to_body" | "return_flow";
+  arrowKind?: "caller_to_condition" | "condition_to_body" | "return_flow" | "case_fallthrough";
   dashed?: boolean;
   strokeWidth?: number;
   opacity?: number;

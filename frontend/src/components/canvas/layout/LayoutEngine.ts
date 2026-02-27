@@ -24,7 +24,9 @@ export interface LayoutElement {
     | "array_panel"
     | "array_reference"
     | "call_site"
-    | "condition_caller";
+    | "condition_caller"
+    | "loop_caller"
+    | "loop_body";
   subtype?: string;
   x: number;
   y: number;
@@ -141,6 +143,8 @@ interface ControlGroupState {
   lastStep: number;
   lastLine: number;
   switchStartStepIndex?: number;
+  switchExpression?: string;
+  switchCaseIds?: string[];
 }
 
 class ProgressiveArrayTracker {
@@ -352,8 +356,10 @@ export class LayoutEngine {
     currentIteration: number;
     totalIterations: number;
     elementId?: string;
-    currentIterationElementId?: string; // NEW: For expanded view
+    bodyElementId?: string;
+    currentIterationElementId?: string;
     parentFrameId: string;
+    estimatedIterations?: number;
   }> = new Map();
 
   private static activeConditions: Map<string, {
@@ -450,10 +456,16 @@ export class LayoutEngine {
    * Used to check if we're currently inside a loop
    */
   private static getActiveLoopForFrame(frameId: string) {
+    // FIX: For nested loops in the same frame, return the INNERMOST active loop.
+    // We identify innermost by highest startStep (most recently started).
+    // The last-inserted-wins approach works in most cases (Map insertion order),
+    // but using startStep is explicit and safe regardless of Map ordering.
     let match: any = null;
+    let latestStart = -1;
     for (const loop of this.activeLoops.values()) {
-      if (loop.parentFrameId === frameId) {
+      if (loop.parentFrameId === frameId && loop.startStep > latestStart) {
         match = loop;
+        latestStart = loop.startStep;
       }
     }
     return match;
@@ -591,7 +603,20 @@ export class LayoutEngine {
     frameId: string,
     scopeDepth: number,
   ): { activationDepth: number; ephemeral: boolean } {
-    const lookaheadLimit = Math.min(executionTrace.steps.length, stepIndex + 10);
+    const lookaheadLimit = Math.min(executionTrace.steps.length, stepIndex + 20);
+
+    // These are control-transition events — they do NOT indicate a shallow body.
+    // When we see these next, we keep looking (don't return ephemeral).
+    const CONTROL_TRANSITION_TYPES = new Set([
+      "condition_eval",
+      "branch_taken",
+      "conditional_start",
+      "conditional_branch",
+      "else_eval",
+      "loop_start",
+      "loop_condition",
+      "loop_body_start",
+    ]);
 
     for (let i = stepIndex + 1; i < lookaheadLimit; i++) {
       const s = executionTrace.steps[i] as any;
@@ -599,21 +624,37 @@ export class LayoutEngine {
       if (sFrameId && sFrameId !== frameId) continue;
 
       const depth = this.getScopeDepth(s);
-      if (depth > scopeDepth) {
-        return { activationDepth: depth, ephemeral: false };
-      }
-
       const t = String(s?.eventType || s?.type || "").toLowerCase();
+
+      // Hard stop — a new function or loop boundary means we went too far
+      if (t === "func_enter" || t === "func_exit" || t === "loop_end") break;
+
+      // block_enter gives us the exact depth of the body
       if (t === "block_enter") {
         return { activationDepth: Math.max(scopeDepth + 1, depth), ephemeral: false };
       }
 
-      if (t) {
+      // A step at deeper scope confirms a multi-line body with braces
+      if (depth > scopeDepth) {
+        return { activationDepth: depth, ephemeral: false };
+      }
+
+      // A control-transition event at the same depth is a nested condition or loop
+      // starting inside this body. Keep looking — do NOT return ephemeral.
+      // This is the fix for: if (outer) { if (inner) {} } — outer was wrongly ephemeral.
+      if (CONTROL_TRANSITION_TYPES.has(t)) {
+        continue;
+      }
+
+      // A non-control step at the same or shallower depth = single-line if (no braces)
+      if (depth <= scopeDepth && t) {
         return { activationDepth: scopeDepth, ephemeral: true };
       }
     }
 
-    return { activationDepth: scopeDepth, ephemeral: true };
+    // Default: brace-enclosed body at depth+1
+    // C/C++ instrumented code always uses braces, so this is safe
+    return { activationDepth: scopeDepth + 1, ephemeral: false };
   }
 
   private static getActiveControlParent(
@@ -647,8 +688,17 @@ export class LayoutEngine {
     const activeLoop = this.getActiveLoopForFrame(frameId);
     if (!activeLoop) return null;
 
+    // Prefer the iteration element (set in expanded mode or preserved in toggle mode)
     if (activeLoop.currentIterationElementId) {
-      return this.elementHistory.get(activeLoop.currentIterationElementId) || null;
+      const iterEl = this.elementHistory.get(activeLoop.currentIterationElementId);
+      if (iterEl) return iterEl;
+    }
+
+    // FIX: Fall back to bodyElementId (the loop body panel) so children always
+    // have a proper parent container, even in toggle/collapsed mode.
+    if (activeLoop.bodyElementId) {
+      const bodyEl = this.elementHistory.get(activeLoop.bodyElementId);
+      if (bodyEl) return bodyEl;
     }
 
     return activeLoop.elementId
@@ -749,7 +799,7 @@ export class LayoutEngine {
     toX: number,
     toY: number,
     options?: {
-      kind?: "caller_to_condition" | "condition_to_body" | "return_flow";
+      kind?: "caller_to_condition" | "condition_to_body" | "return_flow" | "case_fallthrough";
       dashed?: boolean;
       opacity?: number;
       strokeWidth?: number;
@@ -1019,21 +1069,25 @@ export class LayoutEngine {
     stepIndex: number
   ): any {
     const step = executionTrace.steps[stepIndex] as any;
-    let returnValue = step.returnValue ?? step.value;
-    
-    if (returnValue === undefined) {
-      for (let i = stepIndex - 1; i >= 0; i--) {
-        const prevStep = executionTrace.steps[i] as any;
-        if (prevStep.frameId !== frameId) break;
-        if (prevStep.eventType === 'var_assign' && 
-            (prevStep.name === 'result' || prevStep.name === 'sum')) {
-          returnValue = prevStep.value;
-          break;
-        }
+    // Prefer the return event's own value (populated by __trace_return)
+    if (step.returnValue !== undefined && step.returnValue !== null) {
+      return step.returnValue;
+    }
+    if (step.value !== undefined && step.value !== null) {
+      return step.value;
+    }
+    // Fallback: scan backward for any var_assign in this frame
+    for (let i = stepIndex - 1; i >= Math.max(0, stepIndex - 20); i--) {
+      const prev = executionTrace.steps[i] as any;
+      if ((prev.frameId || '') !== frameId) break;
+      if (prev.eventType === 'return') {
+        return prev.returnValue ?? prev.value;
+      }
+      if (prev.eventType === 'var_assign') {
+        return prev.value;
       }
     }
-    
-    return returnValue;
+    return undefined;
   }
 
   private static appendReturnElement(
@@ -1140,6 +1194,113 @@ export class LayoutEngine {
     if (raw === "default") return "default";
     if (raw === "case") return "case";
     return raw;
+  }
+
+  private static resolveSwitchExpression(groupState: ControlGroupState): string {
+    if (groupState.switchExpression) return groupState.switchExpression;
+
+    for (let i = groupState.members.length - 1; i >= 0; i--) {
+      const el = this.elementHistory.get(groupState.members[i]);
+      if (!el) continue;
+      if (el.data?.controlKind !== "switch") continue;
+      const expr = String(el.data?.expression || el.data?.condition || "");
+      if (expr) {
+        groupState.switchExpression = expr;
+        return expr;
+      }
+    }
+
+    return "";
+  }
+
+  private static formatSwitchCaseExpression(
+    groupState: ControlGroupState,
+    label: string,
+  ): string {
+    const trimmed = String(label || "").trim();
+    if (trimmed.toLowerCase() === "default") return "default";
+
+    const switchExpr = this.resolveSwitchExpression(groupState);
+    if (!switchExpr) return trimmed;
+
+    if (
+      trimmed.includes("==") ||
+      trimmed.includes("!=") ||
+      trimmed.includes("<") ||
+      trimmed.includes(">")
+    ) {
+      return trimmed;
+    }
+
+    return `${switchExpr} == ${trimmed}`;
+  }
+
+  private static findSwitchCaseCaller(
+    groupState: ControlGroupState,
+    label: string,
+  ): LayoutElement | null {
+    const normalized = String(label || "").trim().toLowerCase();
+    for (let i = groupState.members.length - 1; i >= 0; i--) {
+      const el = this.elementHistory.get(groupState.members[i]);
+      if (!el) continue;
+      if (el.data?.controlKind !== "case" && el.data?.controlKind !== "default") {
+        continue;
+      }
+      const candidateRaw = String(el.data?.label ?? el.data?.caseValue ?? "").trim().toLowerCase();
+      if (candidateRaw === normalized) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  private static maybeLinkSwitchFallthrough(
+    groupState: ControlGroupState,
+    caseIndex: number,
+    stepIndex: number,
+  ): void {
+    if (!Number.isFinite(caseIndex)) return;
+    if (!groupState.switchCaseIds || caseIndex <= 0) return;
+
+    const currentId = groupState.switchCaseIds[caseIndex];
+    const prevId = groupState.switchCaseIds[caseIndex - 1];
+    if (!currentId || !prevId) return;
+
+    const prevCaller = this.elementHistory.get(prevId);
+    const nextCaller = this.elementHistory.get(currentId);
+    if (!prevCaller || !nextCaller) return;
+
+    if (!prevCaller.data?.fallsThrough) return;
+
+    const arrowId = `switch-fallthrough-${groupState.groupId}-${prevCaller.id}-${nextCaller.id}`;
+    if (this.controlArrows.some((arrow) => arrow.id === arrowId)) {
+      return;
+    }
+
+    const from = this.getControlConnectorPoint(prevCaller);
+    const to = this.getControlConnectorPoint(nextCaller);
+
+    this.pushControlArrow(
+      arrowId,
+      stepIndex,
+      from.x,
+      from.y,
+      to.x,
+      to.y,
+      {
+        kind: "case_fallthrough",
+        dashed: true,
+        opacity: 0.7,
+        strokeWidth: 1.8,
+        animated: false,
+        c1x: from.x + 40,
+        c1y: from.y + 12,
+        c2x: to.x + 40,
+        c2y: to.y - 12,
+        sourceNodeId: prevCaller.id,
+        targetNodeId: nextCaller.id,
+      },
+    );
   }
 
   private static getControlParentForDepth(
@@ -1539,10 +1700,14 @@ export class LayoutEngine {
       },
     };
 
-    if (!ownerFrame.children) {
-      ownerFrame.children = [];
+    // FIX: attach container to the resolved parent (loop iteration or condition body),
+    // not always to ownerFrame. ownerFrame is only used when no loop/condition is active.
+    const containerOwner = parent.id === ownerFrame.id ? ownerFrame : parent;
+    if (!containerOwner.children) {
+      containerOwner.children = [];
     }
-    ownerFrame.children.push(container);
+    containerOwner.children.push(container);
+    container.parentId = containerOwner.id; // keep parentId in sync
 
     layout.elements.push(container);
     this.elementHistory.set(container.id, container);
@@ -1562,6 +1727,9 @@ export class LayoutEngine {
       lastStep: stepIndex,
       lastLine: 0,
     };
+    if (controlType === "switch") {
+      groupState.switchCaseIds = [];
+    }
 
     this.activeControlGroups.set(groupId, groupState);
     return { groupState, container };
@@ -1860,6 +2028,11 @@ export class LayoutEngine {
         "switch",
       );
       groupState.switchStartStepIndex = stepIndex;
+      groupState.switchExpression = expression;
+      container.data = {
+        ...container.data,
+        switchExpression: expression,
+      };
 
       if (groupState.members.length === 0) {
         const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
@@ -1918,6 +2091,14 @@ export class LayoutEngine {
       const conditionId = String(conditionIdRaw);
       const branchLabel = String((step as any).label || "default");
       const isMatched = Boolean((step as any).isMatched);
+      const isDeclaration = Boolean((step as any).isDeclaration);
+      const fallsThroughRaw = (step as any).fallsThrough ?? (step as any).fallthrough;
+      const fallsThrough = Boolean(fallsThroughRaw);
+      const caseIndexRaw = (step as any).caseIndex;
+      const caseIndex =
+        caseIndexRaw === undefined || caseIndexRaw === null || Number.isNaN(Number(caseIndexRaw))
+          ? undefined
+          : Number(caseIndexRaw);
       const groupId = `switch-group-${frameId}-${conditionId}`;
       if (!groupState) {
         groupState = this.activeControlGroups.get(groupId);
@@ -1929,30 +2110,66 @@ export class LayoutEngine {
       const kind: ControlKind =
         branchLabel.toLowerCase() === "default" ? "default" : "case";
 
-      const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
-      const caseCaller = this.appendControlCaller(
-        layout,
-        groupState,
-        container,
-        kind as Exclude<ControlKind, "group">,
-        step,
-        stepIndex,
-        branchLabel,
-        isMatched,
-        branchLabel,
-        line,
-        isMatched ? "active" : "skipped",
-        isMatched,
-        origin.id,
-      );
+      const displayExpression = this.formatSwitchCaseExpression(groupState, branchLabel);
+
+      let caseCaller = this.findSwitchCaseCaller(groupState, branchLabel);
+      if (!caseCaller) {
+        const origin = this.resolveCallerOriginElement(step, ownerFrame, frameId, scopeDepth);
+        caseCaller = this.appendControlCaller(
+          layout,
+          groupState,
+          container,
+          kind as Exclude<ControlKind, "group">,
+          step,
+          stepIndex,
+          displayExpression,
+          isMatched,
+          branchLabel,
+          line,
+          isMatched ? "active" : "skipped",
+          isMatched,
+          origin.id,
+        );
+      }
+
+      const existingBranchState = caseCaller.data?.branchState as BranchState | undefined;
+      const nextBranchState: BranchState = isMatched
+        ? "active"
+        : existingBranchState === "active"
+          ? "active"
+          : isDeclaration
+            ? "skipped"
+            : existingBranchState || "pending";
+
+      caseCaller.stepId = stepIndex;
       caseCaller.data = {
         ...caseCaller.data,
         label: branchLabel,
         caseValue: branchLabel,
-        isMatched,
+        condition: displayExpression,
+        expression: displayExpression,
+        conditionResult: Boolean(caseCaller.data?.conditionResult) || isMatched,
+        isMatched: Boolean(caseCaller.data?.isMatched || isMatched),
+        fallsThrough:
+          caseCaller.data?.fallsThrough !== undefined
+            ? caseCaller.data.fallsThrough
+            : fallsThrough,
+        caseIndex:
+          caseCaller.data?.caseIndex !== undefined
+            ? caseCaller.data.caseIndex
+            : caseIndex,
         branchTaken: branchLabel,
         branchLabel,
+        branchState: nextBranchState,
+        headerOnly: true,
+        isActive: nextBranchState === "active",
       };
+
+      if (caseIndex !== undefined) {
+        if (!groupState.switchCaseIds) groupState.switchCaseIds = [];
+        groupState.switchCaseIds[caseIndex] = caseCaller.id;
+        this.maybeLinkSwitchFallthrough(groupState, caseIndex, stepIndex);
+      }
 
       if (isMatched) {
         const caseBody = this.createControlBodyForCaller(
@@ -1973,6 +2190,8 @@ export class LayoutEngine {
           this.setEphemeralControlForDepth(frameId, activation.activationDepth, caseBody.id);
         }
       }
+      groupState.lastStep = stepIndex;
+      groupState.lastLine = line;
       return true;
     }
 
@@ -2106,45 +2325,41 @@ export class LayoutEngine {
         let arrowFromY = parentFrame ? parentFrame.y + 75 : 0;
 
         if (parentFrame) {
-          // Check if previous step was var_declare (inline call)
           const prevStep = stepIndex > 0 ? executionTrace.steps[stepIndex - 1] : null;
-          const isInlineCall = prevStep && 
-                              (prevStep as any).eventType === 'var_declare' &&
-                              (prevStep as any).frameId === parentFrameId;
+          const prevType = (prevStep as any)?.eventType || '';
+          const callStyle = prevType === 'var_declare' ? 'inline' : 'standalone';
+          const indent = getIndentSize(parentFrame);
+          const lane = this.getLane(parentFrame, 'LOCALS');
 
-          if (!isInlineCall) {
-            // Create standalone call_site
-            const indent = getIndentSize(parentFrame);
-            const lane = this.getLane(parentFrame, 'LOCALS');
-            
-            const callElement: LayoutElement = {
-              id: `call-${parentFrameId}-to-${frameId}`,
-              type: "call_site",
-              subtype: "standalone",
-              x: parentFrame.x + indent,
-              y: parentFrame.y + lane.startY + lane.usedHeight,
-              width: parentFrame.width - indent * 2,
-              height: 50,
-              parentId: parentFrame.id,
-              stepId: stepIndex,
-              data: {
-                functionName: functionName,
-                args: "()",
-                targetFrameId: frameId
-              }
-            };
-            
-            lane.usedHeight += callElement.height + ELEMENT_SPACING;
-            
-            parentFrame.children?.push(callElement);
-            layout.elements.push(callElement);
-            this.elementHistory.set(callElement.id, callElement);
-            
-            arrowFromX = callElement.x + callElement.width;
-            arrowFromY = callElement.y + callElement.height / 2;
-          } else {
-            // Arrow from variable
-            const varId = `var-${parentFrameId}-${(prevStep as any).name || (prevStep as any).symbol}-${stepIndex - 1}`;
+          const callElement: LayoutElement = {
+            id: `call-${parentFrameId}-to-${frameId}`,
+            type: "call_site",
+            subtype: callStyle,
+            x: parentFrame.x + indent,
+            y: parentFrame.y + lane.startY + lane.usedHeight,
+            width: parentFrame.width - indent * 2,
+            height: 50,
+            parentId: parentFrame.id,
+            stepId: stepIndex,
+            data: {
+              functionName: functionName,
+              args: "()",
+              callStyle: callStyle,
+              targetFrameId: frameId
+            }
+          };
+
+          lane.usedHeight += callElement.height + ELEMENT_SPACING;
+
+          parentFrame.children?.push(callElement);
+          layout.elements.push(callElement);
+          this.elementHistory.set(callElement.id, callElement);
+
+          arrowFromX = callElement.x + callElement.width;
+          arrowFromY = callElement.y + callElement.height / 2;
+
+          if (callStyle === 'inline') {
+            const varId = `var-${parentFrameId}-${(prevStep as any)?.name || (prevStep as any)?.symbol}-${stepIndex - 1}`;
             const varElement = this.elementHistory.get(varId);
             if (varElement) {
               arrowFromX = varElement.x + varElement.width;
@@ -2268,17 +2483,27 @@ export class LayoutEngine {
 
     const normalizedStepType = String(stepType || "").toLowerCase();
     const scopeDepth = this.getScopeDepth(step);
-    const exitedControlIds = [
-      ...this.pruneControlDepthForScope(frameId, scopeDepth),
-      ...this.pruneEphemeralControls(frameId, stepIndex),
-    ];
-    this.maybeCreateBranchReturnFlow(
-      executionTrace,
-      frameId,
-      normalizedStepType,
-      stepIndex,
-      exitedControlIds,
-    );
+
+    // FIX: Do NOT prune the control hierarchy BEFORE processing a control step.
+    // Control steps (condition_eval, branch_taken) manage their own depth transitions.
+    // Pruning before them removes active parent bodies that are still needed.
+    const isControlTransition =
+      this.isControlEvaluationStep(normalizedStepType, step) ||
+      this.isControlBranchStep(normalizedStepType);
+
+    if (!isControlTransition) {
+      const exitedControlIds = [
+        ...this.pruneControlDepthForScope(frameId, scopeDepth),
+        ...this.pruneEphemeralControls(frameId, stepIndex),
+      ];
+      this.maybeCreateBranchReturnFlow(
+        executionTrace,
+        frameId,
+        normalizedStepType,
+        stepIndex,
+        exitedControlIds,
+      );
+    }
 
     if (this.processControlStep(step, executionTrace, layout, stepIndex, ownerFrame, frameId)) {
       return;
@@ -2360,13 +2585,51 @@ export class LayoutEngine {
 
       if (!varName) return;
 
+      const prevStep = stepIndex > 0 ? (executionTrace.steps[stepIndex - 1] as any) : null;
+      const prevType = (prevStep?.eventType || prevStep?.type || "").toLowerCase();
+      const prevName = prevStep?.name || prevStep?.symbol;
+      const prevFrameId = prevStep?.frameId || "";
+      const isImmediateInitAssignment =
+        prevType === "var_declare" &&
+        prevName === varName &&
+        prevFrameId === frameId;
+
+      if (isImmediateInitAssignment) {
+        const declarationId = `var-${frameId}-${varName}-${stepIndex - 1}`;
+        const declarationElement = this.elementHistory.get(declarationId);
+        if (declarationElement && declarationElement.type === "variable") {
+          const hadSuppressedSpacing = Boolean(declarationElement.data?.suppressLayoutSpacing);
+
+          declarationElement.stepId = stepIndex;
+          declarationElement.data = {
+            ...declarationElement.data,
+            value: value !== undefined ? String(value) : undefined,
+            isInitialized: true,
+            isUpdated: true,
+            explanation: explanation,
+            suppressLayoutSpacing: false,
+          };
+          this.createdInStep.set(declarationElement.id, stepIndex);
+
+          // If declaration spacing was suppressed in frame lane, reserve it now on initialization.
+          if (hadSuppressedSpacing && declarationElement.parentId === ownerFrame.id) {
+            const lane = this.getLane(ownerFrame, "LOCALS");
+            lane.usedHeight += declarationElement.height + ELEMENT_SPACING;
+          }
+          return;
+        }
+      }
+
       // Check if we're in toggle mode and inside a loop
       const { toggleMode } = useLoopStore.getState();
       const currentLoop = this.getActiveLoopForFrame(frameId);
 
       if (currentLoop && toggleMode) {
-        // Try to find existing element with this variable name
-        const existingElement = this.findLoopChildElement(currentLoop.elementId!, varName);
+        // Try to find existing element with this variable name.
+        // FIX: In toggle mode, variables live inside the bodyElement (not the caller).
+        // Search bodyElementId, not elementId (which is the caller header).
+        const searchContainerId = currentLoop.bodyElementId || currentLoop.elementId!;
+        const existingElement = this.findLoopChildElement(searchContainerId, varName);
         
         if (existingElement) {
           // UPDATE existing element instead of creating new one
@@ -2730,20 +2993,25 @@ export class LayoutEngine {
       return;
     }
 
-    // LOOP START
+    // LOOP START — Create loop_caller in main flow (condition-style)
     if (stepType === "loop_start") {
       const { loopId, loopType } = step as any;
       const ownerFrame = this.functionFrames.get(frameId);
       if (!ownerFrame) return;
 
-      const loopElementId = `loop-${frameId}-${loopId}-${stepIndex}`;
+      const callerElementId = `loop-caller-${frameId}-${loopId}-${stepIndex}`;
+      const bodyElementId = `loop-body-${frameId}-${loopId}-${stepIndex}`;
       const scopeDepth = this.getScopeDepth(step);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
-      // Look ahead to find end step for skip functionality
+      // Look ahead to find end step for skip functionality and estimated iterations
       let endStep: number | undefined;
+      let estimatedIterations = 0;
       for (let i = stepIndex + 1; i < executionTrace.steps.length; i++) {
         const s = executionTrace.steps[i] as any;
+        if (s.eventType === 'loop_iteration_end' && s.loopId === loopId) {
+          estimatedIterations++;
+        }
         if (s.eventType === 'loop_end' && s.loopId === loopId) {
           endStep = i;
           break;
@@ -2757,115 +3025,348 @@ export class LayoutEngine {
         endStep: endStep,
         currentIteration: 0,
         totalIterations: 0,
-        elementId: loopElementId,
+        elementId: callerElementId,
+        bodyElementId: bodyElementId,
         parentFrameId: frameId,
+        estimatedIterations: estimatedIterations,
       });
 
-      const loopElement: LayoutElement = {
-        id: loopElementId,
-        type: 'loop',
+      // Create the compact loop_caller in the main flow
+      const callerElement: LayoutElement = {
+        id: callerElementId,
+        type: 'loop_caller',
         subtype: loopType,
         x: placement.x,
         y: placement.y,
-        width: placement.width,
-        height: 150,
+        width: placement.width - 40,
+        height: CONTROL_CALLER_HEIGHT,
         parentId: placement.parent.id,
         stepId: stepIndex,
         children: [],
         data: {
           loopId,
           loopType,
+          condition: (step as any).explanation,
           currentIteration: 0,
+          totalIterations: estimatedIterations,
           isActive: true,
+          isComplete: false,
           frameId: frameId,
-          explanation: explanation,
           endStep: endStep,
+          bodyElementId: bodyElementId,
+          estimatedIterations: estimatedIterations,
+          controlKind: "loop",
+          controlRole: "caller",
         },
       };
 
-      this.appendElementToPlacement(ownerFrame, placement, loopElement);
+      this.appendElementToPlacement(ownerFrame, placement, callerElement);
       this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
-      layout.elements.push(loopElement);
-      this.elementHistory.set(loopElementId, loopElement);
-      this.createdInStep.set(loopElementId, stepIndex);
+      layout.elements.push(callerElement);
+      this.elementHistory.set(callerElementId, callerElement);
+      this.createdInStep.set(callerElementId, stepIndex);
+
+      // Create the loop_body panel in right flow
+      const bodyX = callerElement.x + callerElement.width + CONTROL_CALLER_BODY_GAP;
+      const bodyY = callerElement.y;
+      const bodyWidth = CONTROL_BASE_WIDTH;
+      const resolved = this.resolveRightFlowRect(frameId, bodyX, bodyY, bodyWidth, CONTROL_BODY_HEIGHT);
+
+      const bodyElement: LayoutElement = {
+        id: bodyElementId,
+        type: 'loop_body',
+        subtype: loopType,
+        x: resolved.x,
+        y: resolved.y,
+        width: resolved.width,
+        height: resolved.height,
+        parentId: callerElementId,
+        stepId: stepIndex,
+        children: [],
+        data: {
+          loopId,
+          loopType,
+          condition: (step as any).explanation,
+          conditionResult: undefined,
+          currentIteration: 0,
+          totalIterations: estimatedIterations,
+          isActive: true,
+          isComplete: false,
+          isSkipped: false,
+          frameId: frameId,
+          endStep: endStep,
+          callerId: callerElementId,
+          estimatedIterations: estimatedIterations,
+          controlKind: "loop",
+          controlRole: "body",
+        },
+      };
+
+      callerElement.children!.push(bodyElement);
+      layout.elements.push(bodyElement);
+      this.elementHistory.set(bodyElementId, bodyElement);
+      this.createdInStep.set(bodyElementId, stepIndex);
+
+      // Push control arrow from caller to body
+      const arrowId = `loop-arrow-${loopId}-${stepIndex}`;
+      this.pushControlArrow(
+        arrowId,
+        stepIndex,
+        callerElement.x + callerElement.width,
+        callerElement.y + callerElement.height / 2,
+        bodyElement.x,
+        bodyElement.y + 30,
+        {
+          sourceNodeId: callerElementId,
+          targetNodeId: bodyElementId,
+        },
+      );
+
+      // Track right-flow occupancy
+      const occ = this.getFrameOccupancy(frameId);
+      occ.push({ x: resolved.x, y: resolved.y, width: resolved.width, height: resolved.height });
 
       return;
     }
 
-    // LOOP ITERATION START
+    // LOOP ITERATION START — create iteration container inside loop_body
     if (stepType === "loop_body_start") {
       const { loopId, iteration } = step as any;
       const loopState = this.activeLoops.get(loopId);
       
       if (loopState) {
         loopState.currentIteration = iteration;
-        const loopElement = this.elementHistory.get(loopState.elementId!)!;
-        
-        if (loopElement && loopElement.data) {
-          loopElement.data.currentIteration = iteration;
-          loopElement.data.isActive = true;
+        loopState.totalIterations = Math.max(loopState.totalIterations || 0, iteration);
+
+        // Update caller element
+        const callerElement = this.elementHistory.get(loopState.elementId!);
+        if (callerElement && callerElement.data) {
+          callerElement.data.currentIteration = iteration;
+          callerElement.data.isActive = true;
         }
 
-        // TOGGLE MODE CHECK
-        const { toggleMode } = useLoopStore.getState();
-        
-         if (!toggleMode) {
-             // EXPANDED MODE: Create new Iteration Container
-             const iterationId = `iter-${loopId}-${iteration}-${stepIndex}`;
-             
-             const iterationElement: LayoutElement = {
-                 id: iterationId,
-                 type: 'loop', // We use 'loop' type but subtype 'iteration'
-                 subtype: 'iteration',
-                 x: loopElement.x + 20,
-                 y: this.getNextCursorY(loopElement),
-                 width: loopElement.width - 40,
-                 height: 40, // Will grow
-                 parentId: loopElement.id,
-                stepId: stepIndex,
-                children: [],
-                data: {
-                    iteration: iteration
-                }
-            };
-            
-            loopElement.children!.push(iterationElement);
-            this.elementHistory.set(iterationId, iterationElement);
-            loopState.currentIterationElementId = iterationId;
+        // Update body element — guard against missing body element
+        const bodyElement = loopState.bodyElementId
+          ? this.elementHistory.get(loopState.bodyElementId)
+          : undefined;
+        if (bodyElement && bodyElement.data) {
+          bodyElement.data.currentIteration = iteration;
+          bodyElement.data.isActive = true;
+        }
 
-            const ownerFrame = this.functionFrames.get(loopState.parentFrameId);
-            if (ownerFrame) {
-              this.bumpFrameLocalsCursorToInclude(
-                ownerFrame,
-                iterationElement.y + iterationElement.height,
-              );
+        // FIX (Bug 4): Clear ONLY control depths that belong to the PREVIOUS iteration
+        const loopScopeDepth = this.getScopeDepth(step);
+        const controlDepthMap = this.getFrameControlDepthMap(loopState.parentFrameId);
+        controlDepthMap.forEach((_elementId, depth) => {
+          if (depth > loopScopeDepth) {
+            controlDepthMap.delete(depth);
+          }
+        });
+        const ephemeralMap = this.ephemeralControlByDepth.get(loopState.parentFrameId);
+        if (ephemeralMap) {
+          ephemeralMap.forEach((_entry, depth) => {
+            if (depth > loopScopeDepth) {
+              ephemeralMap.delete(depth);
             }
-        } else {
-            // COLLAPSED MODE: Reuse loop container, clear specific iteration ID
-            loopState.currentIterationElementId = undefined;
+          });
         }
-        
-       }
-       return;
-     }
+        const recentGroup = this.recentIfGroupByFrame.get(loopState.parentFrameId);
+        if (recentGroup && recentGroup.scopeDepth > loopScopeDepth) {
+          this.recentIfGroupByFrame.delete(loopState.parentFrameId);
+        }
 
-    // Legacy conditional handling removed: all condition events are processed in processControlStep.
+        // TOGGLE MODE CHECK — iteration containers go inside loop_body
+        const { toggleMode } = useLoopStore.getState();
+        const parentElement = bodyElement || callerElement;
+        if (!parentElement) return;
 
-    // LOOP CONDITION
-    if (stepType === "loop_condition") {
-      const { loopId, result } = step as any;
-      const loopState = this.activeLoops.get(loopId);
-      
-      if (loopState) {
-        const loopElement = this.elementHistory.get(loopState.elementId!);
-        if (loopElement && loopElement.data) {
-          loopElement.data.conditionResult = result === 1;
+        if (!toggleMode) {
+          // EXPANDED MODE: Create new iteration container inside body
+          const iterationId = `iter-${loopId}-${iteration}-${stepIndex}`;
+          
+          const iterationElement: LayoutElement = {
+            id: iterationId,
+            type: 'loop',
+            subtype: 'iteration',
+            x: parentElement.x + 20,
+            y: this.getNextCursorY(parentElement),
+            width: parentElement.width - 40,
+            height: 40,
+            parentId: parentElement.id,
+            stepId: stepIndex,
+            children: [],
+            data: {
+              iteration: iteration
+            }
+          };
+          
+          parentElement.children!.push(iterationElement);
+          this.elementHistory.set(iterationId, iterationElement);
+          loopState.currentIterationElementId = iterationId;
+
+          const ownerFrame = this.functionFrames.get(loopState.parentFrameId);
+          if (ownerFrame) {
+            this.bumpFrameLocalsCursorToInclude(
+              ownerFrame,
+              iterationElement.y + iterationElement.height,
+            );
+          }
+        } else {
+          // COLLAPSED (TOGGLE) MODE: Do NOT clear currentIterationElementId.
+          // Keeping the iteration element ID means getLoopContainerParent still
+          // returns a valid container, so variable elements are correctly parented
+          // inside the loop body rather than floating up to the function frame.
+          // If there is no previous iteration ID yet (first iteration), fall back
+          // to the body element so children still have a valid parent.
+          if (!loopState.currentIterationElementId) {
+            loopState.currentIterationElementId = loopState.bodyElementId;
+          }
+          // Mark body as the active parent for this iteration
+          if (bodyElement && bodyElement.data) {
+            bodyElement.data.isActive = true;
+          }
         }
       }
       return;
     }
 
-    // LOOP ITERATION END
+    // LOOP BODY SUMMARY — processes events that exist only inside the summary (not in steps[]).
+    // As of the current fix, condition_eval and branch_taken are now in STRUCTURAL_EVENTS so
+    // they arrive in steps[] individually. This handler is kept as a safety net for any
+    // events that may only be present inside the summary (e.g., from collapsed toggle mode).
+    if (stepType === "loop_body_summary") {
+      const { events: innerEvents } = step as any;
+      if (!Array.isArray(innerEvents) || innerEvents.length === 0) return;
+
+      // Build a set of stepIndices already in the main executionTrace.steps
+      // to avoid re-processing events that are already there.
+      const existingStepIndices = new Set<number>();
+      for (const s of executionTrace.steps) {
+        const sIdx = (s as any).stepIndex;
+        if (sIdx !== undefined && sIdx !== null) existingStepIndices.add(sIdx);
+      }
+
+      for (let innerIdx = 0; innerIdx < innerEvents.length; innerIdx++) {
+        const inner = innerEvents[innerIdx] as any;
+        if (!inner) continue;
+
+        // Skip events that are already present individually in steps[]
+        const innerStepIndex = inner.internalStepIndex ?? inner.stepIndex;
+        if (innerStepIndex !== undefined && existingStepIndices.has(innerStepIndex)) continue;
+
+        const innerType = String(inner?.eventType || inner?.type || "").toLowerCase();
+        const innerFrameId = String(inner?.frameId ?? frameId);
+        const innerOwner = this.functionFrames.get(innerFrameId);
+        if (!innerOwner) continue;
+
+        // Replay control events that did not make it to steps[] individually
+        if (
+          innerType === "condition_eval" ||
+          innerType === "branch_taken" ||
+          innerType === "conditional_start" ||
+          innerType === "conditional_branch" ||
+          innerType === "else_eval"
+        ) {
+          const syntheticIndex = stepIndex * 10000 + innerIdx;
+          this.processControlStep(
+            inner as ExecutionStep,
+            executionTrace,
+            layout,
+            syntheticIndex,
+            innerOwner,
+            innerFrameId,
+          );
+        }
+      }
+      return;
+    }
+
+    // Legacy conditional handling removed: all condition events are processed in processControlStep.
+
+    // LOOP CONDITION — update both caller and body, and append check element
+    if (stepType === "loop_condition") {
+      const { loopId, result } = step as any;
+      const loopState = this.activeLoops.get(loopId);
+      
+      if (loopState) {
+        const condResult = result === 1;
+
+        // Update caller
+        const callerElement = this.elementHistory.get(loopState.elementId!);
+        if (callerElement && callerElement.data) {
+          callerElement.data.conditionResult = condResult;
+        }
+
+        // Update body
+        const bodyElement = loopState.bodyElementId
+          ? this.elementHistory.get(loopState.bodyElementId)
+          : undefined;
+        if (bodyElement && bodyElement.data) {
+          bodyElement.data.conditionResult = condResult;
+          bodyElement.stepId = stepIndex;
+        }
+
+        // Add condition check element to current iteration
+        const { toggleMode } = useLoopStore.getState();
+        const iterId = loopState.currentIterationElementId;
+        if (!toggleMode && iterId) {
+          const iterElement = this.elementHistory.get(iterId);
+          if (iterElement) {
+            const checkId = `loop-check-${loopId}-${loopState.currentIteration}-${stepIndex}`;
+            const checkElement: LayoutElement = {
+              id: checkId,
+              type: 'loop',
+              subtype: 'condition_check',
+              x: iterElement.x + 20,
+              y: this.getNextCursorY(iterElement),
+              width: iterElement.width - 40,
+              height: 30,
+              parentId: iterId,
+              stepId: stepIndex,
+              children: [],
+              data: {
+                conditionResult: condResult,
+                explanation: (step as any).explanation || (callerElement && callerElement.data ? callerElement.data.condition : "(condition)"),
+              }
+            };
+            iterElement.children = iterElement.children || [];
+            iterElement.children.push(checkElement);
+            this.elementHistory.set(checkId, checkElement);
+          }
+        } else if (toggleMode && bodyElement) {
+          // In toggle mode, it updates body state, but we can also store the check event
+          // Let's just create the element and attach it to the body itself instead
+          const checkId = `loop-check-${loopId}-${stepIndex}`;
+          const checkElement: LayoutElement = {
+            id: checkId,
+            type: 'loop',
+            subtype: 'condition_check',
+            x: bodyElement.x + 20,
+            y: this.getNextCursorY(bodyElement),
+            width: bodyElement.width - 40,
+            height: 30,
+            parentId: bodyElement.id,
+            stepId: stepIndex,
+            children: [],
+            data: {
+              conditionResult: condResult,
+              explanation: (step as any).explanation || (callerElement && callerElement.data ? callerElement.data.condition : "(condition)"),
+            }
+          };
+          
+          // Clear previous condition check or update steps in toggle mode
+          bodyElement.children = (bodyElement.children || []).filter(c => 
+            c.subtype !== 'condition_check' && c.subtype !== 'update_step'
+          );
+          
+          bodyElement.children.push(checkElement);
+          this.elementHistory.set(checkId, checkElement);
+        }
+      }
+      return;
+    }
+
+    // LOOP ITERATION END — update counters on both elements
     if (stepType === "loop_iteration_end") {
       const { loopId, iteration } = step as any;
       const loopState = this.activeLoops.get(loopId);
@@ -2873,15 +3374,83 @@ export class LayoutEngine {
       if (loopState) {
         loopState.totalIterations = Math.max(loopState.totalIterations, iteration);
         
-        const loopElement = this.elementHistory.get(loopState.elementId!);
-        if (loopElement && loopElement.data) {
-          loopElement.data.totalIterations = loopState.totalIterations;
+        // Update caller
+        const callerElement = this.elementHistory.get(loopState.elementId!);
+        if (callerElement && callerElement.data) {
+          callerElement.data.totalIterations = loopState.totalIterations;
+        }
+
+        // Update body
+        const bodyElement = loopState.bodyElementId
+          ? this.elementHistory.get(loopState.bodyElementId)
+          : undefined;
+        if (bodyElement && bodyElement.data) {
+          bodyElement.data.totalIterations = loopState.totalIterations;
+        }
+
+        // Add update step element
+        if (loopState.loopType === 'for') {
+          const { toggleMode } = useLoopStore.getState();
+          const iterId = loopState.currentIterationElementId;
+          
+          if (!toggleMode && iterId) {
+            const iterElement = this.elementHistory.get(iterId);
+            if (iterElement) {
+              const updateId = `loop-update-${loopId}-${iteration}-${stepIndex}`;
+              const updateElement: LayoutElement = {
+                id: updateId,
+                type: 'loop',
+                subtype: 'update_step',
+                x: iterElement.x + 20,
+                y: this.getNextCursorY(iterElement),
+                width: iterElement.width - 40,
+                height: 30,
+                parentId: iterId,
+                stepId: stepIndex,
+                children: [],
+                data: {
+                  explanation: (step as any).explanation || "Loop update",
+                }
+              };
+              iterElement.children = iterElement.children || [];
+              iterElement.children.push(updateElement);
+              this.elementHistory.set(updateId, updateElement);
+
+              // adjust height of iterElement to hold the update element
+              iterElement.height = Math.max(iterElement.height, (updateElement.y - iterElement.y) + updateElement.height + 10);
+            }
+          } else if (toggleMode && bodyElement) {
+            const updateId = `loop-update-${loopId}-${stepIndex}`;
+            const updateElement: LayoutElement = {
+              id: updateId,
+              type: 'loop',
+              subtype: 'update_step',
+              x: bodyElement.x + 20,
+              y: this.getNextCursorY(bodyElement),
+              width: bodyElement.width - 40,
+              height: 30,
+              parentId: bodyElement.id,
+              stepId: stepIndex,
+              children: [],
+              data: {
+                explanation: (step as any).explanation || "Loop update",
+              }
+            };
+            
+            // clear previous condition check or update steps
+            bodyElement.children = (bodyElement.children || []).filter(c => 
+              c.subtype !== 'condition_check' && c.subtype !== 'update_step'
+            );
+            
+            bodyElement.children.push(updateElement);
+            this.elementHistory.set(updateId, updateElement);
+          }
         }
       }
       return;
     }
 
-    // LOOP END
+    // LOOP END — mark both caller and body as complete
     if (stepType === "loop_end") {
       const { loopId } = step as any;
       const loopState = this.activeLoops.get(loopId);
@@ -2889,17 +3458,26 @@ export class LayoutEngine {
       if (loopState) {
         loopState.endStep = stepIndex;
         
-        const loopElement = this.elementHistory.get(loopState.elementId!);
-        if (loopElement && loopElement.data) {
-          loopElement.data.isActive = false;
-          loopElement.data.isComplete = true;
+        // Mark caller as done (dims to 65% opacity)
+        const callerElement = this.elementHistory.get(loopState.elementId!);
+        if (callerElement && callerElement.data) {
+          callerElement.data.isActive = false;
+          callerElement.data.isComplete = true;
+        }
+
+        // Mark body as done
+        const bodyElement = loopState.bodyElementId
+          ? this.elementHistory.get(loopState.bodyElementId)
+          : undefined;
+        if (bodyElement && bodyElement.data) {
+          bodyElement.data.isActive = false;
+          bodyElement.data.isComplete = true;
         }
         
         this.activeLoops.delete(loopId);
-        
-       }
-       return;
-     }
+      }
+      return;
+    }
   }
 
   private static createArrayPanel(layout: Layout, currentStep: number): void {
@@ -3253,7 +3831,10 @@ export class LayoutEngine {
   }
 
   private static isRightFlowControlNode(element: LayoutElement): boolean {
-    return Boolean(element.type === "condition" && element.data?.controlKind);
+    return Boolean(
+      (element.type === "condition" && element.data?.controlKind) ||
+      element.type === "loop_body"
+    );
   }
 
   private static shouldIgnoreChildForParentFlow(
