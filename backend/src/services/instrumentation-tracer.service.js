@@ -108,26 +108,33 @@ class InstrumentationTracer {
                 frameId: 'main-0',
                 functionName: 'main',
                 callDepth: 0,
-                callIndex: this.globalCallIndex, // PURE: remove ++
+                callIndex: this.globalCallIndex,
                 parentFrameId: undefined,
                 parentId: 'main-0',
-                conditionId: null
+                conditionId: null,
+                loopId: null
             };
         }
 
         const current = this.frameStack[this.frameStack.length - 1];
         const activeConditionId = (current.conditionStack && current.conditionStack.length > 0)
-            ? current.conditionStack[current.conditionStack.length - 1]
-            : null;
+            ? current.conditionStack[current.conditionStack.length - 1].conditionId
+            : (current.activeConditionId || null);
+
+        // FIX Bug 5: Use loopStack (proper LIFO array) instead of Map.keys().pop()
+        const activeLoopId = (current.loopStack && current.loopStack.length > 0)
+            ? current.loopStack[current.loopStack.length - 1]
+            : (current.activeLoopId || null);
 
         return {
             frameId: current.frameId,
             functionName: current.functionName,
             callDepth: current.callDepth,
-            callIndex: this.globalCallIndex, // PURE: remove ++
+            callIndex: this.globalCallIndex,
             parentFrameId: current.parentFrameId,
             parentId: current.frameId,
-            conditionId: activeConditionId
+            conditionId: activeConditionId,
+            loopId: activeLoopId
         };
     }
 
@@ -153,10 +160,16 @@ class InstrumentationTracer {
             pointerAliases: new Map(),
             blockScopes: [],
             scopeStack: [],
-            // FIX: Use a stack for conditions to handle nesting correctly
-            conditionStack: [],
-            activeConditionId: null // Fallback for legacy code
+            // FIX Bug 1: Inherit condition context from parent so recursive/nested
+            // calls stay inside their branch container.
+            conditionStack: parentFrame?.conditionStack ? [...parentFrame.conditionStack] : [],
+            activeConditionId: parentFrame?.activeConditionId || null,
+            // FIX Bug 2: Inherit loop context from parent so calls inside loops keep loopId.
+            loopStack: parentFrame?.loopStack ? [...parentFrame.loopStack] : [],
+            activeLoopId: parentFrame?.activeLoopId || null,
         };
+
+        console.log('[FRAME PUSH]', frameId, 'cond:', frame.activeConditionId, 'loop:', frame.activeLoopId);
 
         if (parentFrame && parentFrame.pointerAliases) {
             for (const [key, value] of parentFrame.pointerAliases.entries()) {
@@ -696,6 +709,9 @@ class InstrumentationTracer {
         let currentFunction = 'main';
         let currentFrame = null;
         const emittedStepIds = new Set();
+        // Maps raw integer conditionId (from tracer.cpp) to the stable string conditionId
+        // used in ExecutionStep objects. Key format: "frameId:rawIntId"
+        const rawConditionIdToStable = new Map();
 
         // Reset state
         this.frameStack = [];
@@ -1278,13 +1294,15 @@ class InstrumentationTracer {
                     explanation: `➡️ Entering ${info.function}`,
                     internalEvents: [],
                     frameId: newFrame.frameId,
-                    conditionId: parentMetadata.conditionId, // Inherit caller's active branch
+                    conditionId: parentMetadata.conditionId || null, // Inherit caller's active branch
+                    loopId: parentMetadata.loopId || null,
                     callDepth: newFrame.callDepth,
                     callIndex: newFrame.entryCallIndex,
                     parentFrameId: newFrame.parentFrameId,
                     parentId: newFrame.frameId,
                     isFunctionEntry: true
                 });
+                console.log('[ENTER]', newFrame.frameId, 'cond:', parentMetadata.conditionId || null, 'loop:', parentMetadata.loopId || null);
                 continue;
             }
 
@@ -1355,10 +1373,13 @@ class InstrumentationTracer {
                 }
 
                 // Preserve condition context for the exit/return steps
-                // FALLBACK: Use activeConditionId if the stack was already popped by a block_exit
-                const frameConditionId = (exitingFrame.conditionStack && exitingFrame.conditionStack.length > 0)
-                    ? exitingFrame.conditionStack[exitingFrame.conditionStack.length - 1]
-                    : exitingFrame.activeConditionId;
+                const frameConditionId = exitingFrame.conditionStack && exitingFrame.conditionStack.length > 0
+                    ? exitingFrame.conditionStack[exitingFrame.conditionStack.length - 1].conditionId
+                    : exitingFrame.activeConditionId || null;
+
+                const frameLoopId = exitingFrame.activeLoops && exitingFrame.activeLoops.size > 0
+                    ? Array.from(exitingFrame.activeLoops.keys()).pop()
+                    : null;
 
                 if (exitingFrame.scopeStack.length > 0) {
                     const allDestroyedSymbols = new Set();
@@ -1410,6 +1431,7 @@ class InstrumentationTracer {
                     parentId: exitingFrame.frameId,
                     isFunctionExit: true
                 });
+                console.log("[TRACE STEP]", "func_exit", "frame:", exitingFrame.frameId, "cond:", frameConditionId, "loop:", frameLoopId || null);
 
                 if (exitingFrame.pendingReturn) {
                     const pr = exitingFrame.pendingReturn;
@@ -1435,6 +1457,7 @@ class InstrumentationTracer {
                         parentFrameId: exitingFrame.parentFrameId,
                         parentId: exitingFrame.frameId
                     });
+                    console.log("[TRACE STEP]", "return", "frame:", exitingFrame.frameId, "cond:", frameConditionId, "loop:", frameLoopId || null);
                 }
 
                 currentFunction = this.frameStack.length > 0
@@ -1448,15 +1471,36 @@ class InstrumentationTracer {
                 // Skip if symbols failed
                 if (info.isUnresolved) continue;
 
-                // FIX 3: Stable condition IDs (remove unstable callIndex)
+                // FIX: Stable condition IDs (frameId + line + callIndex)
                 const conditionId = `cond-${frameMetadata.frameId}-${info.line}-${this.globalCallIndex}`;
-                // Push to condition stack to handle nesting correctly
+                // Push to condition stack with the current block depth so we can
+                // pop it precisely when its matching closing brace fires.
                 if (currentFrame) {
-                    currentFrame.conditionStack.push(conditionId);
+                    const currentBlockDepth = (ev.blockDepth !== undefined)
+                        ? ev.blockDepth
+                        : (currentFrame.blockScopes.length);
+                    // Safety guard: never push duplicate conditionId
+                    const alreadyTracked = currentFrame.conditionStack.some(
+                        e => e.conditionId === conditionId
+                    );
+                    if (!alreadyTracked) {
+                        currentFrame.conditionStack.push({
+                            conditionId,
+                            blockDepthAtPush: currentBlockDepth
+                        });
+                    }
                     currentFrame.activeConditionId = conditionId;
+                    // Register raw integer id → stable string id so branch_taken can look it up
+                    if (ev.conditionId !== undefined && ev.conditionId !== null) {
+                        const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
+                        rawConditionIdToStable.set(rawKey, conditionId);
+                    }
                 }
+                console.log('[COND START]', conditionId, 'frame:', frameMetadata.frameId, 'stack depth:', currentFrame?.conditionStack?.length);
 
                 step = {
+                    // FIX: ...frameMetadata FIRST so explicit fields below override inherited conditionId
+                    ...frameMetadata,
                     stepIndex: nextIndex(),
                     eventType: 'condition_eval',
                     line: info.line,
@@ -1469,23 +1513,42 @@ class InstrumentationTracer {
                     result: ev.result === 1,
                     controlRole: 'caller',
                     explanation: `🔍 Condition (${ev.expression}) = ${ev.result === 1 ? 'true' : 'false'}`,
-                    internalEvents: [],
-                    ...frameMetadata
+                    internalEvents: []
                 };
+                console.log('[COND STEP conditionId]', step.conditionId, '| frameMetadata.conditionId:', frameMetadata.conditionId, '| expected:', conditionId);
 
             } else if (ev.type === 'conditional_start') {
                 // Skip if symbols failed
                 if (info.isUnresolved) continue;
 
-                // FIX 3: Stable condition IDs
+                // FIX: Stable condition IDs
                 const conditionId = `cond-${frameMetadata.frameId}-${info.line}-${this.globalCallIndex}`;
-                // Push to condition stack to handle nesting correctly
+                // Push to condition stack with the current block depth
                 if (currentFrame) {
-                    currentFrame.conditionStack.push(conditionId);
+                    const currentBlockDepth = (ev.blockDepth !== undefined)
+                        ? ev.blockDepth
+                        : (currentFrame.blockScopes.length);
+                    const alreadyTracked = currentFrame.conditionStack.some(
+                        e => e.conditionId === conditionId
+                    );
+                    if (!alreadyTracked) {
+                        currentFrame.conditionStack.push({
+                            conditionId,
+                            blockDepthAtPush: currentBlockDepth
+                        });
+                    }
                     currentFrame.activeConditionId = conditionId;
+                    // Register raw integer id → stable string id so branch_taken can look it up
+                    if (ev.conditionId !== undefined && ev.conditionId !== null) {
+                        const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
+                        rawConditionIdToStable.set(rawKey, conditionId);
+                    }
                 }
+                console.log('[COND START]', conditionId, 'frame:', frameMetadata.frameId, 'stack depth:', currentFrame?.conditionStack?.length);
 
                 step = {
+                    // FIX: ...frameMetadata FIRST so explicit fields below override inherited conditionId
+                    ...frameMetadata,
                     stepIndex: nextIndex(),
                     eventType: 'conditional_start',
                     line: info.line,
@@ -1500,15 +1563,24 @@ class InstrumentationTracer {
                     explanation: ev.conditionType === 'switch'
                         ? `🔀 switch (${ev.expression || ''})`
                         : `🔀 condition start (${ev.expression || ''})`,
-                    internalEvents: [],
-                    ...frameMetadata
+                    internalEvents: []
                 };
 
             } else if (ev.type === 'branch_taken') {
-                // Use captured conditionId from frameMetadata (stack top)
-                const conditionId = frameMetadata.conditionId;
+                // Prefer the raw integer conditionId from the trace event (most accurate).
+                // Fall back to the condition stack top if the raw id is missing.
+                let conditionId = frameMetadata.conditionId;
+                if (ev.conditionId !== undefined && ev.conditionId !== null) {
+                    const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
+                    const stableId = rawConditionIdToStable.get(rawKey);
+                    if (stableId) {
+                        conditionId = stableId;
+                    }
+                }
 
+                // Spread frameMetadata FIRST so our explicit conditionId overrides it below.
                 step = {
+                    ...frameMetadata,
                     stepIndex: nextIndex(),
                     eventType: 'branch_taken',
                     line: info.line,
@@ -1521,14 +1593,43 @@ class InstrumentationTracer {
                     controlRole: 'body',
                     explanation: `➡️ Taking ${ev.branchType} branch`,
                     internalEvents: [],
-                    ...frameMetadata
                 };
 
-            } else if (ev.type === 'conditional_branch') {
-                // Use captured conditionId from frameMetadata (stack top)
-                const conditionId = frameMetadata.conditionId;
+                // After emitting an else or else-if step, pop the matching condition from the
+                // stack so it no longer poisons subsequent branch lookups.
+                const branchTypeLower = String(ev.branchType || '').toLowerCase();
+                if (
+                    currentFrame &&
+                    currentFrame.conditionStack &&
+                    (branchTypeLower === 'else' || branchTypeLower === 'else-if' || branchTypeLower === 'elseif')
+                ) {
+                    const matchingIndex = currentFrame.conditionStack.findIndex(entry => {
+                        if (ev.conditionId === undefined || ev.conditionId === null) return false;
+                        const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
+                        return rawConditionIdToStable.get(rawKey) === entry.conditionId;
+                    });
+                    if (matchingIndex !== -1) {
+                        currentFrame.conditionStack.splice(matchingIndex, 1);
+                        currentFrame.activeConditionId = currentFrame.conditionStack.length > 0
+                            ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1].conditionId
+                            : null;
+                    }
+                }
 
+            } else if (ev.type === 'conditional_branch') {
+                // Same lookup pattern as branch_taken.
+                let conditionId = frameMetadata.conditionId;
+                if (ev.conditionId !== undefined && ev.conditionId !== null) {
+                    const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
+                    const stableId = rawConditionIdToStable.get(rawKey);
+                    if (stableId) {
+                        conditionId = stableId;
+                    }
+                }
+
+                // Spread frameMetadata FIRST so conditionId below overrides it.
                 step = {
+                    ...frameMetadata,
                     stepIndex: nextIndex(),
                     eventType: 'conditional_branch',
                     line: info.line,
@@ -1547,7 +1648,6 @@ class InstrumentationTracer {
                         ? `📌 case ${ev.label}`
                         : `➡️ case ${ev.label}`,
                     internalEvents: [],
-                    ...frameMetadata
                 };
 
             } else if (ev.type === 'arg_bind') {
@@ -1585,8 +1685,13 @@ class InstrumentationTracer {
             } else if (ev.type === 'loop_start') {
                 const loopId = ev.loopId;
                 if (currentFrame) {
+                    // FIX Bug 5: Push to loopStack (proper LIFO) AND keep activeLoops for housekeeping.
                     currentFrame.activeLoops.set(loopId, { iterations: 0 });
+                    if (!currentFrame.loopStack) currentFrame.loopStack = [];
+                    currentFrame.loopStack.push(loopId);
+                    currentFrame.activeLoopId = loopId;
                 }
+                console.log('[LOOP START]', loopId);
 
                 const loopStep = {
                     stepIndex: nextIndex(),
@@ -1635,8 +1740,18 @@ class InstrumentationTracer {
                 flushLoopSummary(topLoop, { lineFallback: info.line, fileFallback: info.file });
                 loopStack.pop();
 
-                if (currentFrame && currentFrame.activeLoops && currentFrame.activeLoops.has(loopId)) {
-                    currentFrame.activeLoops.delete(loopId);
+                if (currentFrame) {
+                    // FIX Bug 5: Pop from loopStack and restore activeLoopId.
+                    if (currentFrame.activeLoops && currentFrame.activeLoops.has(loopId)) {
+                        currentFrame.activeLoops.delete(loopId);
+                    }
+                    if (currentFrame.loopStack && currentFrame.loopStack.length > 0) {
+                        // Only pop if this loop is at the top (LIFO safety guard)
+                        if (currentFrame.loopStack[currentFrame.loopStack.length - 1] === loopId) {
+                            currentFrame.loopStack.pop();
+                        }
+                    }
+                    currentFrame.activeLoopId = currentFrame.loopStack?.at(-1) || null;
                 }
 
                 // Now emit loop_end (after summary flush and cleanup)
@@ -1730,11 +1845,11 @@ class InstrumentationTracer {
                 }
                 activeLoopIterationStack.pop();
 
-                // FIX: Pop condition stack on loop iteration end (prevent iteration leak)
-                if (currentFrame && currentFrame.conditionStack.length > 0) {
-                    currentFrame.conditionStack.pop();
-                    currentFrame.activeConditionId = currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
-                }
+                // FIX Bug 4: Do NOT pop conditionStack on loop_iteration_end.
+                // A loop iteration does NOT own the condition context — conditions inside
+                // the loop body are pushed/popped independently by condition_eval and func_exit.
+                // Popping here caused every loop iteration to wipe out the conditionId, making
+                // all subsequent iterations have conditionId: null.
                 const iterCount = topLoop.iterationCount || 0;
                 const destroyedSet = new Set();
 
@@ -1868,11 +1983,24 @@ class InstrumentationTracer {
                         }
 
                         currentFrame.scopeStack.pop();
-
-                        // FIX: Pop condition stack on scope exit (nesting safe)
-                        if (currentFrame.conditionStack.length > 0) {
-                            currentFrame.conditionStack.pop();
-                            currentFrame.activeConditionId = currentFrame.conditionStack[currentFrame.conditionStack.length - 1] || null;
+                        // Pop any conditions whose block scope has now closed.
+                        // A condition pushed at blockDepth N is "done" when we exit
+                        // a block that brings depth back to < N.
+                        if (currentFrame.conditionStack && currentFrame.conditionStack.length > 0) {
+                            const exitingBlockDepth = ev.blockDepth !== undefined
+                                ? ev.blockDepth
+                                : (currentFrame.blockScopes.length);
+                            // Pop all conditions that were opened at a depth deeper than exitingBlockDepth
+                            while (
+                                currentFrame.conditionStack.length > 0 &&
+                                currentFrame.conditionStack[currentFrame.conditionStack.length - 1].blockDepthAtPush > exitingBlockDepth
+                            ) {
+                                currentFrame.conditionStack.pop();
+                            }
+                            // Update activeConditionId to new stack top
+                            currentFrame.activeConditionId = currentFrame.conditionStack.length > 0
+                                ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1].conditionId
+                                : null;
                         }
                     }
                 }

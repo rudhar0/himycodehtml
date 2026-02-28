@@ -24,9 +24,7 @@ export interface LayoutElement {
     | "array_panel"
     | "array_reference"
     | "call_site"
-    | "condition_caller"
-    | "loop_caller"
-    | "loop_body";
+    | "condition_caller";
   subtype?: string;
   x: number;
   y: number;
@@ -322,6 +320,7 @@ export class LayoutEngine {
     string,
     { groupId: string; stepIndex: number; line: number; scopeDepth: number }
   > = new Map();
+  private static currentScopeDepth: Map<string, number> = new Map();
   private static rightFlowOccupancy: Map<
     string,
     Array<{ x: number; y: number; width: number; height: number }>
@@ -356,10 +355,8 @@ export class LayoutEngine {
     currentIteration: number;
     totalIterations: number;
     elementId?: string;
-    bodyElementId?: string;
-    currentIterationElementId?: string;
+    currentIterationElementId?: string; // NEW: For expanded view
     parentFrameId: string;
-    estimatedIterations?: number;
   }> = new Map();
 
   private static activeConditions: Map<string, {
@@ -456,16 +453,10 @@ export class LayoutEngine {
    * Used to check if we're currently inside a loop
    */
   private static getActiveLoopForFrame(frameId: string) {
-    // FIX: For nested loops in the same frame, return the INNERMOST active loop.
-    // We identify innermost by highest startStep (most recently started).
-    // The last-inserted-wins approach works in most cases (Map insertion order),
-    // but using startStep is explicit and safe regardless of Map ordering.
     let match: any = null;
-    let latestStart = -1;
     for (const loop of this.activeLoops.values()) {
-      if (loop.parentFrameId === frameId && loop.startStep > latestStart) {
+      if (loop.parentFrameId === frameId) {
         match = loop;
-        latestStart = loop.startStep;
       }
     }
     return match;
@@ -484,10 +475,11 @@ export class LayoutEngine {
     );
   }
 
-  private static getScopeDepth(step: ExecutionStep): number {
+  private static getScopeDepth(step: ExecutionStep, frameId?: string): number {
     const rawDepth = Number(
       (step as any).scopeDepth ??
         (step as any).blockDepth ??
+        (frameId ? this.currentScopeDepth.get(frameId) : undefined) ??
         0,
     );
     if (!Number.isFinite(rawDepth)) return 0;
@@ -603,58 +595,43 @@ export class LayoutEngine {
     frameId: string,
     scopeDepth: number,
   ): { activationDepth: number; ephemeral: boolean } {
-    const lookaheadLimit = Math.min(executionTrace.steps.length, stepIndex + 20);
-
-    // These are control-transition events — they do NOT indicate a shallow body.
-    // When we see these next, we keep looking (don't return ephemeral).
-    const CONTROL_TRANSITION_TYPES = new Set([
-      "condition_eval",
-      "branch_taken",
-      "conditional_start",
-      "conditional_branch",
-      "else_eval",
-      "loop_start",
-      "loop_condition",
-      "loop_body_start",
-    ]);
+    // Scan forward through the trace looking for a block_exit in the same frame.
+    // The instrumenter emits __trace_block_exit for every closing brace }.
+    // If we find one, this branch body has real braces and can hold many elements.
+    // If we find none, it is a braceless single-line body (only one element fits).
+    //
+    // We do NOT use block_enter as the signal because the instrumenter emits
+    // block_enter BEFORE branch_taken in the trace, so it is never visible
+    // in a forward scan from branch_taken.
+    //
+    // Use a large lookahead window to support deeply nested conditions, loops
+    // inside conditions, recursive calls inside branches, and any complex flow.
+    const lookaheadLimit = Math.min(executionTrace.steps.length, stepIndex + 2000);
 
     for (let i = stepIndex + 1; i < lookaheadLimit; i++) {
       const s = executionTrace.steps[i] as any;
       const sFrameId = String(s?.frameId ?? "");
+
+      // Only consider events that belong to the same frame.
+      // Events from other frames (e.g. a called function) must be skipped.
       if (sFrameId && sFrameId !== frameId) continue;
 
-      const depth = this.getScopeDepth(s);
       const t = String(s?.eventType || s?.type || "").toLowerCase();
 
-      // Hard stop — a new function or loop boundary means we went too far
-      if (t === "func_enter" || t === "func_exit" || t === "loop_end") break;
-
-      // block_enter gives us the exact depth of the body
-      if (t === "block_enter") {
-        return { activationDepth: Math.max(scopeDepth + 1, depth), ephemeral: false };
-      }
-
-      // A step at deeper scope confirms a multi-line body with braces
-      if (depth > scopeDepth) {
-        return { activationDepth: depth, ephemeral: false };
-      }
-
-      // A control-transition event at the same depth is a nested condition or loop
-      // starting inside this body. Keep looking — do NOT return ephemeral.
-      // This is the fix for: if (outer) { if (inner) {} } — outer was wrongly ephemeral.
-      if (CONTROL_TRANSITION_TYPES.has(t)) {
-        continue;
-      }
-
-      // A non-control step at the same or shallower depth = single-line if (no braces)
-      if (depth <= scopeDepth && t) {
-        return { activationDepth: scopeDepth, ephemeral: true };
+      // block_exit means a closing brace } was hit in this frame.
+      // This confirms the branch body has braces and is not single-line.
+      // Register as NON-EPHEMERAL so all elements inside are placed correctly.
+      // pruneControlDepthForScope will automatically remove the body when
+      // the block_exit event is processed (because depth decreases).
+      if (t === "block_exit") {
+        return { activationDepth: scopeDepth, ephemeral: false };
       }
     }
 
-    // Default: brace-enclosed body at depth+1
-    // C/C++ instrumented code always uses braces, so this is safe
-    return { activationDepth: scopeDepth + 1, ephemeral: false };
+    // No block_exit found in this frame within the lookahead window.
+    // This means the branch body has no braces — it is a single-line body.
+    // Register as EPHEMERAL so it is destroyed after the one element is placed.
+    return { activationDepth: scopeDepth, ephemeral: true };
   }
 
   private static getActiveControlParent(
@@ -688,17 +665,8 @@ export class LayoutEngine {
     const activeLoop = this.getActiveLoopForFrame(frameId);
     if (!activeLoop) return null;
 
-    // Prefer the iteration element (set in expanded mode or preserved in toggle mode)
     if (activeLoop.currentIterationElementId) {
-      const iterEl = this.elementHistory.get(activeLoop.currentIterationElementId);
-      if (iterEl) return iterEl;
-    }
-
-    // FIX: Fall back to bodyElementId (the loop body panel) so children always
-    // have a proper parent container, even in toggle/collapsed mode.
-    if (activeLoop.bodyElementId) {
-      const bodyEl = this.elementHistory.get(activeLoop.bodyElementId);
-      if (bodyEl) return bodyEl;
+      return this.elementHistory.get(activeLoop.currentIterationElementId) || null;
     }
 
     return activeLoop.elementId
@@ -1097,6 +1065,7 @@ export class LayoutEngine {
     stepIndex: number,
     functionName: string,
     returnValue: any,
+    scopeDepth: number
   ): void {
     const hasRecentReturn = (funcFrame.children || []).some((child) => {
       if (child.type !== "function_return") return false;
@@ -1105,18 +1074,23 @@ export class LayoutEngine {
     });
     if (hasRecentReturn) return;
 
-    const lane = this.getLane(funcFrame, "RETURN");
-    const indent = getIndentSize(funcFrame);
+    if (funcFrame && funcFrame.data) {
+      if (typeof funcFrame.data.isReturning !== "undefined") {
+        funcFrame.data.isReturning = true;
+      }
+    }
+
+    const placement = this.getPlacementContext(funcFrame, frameId, scopeDepth);
 
     const returnElement: LayoutElement = {
       id: `return-${frameId}-${stepIndex}`,
       type: "function_return",
-      x: funcFrame.x + indent,
-      y: funcFrame.y + lane.startY + lane.usedHeight,
-      width: funcFrame.width - indent * 2,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
       height: 70,
       stepId: stepIndex,
-      parentId: funcFrame.id,
+      parentId: placement.parent.id,
       data: {
         frameId,
         functionName,
@@ -1124,10 +1098,14 @@ export class LayoutEngine {
         explanation: `return ${returnValue ?? "void"}`,
         birthStep: stepIndex,
       },
+      metadata: {
+        suppressLayoutSpacing: true
+      },
     };
 
-    lane.usedHeight += returnElement.height + ELEMENT_SPACING;
-    funcFrame.children?.push(returnElement);
+    this.appendElementToPlacement(funcFrame, placement, returnElement);
+    this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+
     layout.elements.push(returnElement);
     this.elementHistory.set(returnElement.id, returnElement);
   }
@@ -1700,14 +1678,10 @@ export class LayoutEngine {
       },
     };
 
-    // FIX: attach container to the resolved parent (loop iteration or condition body),
-    // not always to ownerFrame. ownerFrame is only used when no loop/condition is active.
-    const containerOwner = parent.id === ownerFrame.id ? ownerFrame : parent;
-    if (!containerOwner.children) {
-      containerOwner.children = [];
+    if (!ownerFrame.children) {
+      ownerFrame.children = [];
     }
-    containerOwner.children.push(container);
-    container.parentId = containerOwner.id; // keep parentId in sync
+    ownerFrame.children.push(container);
 
     layout.elements.push(container);
     this.elementHistory.set(container.id, container);
@@ -1759,7 +1733,7 @@ export class LayoutEngine {
     frameId: string,
   ): boolean {
     const stepType = ((step as any).eventType || (step as any).type || "").toLowerCase();
-    const scopeDepth = this.getScopeDepth(step);
+    const scopeDepth = this.getScopeDepth(step, frameId);
     const line = Number((step as any).line ?? 0);
 
     if (!this.isControlEvaluationStep(stepType, step) && !this.isControlBranchStep(stepType)) {
@@ -1833,20 +1807,11 @@ export class LayoutEngine {
       const conditionId = String(conditionIdRaw);
       const groupId = this.resolveIfGroupId(frameId, scopeDepth, stepIndex, line);
 
-      const { groupState } = this.createOrGetControlGroupContainer(
-        layout,
-        ownerFrame,
-        frameId,
-        scopeDepth,
-        stepIndex,
-        groupId,
-        "if_chain",
-      );
-
-      const kind: ControlKind = groupState.members.length === 0 ? "if" : "else_if";
-      
+      // Step 1: Create the in-flow caller (the "if" chip inside the frame) FIRST.
+      // This must exist before createOrGetControlGroupContainer runs so that
+      // resolveControlContainerPlacement can use it as the arrow trigger.
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
-      const callerId = `condition-caller-${groupState.groupId}-${stepIndex}`;
+      const callerId = `condition-caller-${groupId}-${stepIndex}`;
 
       const callerElement: LayoutElement = {
         id: callerId,
@@ -1861,20 +1826,39 @@ export class LayoutEngine {
           condition: expression,
           conditionResult: conditionResult,
           conditionId: conditionId,
-          controlGroupId: groupState.groupId,
-          controlKind: kind,
+          controlGroupId: groupId,
+          controlKind: "if",
           controlRole: "caller",
           birthStep: stepIndex,
-          isActive: true
-        }
+          isActive: true,
+        },
       };
 
       this.appendElementToPlacement(ownerFrame, placement, callerElement);
       layout.elements.push(callerElement);
       this.elementHistory.set(callerElement.id, callerElement);
       this.createdInStep.set(callerElement.id, stepIndex);
-      
-      // CRITICAL: Register as member so branch_taken can find it!
+
+      // Step 2: NOW create (or retrieve) the right-flow group container.
+      // findLastRenderableChild will now see the callerElement as the trigger.
+      const { groupState } = this.createOrGetControlGroupContainer(
+        layout,
+        ownerFrame,
+        frameId,
+        scopeDepth,
+        stepIndex,
+        groupId,
+        "if_chain",
+      );
+
+      // Determine kind AFTER we know the group exists.
+      const kind: ControlKind = groupState.members.length === 0 ? "if" : "else_if";
+
+      // Update callerElement with the resolved group id and kind.
+      callerElement.data.controlGroupId = groupState.groupId;
+      callerElement.data.controlKind = kind;
+
+      // Register caller in group.
       groupState.members.push(callerElement.id);
 
       this.activeConditions.set(conditionId, {
@@ -1885,11 +1869,12 @@ export class LayoutEngine {
         parentFrameId: frameId,
         conditionResult,
         expression,
-        kind
+        kind,
       });
 
       return true;
     }
+
 
     if (stepType === "branch_taken" || stepType === "branch") {
       const conditionIdRaw = (step as any).conditionId ?? `${frameId}-cond-${stepIndex - 1}`;
@@ -2252,6 +2237,7 @@ export class LayoutEngine {
     this.activeControlByDepth.clear();
     this.ephemeralControlByDepth.clear();
     this.recentIfGroupByFrame.clear();
+    this.currentScopeDepth.clear();
     this.rightFlowOccupancy.clear();
 
     this.functionFrames.set("main-0", layout.mainFunction);
@@ -2328,18 +2314,23 @@ export class LayoutEngine {
           const prevStep = stepIndex > 0 ? executionTrace.steps[stepIndex - 1] : null;
           const prevType = (prevStep as any)?.eventType || '';
           const callStyle = prevType === 'var_declare' ? 'inline' : 'standalone';
-          const indent = getIndentSize(parentFrame);
-          const lane = this.getLane(parentFrame, 'LOCALS');
+          
+          // CRITICAL FIX: The `func_enter` step inherently has a scopeDepth of 0
+          // because it resets the block depth for the newly created frame.
+          // To place the call_site inside the *caller's* correct scope container (like an else body),
+          // we must query the depth of the caller block using the previous step.
+          const callScopeDepth = prevStep ? this.getScopeDepth(prevStep, parentFrameId) : 0;
+          const placement = this.getPlacementContext(parentFrame, parentFrameId, callScopeDepth);
 
           const callElement: LayoutElement = {
             id: `call-${parentFrameId}-to-${frameId}`,
             type: "call_site",
             subtype: callStyle,
-            x: parentFrame.x + indent,
-            y: parentFrame.y + lane.startY + lane.usedHeight,
-            width: parentFrame.width - indent * 2,
+            x: placement.x,
+            y: placement.y,
+            width: placement.width,
             height: 50,
-            parentId: parentFrame.id,
+            parentId: placement.parent.id,
             stepId: stepIndex,
             data: {
               functionName: functionName,
@@ -2349,9 +2340,8 @@ export class LayoutEngine {
             }
           };
 
-          lane.usedHeight += callElement.height + ELEMENT_SPACING;
+          this.appendElementToPlacement(parentFrame, placement, callElement);
 
-          parentFrame.children?.push(callElement);
           layout.elements.push(callElement);
           this.elementHistory.set(callElement.id, callElement);
 
@@ -2437,8 +2427,13 @@ export class LayoutEngine {
         funcFrame.data.isActive = false;
         funcFrame.data.isReturning = true;
       }
+      
+      // Compute scope depth BEFORE deleting the frame's state!
+      const scopeDepth = this.getScopeDepth(step, frameId);
+      
       this.activeControlByDepth.delete(frameId);
       this.recentIfGroupByFrame.delete(frameId);
+      this.currentScopeDepth.delete(frameId);
 
       // *** NEW: Get return value properly ***
       const returnValue = this.getReturnValue(executionTrace, frameId, stepIndex);
@@ -2452,6 +2447,7 @@ export class LayoutEngine {
           stepIndex,
           functionName || funcFrame.data?.functionName || "function",
           returnValue,
+          scopeDepth
         );
       }
       return;
@@ -2464,6 +2460,7 @@ export class LayoutEngine {
       const functionName =
         (step as any).function || funcFrame.data?.functionName || "function";
       const returnValue = (step as any).returnValue ?? (step as any).value ?? null;
+      const scopeDepth = this.getScopeDepth(step, frameId);
 
       this.appendReturnElement(
         layout,
@@ -2472,6 +2469,7 @@ export class LayoutEngine {
         stepIndex,
         functionName,
         returnValue,
+        scopeDepth
       );
       return;
     }
@@ -2482,28 +2480,29 @@ export class LayoutEngine {
     }
 
     const normalizedStepType = String(stepType || "").toLowerCase();
-    const scopeDepth = this.getScopeDepth(step);
 
-    // FIX: Do NOT prune the control hierarchy BEFORE processing a control step.
-    // Control steps (condition_eval, branch_taken) manage their own depth transitions.
-    // Pruning before them removes active parent bodies that are still needed.
-    const isControlTransition =
-      this.isControlEvaluationStep(normalizedStepType, step) ||
-      this.isControlBranchStep(normalizedStepType);
-
-    if (!isControlTransition) {
-      const exitedControlIds = [
-        ...this.pruneControlDepthForScope(frameId, scopeDepth),
-        ...this.pruneEphemeralControls(frameId, stepIndex),
-      ];
-      this.maybeCreateBranchReturnFlow(
-        executionTrace,
-        frameId,
-        normalizedStepType,
-        stepIndex,
-        exitedControlIds,
-      );
+    // NEW: Handle block scope events to maintain persistent scope depth
+    let scopeDepth = this.getScopeDepth(step, frameId);
+    if (normalizedStepType === "block_enter") {
+      this.currentScopeDepth.set(frameId, scopeDepth);
+    } else if (normalizedStepType === "block_exit") {
+      // block_exit carries the depth of the scope that is CLOSING.
+      // After exit, current depth = that value minus 1.
+      const blockDepthFromEvent = (step as any).blockDepth ?? scopeDepth;
+      scopeDepth = Math.max(0, blockDepthFromEvent - 1);
+      this.currentScopeDepth.set(frameId, scopeDepth);
     }
+    const exitedControlIds = [
+      ...this.pruneControlDepthForScope(frameId, scopeDepth),
+      ...this.pruneEphemeralControls(frameId, stepIndex),
+    ];
+    this.maybeCreateBranchReturnFlow(
+      executionTrace,
+      frameId,
+      normalizedStepType,
+      stepIndex,
+      exitedControlIds,
+    );
 
     if (this.processControlStep(step, executionTrace, layout, stepIndex, ownerFrame, frameId)) {
       return;
@@ -2531,7 +2530,7 @@ export class LayoutEngine {
         frameId: frameId,
       };
 
-      const scopeDepth = this.getScopeDepth(step);
+      const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
       const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
@@ -2625,11 +2624,8 @@ export class LayoutEngine {
       const currentLoop = this.getActiveLoopForFrame(frameId);
 
       if (currentLoop && toggleMode) {
-        // Try to find existing element with this variable name.
-        // FIX: In toggle mode, variables live inside the bodyElement (not the caller).
-        // Search bodyElementId, not elementId (which is the caller header).
-        const searchContainerId = currentLoop.bodyElementId || currentLoop.elementId!;
-        const existingElement = this.findLoopChildElement(searchContainerId, varName);
+        // Try to find existing element with this variable name
+        const existingElement = this.findLoopChildElement(currentLoop.elementId!, varName);
         
         if (existingElement) {
           // UPDATE existing element instead of creating new one
@@ -2665,7 +2661,7 @@ export class LayoutEngine {
         frameId: frameId,
       };
 
-      const scopeDepth = this.getScopeDepth(step);
+      const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
       // Calculate height based on explanation and function call
@@ -2736,7 +2732,7 @@ export class LayoutEngine {
           frameId: frameId,
         };
 
-        const scopeDepth = this.getScopeDepth(step);
+        const scopeDepth = this.getScopeDepth(step, frameId);
         const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
         const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
 
@@ -2800,7 +2796,7 @@ export class LayoutEngine {
         frameId: frameId,
       };
 
-      const scopeDepth = this.getScopeDepth(step);
+      const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       const elementHeight = explanation
         ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT
@@ -2871,7 +2867,7 @@ export class LayoutEngine {
           frameId: frameId,
         };
 
-        const scopeDepth = this.getScopeDepth(step);
+        const scopeDepth = this.getScopeDepth(step, frameId);
         const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
 
         const varElement: LayoutElement = {
@@ -2925,7 +2921,7 @@ export class LayoutEngine {
       const outputId = `output-${stepIndex}`;
       if (this.elementHistory.has(outputId)) return;
 
-      const scopeDepth = this.getScopeDepth(step);
+      const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       const baseHeight = 60;
       const elementHeight = explanation ? baseHeight + EXPLANATION_HEIGHT : baseHeight;
@@ -2957,7 +2953,7 @@ export class LayoutEngine {
       const inputId = `input-${stepIndex}`;
       if (this.elementHistory.has(inputId)) return;
 
-      const scopeDepth = this.getScopeDepth(step);
+      const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       const hasAssignments = !!(step as any).assignments;
       const baseHeight = 80;
@@ -2993,25 +2989,20 @@ export class LayoutEngine {
       return;
     }
 
-    // LOOP START — Create loop_caller in main flow (condition-style)
+    // LOOP START
     if (stepType === "loop_start") {
       const { loopId, loopType } = step as any;
       const ownerFrame = this.functionFrames.get(frameId);
       if (!ownerFrame) return;
 
-      const callerElementId = `loop-caller-${frameId}-${loopId}-${stepIndex}`;
-      const bodyElementId = `loop-body-${frameId}-${loopId}-${stepIndex}`;
-      const scopeDepth = this.getScopeDepth(step);
+      const loopElementId = `loop-${frameId}-${loopId}-${stepIndex}`;
+      const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
       
-      // Look ahead to find end step for skip functionality and estimated iterations
+      // Look ahead to find end step for skip functionality
       let endStep: number | undefined;
-      let estimatedIterations = 0;
       for (let i = stepIndex + 1; i < executionTrace.steps.length; i++) {
         const s = executionTrace.steps[i] as any;
-        if (s.eventType === 'loop_iteration_end' && s.loopId === loopId) {
-          estimatedIterations++;
-        }
         if (s.eventType === 'loop_end' && s.loopId === loopId) {
           endStep = i;
           break;
@@ -3025,348 +3016,115 @@ export class LayoutEngine {
         endStep: endStep,
         currentIteration: 0,
         totalIterations: 0,
-        elementId: callerElementId,
-        bodyElementId: bodyElementId,
+        elementId: loopElementId,
         parentFrameId: frameId,
-        estimatedIterations: estimatedIterations,
       });
 
-      // Create the compact loop_caller in the main flow
-      const callerElement: LayoutElement = {
-        id: callerElementId,
-        type: 'loop_caller',
+      const loopElement: LayoutElement = {
+        id: loopElementId,
+        type: 'loop',
         subtype: loopType,
         x: placement.x,
         y: placement.y,
-        width: placement.width - 40,
-        height: CONTROL_CALLER_HEIGHT,
+        width: placement.width,
+        height: 150,
         parentId: placement.parent.id,
         stepId: stepIndex,
         children: [],
         data: {
           loopId,
           loopType,
-          condition: (step as any).explanation,
           currentIteration: 0,
-          totalIterations: estimatedIterations,
           isActive: true,
-          isComplete: false,
           frameId: frameId,
+          explanation: explanation,
           endStep: endStep,
-          bodyElementId: bodyElementId,
-          estimatedIterations: estimatedIterations,
-          controlKind: "loop",
-          controlRole: "caller",
         },
       };
 
-      this.appendElementToPlacement(ownerFrame, placement, callerElement);
+      this.appendElementToPlacement(ownerFrame, placement, loopElement);
       this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
-      layout.elements.push(callerElement);
-      this.elementHistory.set(callerElementId, callerElement);
-      this.createdInStep.set(callerElementId, stepIndex);
-
-      // Create the loop_body panel in right flow
-      const bodyX = callerElement.x + callerElement.width + CONTROL_CALLER_BODY_GAP;
-      const bodyY = callerElement.y;
-      const bodyWidth = CONTROL_BASE_WIDTH;
-      const resolved = this.resolveRightFlowRect(frameId, bodyX, bodyY, bodyWidth, CONTROL_BODY_HEIGHT);
-
-      const bodyElement: LayoutElement = {
-        id: bodyElementId,
-        type: 'loop_body',
-        subtype: loopType,
-        x: resolved.x,
-        y: resolved.y,
-        width: resolved.width,
-        height: resolved.height,
-        parentId: callerElementId,
-        stepId: stepIndex,
-        children: [],
-        data: {
-          loopId,
-          loopType,
-          condition: (step as any).explanation,
-          conditionResult: undefined,
-          currentIteration: 0,
-          totalIterations: estimatedIterations,
-          isActive: true,
-          isComplete: false,
-          isSkipped: false,
-          frameId: frameId,
-          endStep: endStep,
-          callerId: callerElementId,
-          estimatedIterations: estimatedIterations,
-          controlKind: "loop",
-          controlRole: "body",
-        },
-      };
-
-      callerElement.children!.push(bodyElement);
-      layout.elements.push(bodyElement);
-      this.elementHistory.set(bodyElementId, bodyElement);
-      this.createdInStep.set(bodyElementId, stepIndex);
-
-      // Push control arrow from caller to body
-      const arrowId = `loop-arrow-${loopId}-${stepIndex}`;
-      this.pushControlArrow(
-        arrowId,
-        stepIndex,
-        callerElement.x + callerElement.width,
-        callerElement.y + callerElement.height / 2,
-        bodyElement.x,
-        bodyElement.y + 30,
-        {
-          sourceNodeId: callerElementId,
-          targetNodeId: bodyElementId,
-        },
-      );
-
-      // Track right-flow occupancy
-      const occ = this.getFrameOccupancy(frameId);
-      occ.push({ x: resolved.x, y: resolved.y, width: resolved.width, height: resolved.height });
+      layout.elements.push(loopElement);
+      this.elementHistory.set(loopElementId, loopElement);
+      this.createdInStep.set(loopElementId, stepIndex);
 
       return;
     }
 
-    // LOOP ITERATION START — create iteration container inside loop_body
+    // LOOP ITERATION START
     if (stepType === "loop_body_start") {
       const { loopId, iteration } = step as any;
       const loopState = this.activeLoops.get(loopId);
       
       if (loopState) {
         loopState.currentIteration = iteration;
-        loopState.totalIterations = Math.max(loopState.totalIterations || 0, iteration);
-
-        // Update caller element
-        const callerElement = this.elementHistory.get(loopState.elementId!);
-        if (callerElement && callerElement.data) {
-          callerElement.data.currentIteration = iteration;
-          callerElement.data.isActive = true;
+        const loopElement = this.elementHistory.get(loopState.elementId!)!;
+        
+        if (loopElement && loopElement.data) {
+          loopElement.data.currentIteration = iteration;
+          loopElement.data.isActive = true;
         }
 
-        // Update body element — guard against missing body element
-        const bodyElement = loopState.bodyElementId
-          ? this.elementHistory.get(loopState.bodyElementId)
-          : undefined;
-        if (bodyElement && bodyElement.data) {
-          bodyElement.data.currentIteration = iteration;
-          bodyElement.data.isActive = true;
-        }
-
-        // FIX (Bug 4): Clear ONLY control depths that belong to the PREVIOUS iteration
-        const loopScopeDepth = this.getScopeDepth(step);
-        const controlDepthMap = this.getFrameControlDepthMap(loopState.parentFrameId);
-        controlDepthMap.forEach((_elementId, depth) => {
-          if (depth > loopScopeDepth) {
-            controlDepthMap.delete(depth);
-          }
-        });
-        const ephemeralMap = this.ephemeralControlByDepth.get(loopState.parentFrameId);
-        if (ephemeralMap) {
-          ephemeralMap.forEach((_entry, depth) => {
-            if (depth > loopScopeDepth) {
-              ephemeralMap.delete(depth);
-            }
-          });
-        }
-        const recentGroup = this.recentIfGroupByFrame.get(loopState.parentFrameId);
-        if (recentGroup && recentGroup.scopeDepth > loopScopeDepth) {
-          this.recentIfGroupByFrame.delete(loopState.parentFrameId);
-        }
-
-        // TOGGLE MODE CHECK — iteration containers go inside loop_body
+        // TOGGLE MODE CHECK
         const { toggleMode } = useLoopStore.getState();
-        const parentElement = bodyElement || callerElement;
-        if (!parentElement) return;
+        
+         if (!toggleMode) {
+             // EXPANDED MODE: Create new Iteration Container
+             const iterationId = `iter-${loopId}-${iteration}-${stepIndex}`;
+             
+             const iterationElement: LayoutElement = {
+                 id: iterationId,
+                 type: 'loop', // We use 'loop' type but subtype 'iteration'
+                 subtype: 'iteration',
+                 x: loopElement.x + 20,
+                 y: this.getNextCursorY(loopElement),
+                 width: loopElement.width - 40,
+                 height: 40, // Will grow
+                 parentId: loopElement.id,
+                stepId: stepIndex,
+                children: [],
+                data: {
+                    iteration: iteration
+                }
+            };
+            
+            loopElement.children!.push(iterationElement);
+            this.elementHistory.set(iterationId, iterationElement);
+            loopState.currentIterationElementId = iterationId;
 
-        if (!toggleMode) {
-          // EXPANDED MODE: Create new iteration container inside body
-          const iterationId = `iter-${loopId}-${iteration}-${stepIndex}`;
-          
-          const iterationElement: LayoutElement = {
-            id: iterationId,
-            type: 'loop',
-            subtype: 'iteration',
-            x: parentElement.x + 20,
-            y: this.getNextCursorY(parentElement),
-            width: parentElement.width - 40,
-            height: 40,
-            parentId: parentElement.id,
-            stepId: stepIndex,
-            children: [],
-            data: {
-              iteration: iteration
+            const ownerFrame = this.functionFrames.get(loopState.parentFrameId);
+            if (ownerFrame) {
+              this.bumpFrameLocalsCursorToInclude(
+                ownerFrame,
+                iterationElement.y + iterationElement.height,
+              );
             }
-          };
-          
-          parentElement.children!.push(iterationElement);
-          this.elementHistory.set(iterationId, iterationElement);
-          loopState.currentIterationElementId = iterationId;
-
-          const ownerFrame = this.functionFrames.get(loopState.parentFrameId);
-          if (ownerFrame) {
-            this.bumpFrameLocalsCursorToInclude(
-              ownerFrame,
-              iterationElement.y + iterationElement.height,
-            );
-          }
         } else {
-          // COLLAPSED (TOGGLE) MODE: Do NOT clear currentIterationElementId.
-          // Keeping the iteration element ID means getLoopContainerParent still
-          // returns a valid container, so variable elements are correctly parented
-          // inside the loop body rather than floating up to the function frame.
-          // If there is no previous iteration ID yet (first iteration), fall back
-          // to the body element so children still have a valid parent.
-          if (!loopState.currentIterationElementId) {
-            loopState.currentIterationElementId = loopState.bodyElementId;
-          }
-          // Mark body as the active parent for this iteration
-          if (bodyElement && bodyElement.data) {
-            bodyElement.data.isActive = true;
-          }
+            // COLLAPSED MODE: Reuse loop container, clear specific iteration ID
+            loopState.currentIterationElementId = undefined;
         }
-      }
-      return;
-    }
-
-    // LOOP BODY SUMMARY — processes events that exist only inside the summary (not in steps[]).
-    // As of the current fix, condition_eval and branch_taken are now in STRUCTURAL_EVENTS so
-    // they arrive in steps[] individually. This handler is kept as a safety net for any
-    // events that may only be present inside the summary (e.g., from collapsed toggle mode).
-    if (stepType === "loop_body_summary") {
-      const { events: innerEvents } = step as any;
-      if (!Array.isArray(innerEvents) || innerEvents.length === 0) return;
-
-      // Build a set of stepIndices already in the main executionTrace.steps
-      // to avoid re-processing events that are already there.
-      const existingStepIndices = new Set<number>();
-      for (const s of executionTrace.steps) {
-        const sIdx = (s as any).stepIndex;
-        if (sIdx !== undefined && sIdx !== null) existingStepIndices.add(sIdx);
-      }
-
-      for (let innerIdx = 0; innerIdx < innerEvents.length; innerIdx++) {
-        const inner = innerEvents[innerIdx] as any;
-        if (!inner) continue;
-
-        // Skip events that are already present individually in steps[]
-        const innerStepIndex = inner.internalStepIndex ?? inner.stepIndex;
-        if (innerStepIndex !== undefined && existingStepIndices.has(innerStepIndex)) continue;
-
-        const innerType = String(inner?.eventType || inner?.type || "").toLowerCase();
-        const innerFrameId = String(inner?.frameId ?? frameId);
-        const innerOwner = this.functionFrames.get(innerFrameId);
-        if (!innerOwner) continue;
-
-        // Replay control events that did not make it to steps[] individually
-        if (
-          innerType === "condition_eval" ||
-          innerType === "branch_taken" ||
-          innerType === "conditional_start" ||
-          innerType === "conditional_branch" ||
-          innerType === "else_eval"
-        ) {
-          const syntheticIndex = stepIndex * 10000 + innerIdx;
-          this.processControlStep(
-            inner as ExecutionStep,
-            executionTrace,
-            layout,
-            syntheticIndex,
-            innerOwner,
-            innerFrameId,
-          );
-        }
-      }
-      return;
-    }
+        
+       }
+       return;
+     }
 
     // Legacy conditional handling removed: all condition events are processed in processControlStep.
 
-    // LOOP CONDITION — update both caller and body, and append check element
+    // LOOP CONDITION
     if (stepType === "loop_condition") {
       const { loopId, result } = step as any;
       const loopState = this.activeLoops.get(loopId);
       
       if (loopState) {
-        const condResult = result === 1;
-
-        // Update caller
-        const callerElement = this.elementHistory.get(loopState.elementId!);
-        if (callerElement && callerElement.data) {
-          callerElement.data.conditionResult = condResult;
-        }
-
-        // Update body
-        const bodyElement = loopState.bodyElementId
-          ? this.elementHistory.get(loopState.bodyElementId)
-          : undefined;
-        if (bodyElement && bodyElement.data) {
-          bodyElement.data.conditionResult = condResult;
-          bodyElement.stepId = stepIndex;
-        }
-
-        // Add condition check element to current iteration
-        const { toggleMode } = useLoopStore.getState();
-        const iterId = loopState.currentIterationElementId;
-        if (!toggleMode && iterId) {
-          const iterElement = this.elementHistory.get(iterId);
-          if (iterElement) {
-            const checkId = `loop-check-${loopId}-${loopState.currentIteration}-${stepIndex}`;
-            const checkElement: LayoutElement = {
-              id: checkId,
-              type: 'loop',
-              subtype: 'condition_check',
-              x: iterElement.x + 20,
-              y: this.getNextCursorY(iterElement),
-              width: iterElement.width - 40,
-              height: 30,
-              parentId: iterId,
-              stepId: stepIndex,
-              children: [],
-              data: {
-                conditionResult: condResult,
-                explanation: (step as any).explanation || (callerElement && callerElement.data ? callerElement.data.condition : "(condition)"),
-              }
-            };
-            iterElement.children = iterElement.children || [];
-            iterElement.children.push(checkElement);
-            this.elementHistory.set(checkId, checkElement);
-          }
-        } else if (toggleMode && bodyElement) {
-          // In toggle mode, it updates body state, but we can also store the check event
-          // Let's just create the element and attach it to the body itself instead
-          const checkId = `loop-check-${loopId}-${stepIndex}`;
-          const checkElement: LayoutElement = {
-            id: checkId,
-            type: 'loop',
-            subtype: 'condition_check',
-            x: bodyElement.x + 20,
-            y: this.getNextCursorY(bodyElement),
-            width: bodyElement.width - 40,
-            height: 30,
-            parentId: bodyElement.id,
-            stepId: stepIndex,
-            children: [],
-            data: {
-              conditionResult: condResult,
-              explanation: (step as any).explanation || (callerElement && callerElement.data ? callerElement.data.condition : "(condition)"),
-            }
-          };
-          
-          // Clear previous condition check or update steps in toggle mode
-          bodyElement.children = (bodyElement.children || []).filter(c => 
-            c.subtype !== 'condition_check' && c.subtype !== 'update_step'
-          );
-          
-          bodyElement.children.push(checkElement);
-          this.elementHistory.set(checkId, checkElement);
+        const loopElement = this.elementHistory.get(loopState.elementId!);
+        if (loopElement && loopElement.data) {
+          loopElement.data.conditionResult = result === 1;
         }
       }
       return;
     }
 
-    // LOOP ITERATION END — update counters on both elements
+    // LOOP ITERATION END
     if (stepType === "loop_iteration_end") {
       const { loopId, iteration } = step as any;
       const loopState = this.activeLoops.get(loopId);
@@ -3374,83 +3132,15 @@ export class LayoutEngine {
       if (loopState) {
         loopState.totalIterations = Math.max(loopState.totalIterations, iteration);
         
-        // Update caller
-        const callerElement = this.elementHistory.get(loopState.elementId!);
-        if (callerElement && callerElement.data) {
-          callerElement.data.totalIterations = loopState.totalIterations;
-        }
-
-        // Update body
-        const bodyElement = loopState.bodyElementId
-          ? this.elementHistory.get(loopState.bodyElementId)
-          : undefined;
-        if (bodyElement && bodyElement.data) {
-          bodyElement.data.totalIterations = loopState.totalIterations;
-        }
-
-        // Add update step element
-        if (loopState.loopType === 'for') {
-          const { toggleMode } = useLoopStore.getState();
-          const iterId = loopState.currentIterationElementId;
-          
-          if (!toggleMode && iterId) {
-            const iterElement = this.elementHistory.get(iterId);
-            if (iterElement) {
-              const updateId = `loop-update-${loopId}-${iteration}-${stepIndex}`;
-              const updateElement: LayoutElement = {
-                id: updateId,
-                type: 'loop',
-                subtype: 'update_step',
-                x: iterElement.x + 20,
-                y: this.getNextCursorY(iterElement),
-                width: iterElement.width - 40,
-                height: 30,
-                parentId: iterId,
-                stepId: stepIndex,
-                children: [],
-                data: {
-                  explanation: (step as any).explanation || "Loop update",
-                }
-              };
-              iterElement.children = iterElement.children || [];
-              iterElement.children.push(updateElement);
-              this.elementHistory.set(updateId, updateElement);
-
-              // adjust height of iterElement to hold the update element
-              iterElement.height = Math.max(iterElement.height, (updateElement.y - iterElement.y) + updateElement.height + 10);
-            }
-          } else if (toggleMode && bodyElement) {
-            const updateId = `loop-update-${loopId}-${stepIndex}`;
-            const updateElement: LayoutElement = {
-              id: updateId,
-              type: 'loop',
-              subtype: 'update_step',
-              x: bodyElement.x + 20,
-              y: this.getNextCursorY(bodyElement),
-              width: bodyElement.width - 40,
-              height: 30,
-              parentId: bodyElement.id,
-              stepId: stepIndex,
-              children: [],
-              data: {
-                explanation: (step as any).explanation || "Loop update",
-              }
-            };
-            
-            // clear previous condition check or update steps
-            bodyElement.children = (bodyElement.children || []).filter(c => 
-              c.subtype !== 'condition_check' && c.subtype !== 'update_step'
-            );
-            
-            bodyElement.children.push(updateElement);
-            this.elementHistory.set(updateId, updateElement);
-          }
+        const loopElement = this.elementHistory.get(loopState.elementId!);
+        if (loopElement && loopElement.data) {
+          loopElement.data.totalIterations = loopState.totalIterations;
         }
       }
       return;
     }
 
-    // LOOP END — mark both caller and body as complete
+    // LOOP END
     if (stepType === "loop_end") {
       const { loopId } = step as any;
       const loopState = this.activeLoops.get(loopId);
@@ -3458,26 +3148,17 @@ export class LayoutEngine {
       if (loopState) {
         loopState.endStep = stepIndex;
         
-        // Mark caller as done (dims to 65% opacity)
-        const callerElement = this.elementHistory.get(loopState.elementId!);
-        if (callerElement && callerElement.data) {
-          callerElement.data.isActive = false;
-          callerElement.data.isComplete = true;
-        }
-
-        // Mark body as done
-        const bodyElement = loopState.bodyElementId
-          ? this.elementHistory.get(loopState.bodyElementId)
-          : undefined;
-        if (bodyElement && bodyElement.data) {
-          bodyElement.data.isActive = false;
-          bodyElement.data.isComplete = true;
+        const loopElement = this.elementHistory.get(loopState.elementId!);
+        if (loopElement && loopElement.data) {
+          loopElement.data.isActive = false;
+          loopElement.data.isComplete = true;
         }
         
         this.activeLoops.delete(loopId);
-      }
-      return;
-    }
+        
+       }
+       return;
+     }
   }
 
   private static createArrayPanel(layout: Layout, currentStep: number): void {
@@ -3831,10 +3512,7 @@ export class LayoutEngine {
   }
 
   private static isRightFlowControlNode(element: LayoutElement): boolean {
-    return Boolean(
-      (element.type === "condition" && element.data?.controlKind) ||
-      element.type === "loop_body"
-    );
+    return Boolean(element.type === "condition" && element.data?.controlKind);
   }
 
   private static shouldIgnoreChildForParentFlow(

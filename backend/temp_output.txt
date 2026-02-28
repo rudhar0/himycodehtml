@@ -1,0 +1,344 @@
+[ToolchainService] Initialized for platform: win32, arch: x64
+[ToolchainService] Toolchain Root: D:\testvicneusof\resources\toolchain
+[ToolchainService] Internal Headers: D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include
+[TraceService] Trace service active: instrumentation-tracer
+[TraceService] Temp directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[TraceService] Tracer source: D:\testvicneusof\backend\src\cpp\tracer.cpp
+====================================================
+TEST 1: IF with function call
+🔧 Instrumenting code (beginner-correct mode)...
+✓ Function definition at line 5: int main() {
+✅ Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c11 -fno-omit-frame-pointer -finstrument-functions -nostdinc -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_168ead01-73e3-4863-a5de-61f057a37a36.o
+[Compile] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Compile] Tracer compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -c -g -O0 -std=c++17 -fno-omit-frame-pointer -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\src\cpp\tracer.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_168ead01-73e3-4863-a5de-61f057a37a36.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_168ead01-73e3-4863-a5de-61f057a37a36.o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_168ead01-73e3-4863-a5de-61f057a37a36.o -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_168ead01-73e3-4863-a5de-61f057a37a36.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: ✅
+[HookVerify] __cyg_profile_func_exit: ✅
+[Execute] Executing binary: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_168ead01-73e3-4863-a5de-61f057a37a36.exe
+[Execute] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Execute] TRACE_OUTPUT: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_168ead01-73e3-4863-a5de-61f057a37a36.json
+[TraceFile] File: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_168ead01-73e3-4863-a5de-61f057a37a36.json
+[TraceFile] Events: 24, Functions: 1
+📊 Converting 24 events to beginner-correct steps...
+🔍 User source file: temp_test.c
+[Frame Stack] PUSH main, stack depth=1
+[Event 0] type=func_enter, func="main", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=5
+[Event 1] type=declare, func="n", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=6
+[Event 2] type=assign, func="n", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=6
+[Event 3] type=declare, func="result", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=6
+[Event 4] type=assign, func="result", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=6
+[Event 5] type=condition_eval, func="main", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=7
+[Event 6] type=branch_taken, func="main", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=7
+[Event 7] type=func_enter, func="factorial", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=4
+[Frame Stack] PUSH factorial, stack depth=2
+[TRACE STEP] func_enter frame: factorial-10 cond: cond-main-0-7-8 loop: null
+[Event 8] type=func_enter, func="factorial", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=4
+[Frame Stack] PUSH factorial, stack depth=3
+[TRACE STEP] func_enter frame: factorial-13 cond: null loop: null
+[Event 9] type=func_enter, func="factorial", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=4
+[Frame Stack] PUSH factorial, stack depth=4
+[TRACE STEP] func_enter frame: factorial-16 cond: null loop: null
+[Event 10] type=func_exit, func="factorial", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=4
+[Frame Stack] POP factorial, stack depth=3
+[TRACE STEP] func_exit frame: factorial-16 cond: null loop: null
+[Event 11] type=func_exit, func="factorial", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=4
+[Frame Stack] POP factorial, stack depth=2
+[TRACE STEP] func_exit frame: factorial-13 cond: null loop: null
+[Event 12] type=func_exit, func="factorial", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=4
+[Frame Stack] POP factorial, stack depth=1
+[TRACE STEP] func_exit frame: factorial-10 cond: null loop: null
+[Event 13] type=assign, func="result", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=8
+[Event 15] type=return, func="main", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=10
+[Event 16] type=func_exit, func="main", file=src_168ead01-73e3-4863-a5de-61f057a37a36.instrumented.c, line=5
+[Frame Stack] POP main, stack depth=0
+[TRACE STEP] func_exit frame: main-0 cond: cond-main-0-7-8 loop: null
+[TRACE STEP] return frame: main-0 cond: cond-main-0-7-8 loop: null
+[Event 17] type=heap_free, func="operator delete", file=??, line=0
+[Event 18] type=heap_free, func="operator delete", file=??, line=0
+[Event 19] type=heap_free, func="operator delete", file=??, line=0
+[Event 20] type=heap_free, func="operator delete", file=??, line=0
+[Event 21] type=heap_free, func="operator delete", file=??, line=0
+[Event 22] type=heap_free, func="operator delete", file=??, line=0
+[Event 23] type=heap_free, func="operator delete", file=??, line=0
+✅ Generated 18 steps
+[TRACE] func_enter      | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] condition_eval  | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] func_enter      | func:factorial  | frm:factorial-10 | cond:cond-main-0-7-8 | loop:null
+[TRACE] func_enter      | func:factorial  | frm:factorial-13 | cond:null | loop:null
+[TRACE] func_enter      | func:factorial  | frm:factorial-16 | cond:null | loop:null
+[TRACE] func_exit       | func:factorial  | frm:factorial-16 | cond:null | loop:null
+[TRACE] func_exit       | func:factorial  | frm:factorial-13 | cond:null | loop:null
+[TRACE] func_exit       | func:factorial  | frm:factorial-10 | cond:null | loop:null
+[TRACE] func_exit       | func:main       | frm:main-0 | cond:cond-main-0-7-8 | loop:null
+[TRACE] return          | func:main       | frm:main-0 | cond:cond-main-0-7-8 | loop:null
+====================================================
+TEST 2: recursive call inside condition
+🔧 Instrumenting code (beginner-correct mode)...
+✓ Function definition at line 4: int factorial(int n) {
+✓ Function definition at line 10: int main() {
+✅ Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c11 -fno-omit-frame-pointer -finstrument-functions -nostdinc -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.o
+[Compile] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Compile] Tracer compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -c -g -O0 -std=c++17 -fno-omit-frame-pointer -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\src\cpp\tracer.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_ece44242-d19e-4525-b698-1d3e6e4bdc3b.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_ece44242-d19e-4525-b698-1d3e6e4bdc3b.o -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_ece44242-d19e-4525-b698-1d3e6e4bdc3b.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: ✅
+[HookVerify] __cyg_profile_func_exit: ✅
+[Execute] Executing binary: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_ece44242-d19e-4525-b698-1d3e6e4bdc3b.exe
+[Execute] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Execute] TRACE_OUTPUT: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_ece44242-d19e-4525-b698-1d3e6e4bdc3b.json
+[TraceFile] File: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_ece44242-d19e-4525-b698-1d3e6e4bdc3b.json
+[TraceFile] Events: 36, Functions: 1
+📊 Converting 36 events to beginner-correct steps...
+🔍 User source file: temp_test.c
+[Frame Stack] PUSH main, stack depth=1
+[Event 0] type=func_enter, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=24
+[Event 1] type=func_enter, func="factorial", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Frame Stack] PUSH factorial, stack depth=2
+[TRACE STEP] func_enter frame: factorial-4 cond: null loop: null
+[Event 2] type=declare, func="n", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Event 3] type=assign, func="n", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Event 4] type=condition_eval, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=5
+[Event 5] type=branch_taken, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=5
+[Event 6] type=func_enter, func="factorial", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Frame Stack] PUSH factorial, stack depth=3
+[TRACE STEP] func_enter frame: factorial-11 cond: cond-factorial-4-5-9 loop: null
+[Event 7] type=declare, func="n", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Event 8] type=assign, func="n", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Event 9] type=condition_eval, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=5
+[Event 10] type=branch_taken, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=5
+[Event 11] type=func_enter, func="factorial", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Frame Stack] PUSH factorial, stack depth=4
+[TRACE STEP] func_enter frame: factorial-18 cond: cond-factorial-11-5-16 loop: null
+[Event 12] type=declare, func="n", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Event 13] type=assign, func="n", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Event 14] type=condition_eval, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=5
+[Event 16] type=return, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=8
+[Event 17] type=func_exit, func="factorial", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Frame Stack] POP factorial, stack depth=3
+[TRACE STEP] func_exit frame: factorial-18 cond: cond-factorial-18-5-23 loop: null
+[TRACE STEP] return frame: factorial-18 cond: cond-factorial-18-5-23 loop: null
+[Event 19] type=return, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=6
+[Event 20] type=func_exit, func="factorial", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Frame Stack] POP factorial, stack depth=2
+[TRACE STEP] func_exit frame: factorial-11 cond: cond-factorial-11-5-16 loop: null
+[TRACE STEP] return frame: factorial-11 cond: cond-factorial-11-5-16 loop: null
+[Event 22] type=return, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=6
+[Event 23] type=func_exit, func="factorial", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=4
+[Frame Stack] POP factorial, stack depth=1
+[TRACE STEP] func_exit frame: factorial-4 cond: cond-factorial-4-5-9 loop: null
+[TRACE STEP] return frame: factorial-4 cond: cond-factorial-4-5-9 loop: null
+[Event 25] type=return, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=12
+[Event 26] type=func_exit, func="main", file=src_ece44242-d19e-4525-b698-1d3e6e4bdc3b.instrumented.c, line=24
+[Frame Stack] POP main, stack depth=0
+[TRACE STEP] func_exit frame: main-0 cond: null loop: null
+[TRACE STEP] return frame: main-0 cond: null loop: null
+[Event 27] type=heap_free, func="operator delete", file=??, line=0
+[Event 28] type=heap_free, func="operator delete", file=??, line=0
+[Event 29] type=heap_free, func="operator delete", file=??, line=0
+[Event 30] type=heap_free, func="operator delete", file=??, line=0
+[Event 31] type=heap_free, func="operator delete", file=??, line=0
+[Event 32] type=heap_free, func="operator delete", file=??, line=0
+[Event 33] type=heap_free, func="operator delete", file=??, line=0
+[Event 34] type=heap_free, func="operator delete", file=??, line=0
+[Event 35] type=heap_free, func="operator delete", file=??, line=0
+✅ Generated 25 steps
+[TRACE] func_enter      | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] func_enter      | func:factorial  | frm:factorial-4 | cond:null | loop:null
+[TRACE] condition_eval  | func:factorial  | frm:factorial-4 | cond:null | loop:null
+[TRACE] func_enter      | func:factorial  | frm:factorial-11 | cond:cond-factorial-4-5-9 | loop:null
+[TRACE] condition_eval  | func:factorial  | frm:factorial-11 | cond:null | loop:null
+[TRACE] func_enter      | func:factorial  | frm:factorial-18 | cond:cond-factorial-11-5-16 | loop:null
+[TRACE] condition_eval  | func:factorial  | frm:factorial-18 | cond:null | loop:null
+[TRACE] func_exit       | func:factorial  | frm:factorial-18 | cond:cond-factorial-18-5-23 | loop:null
+[TRACE] return          | func:factorial  | frm:factorial-18 | cond:cond-factorial-18-5-23 | loop:null
+[TRACE] func_exit       | func:factorial  | frm:factorial-11 | cond:cond-factorial-11-5-16 | loop:null
+[TRACE] return          | func:factorial  | frm:factorial-11 | cond:cond-factorial-11-5-16 | loop:null
+[TRACE] func_exit       | func:factorial  | frm:factorial-4 | cond:cond-factorial-4-5-9 | loop:null
+[TRACE] return          | func:factorial  | frm:factorial-4 | cond:cond-factorial-4-5-9 | loop:null
+[TRACE] func_exit       | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] return          | func:main       | frm:main-0 | cond:null | loop:null
+====================================================
+TEST 3: nested conditions
+🔧 Instrumenting code (beginner-correct mode)...
+✓ Function definition at line 4: void foo() {}
+✓ Function definition at line 5: int main() {
+✅ Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c11 -fno-omit-frame-pointer -finstrument-functions -nostdinc -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.o
+[Compile] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Compile] Tracer compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -c -g -O0 -std=c++17 -fno-omit-frame-pointer -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\src\cpp\tracer.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_33b28eac-89ad-44c5-8a1a-421f0fb55e07.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_33b28eac-89ad-44c5-8a1a-421f0fb55e07.o -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_33b28eac-89ad-44c5-8a1a-421f0fb55e07.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: ✅
+[HookVerify] __cyg_profile_func_exit: ✅
+[Execute] Executing binary: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_33b28eac-89ad-44c5-8a1a-421f0fb55e07.exe
+[Execute] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Execute] TRACE_OUTPUT: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_33b28eac-89ad-44c5-8a1a-421f0fb55e07.json
+[TraceFile] File: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_33b28eac-89ad-44c5-8a1a-421f0fb55e07.json
+[TraceFile] Events: 21, Functions: 1
+📊 Converting 21 events to beginner-correct steps...
+🔍 User source file: temp_test.c
+[Frame Stack] PUSH main, stack depth=1
+[Event 0] type=func_enter, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=5
+[Event 1] type=declare, func="a", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=6
+[Event 2] type=assign, func="a", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=6
+[Event 3] type=declare, func="b", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=6
+[Event 4] type=assign, func="b", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=6
+[Event 5] type=condition_eval, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=7
+[Event 6] type=branch_taken, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=7
+[Event 7] type=condition_eval, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=8
+[Event 8] type=branch_taken, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=8
+[Event 9] type=func_enter, func="foo", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=4
+[Frame Stack] PUSH foo, stack depth=2
+[TRACE STEP] func_enter frame: foo-12 cond: cond-main-0-8-10 loop: null
+[Event 10] type=func_exit, func="foo", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=4
+[Frame Stack] POP foo, stack depth=1
+[TRACE STEP] func_exit frame: foo-12 cond: null loop: null
+[Event 12] type=return, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=12
+[Event 13] type=func_exit, func="main", file=src_33b28eac-89ad-44c5-8a1a-421f0fb55e07.instrumented.c, line=5
+[Frame Stack] POP main, stack depth=0
+[TRACE STEP] func_exit frame: main-0 cond: cond-main-0-8-10 loop: null
+[TRACE STEP] return frame: main-0 cond: cond-main-0-8-10 loop: null
+[Event 14] type=heap_free, func="operator delete", file=??, line=0
+[Event 15] type=heap_free, func="operator delete", file=??, line=0
+[Event 16] type=heap_free, func="operator delete", file=??, line=0
+[Event 17] type=heap_free, func="operator delete", file=??, line=0
+[Event 18] type=heap_free, func="operator delete", file=??, line=0
+[Event 19] type=heap_free, func="operator delete", file=??, line=0
+[Event 20] type=heap_free, func="operator delete", file=??, line=0
+✅ Generated 15 steps
+[TRACE] func_enter      | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] condition_eval  | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] condition_eval  | func:main       | frm:main-0 | cond:cond-main-0-7-8 | loop:null
+[TRACE] func_enter      | func:foo        | frm:foo-12 | cond:cond-main-0-8-10 | loop:null
+[TRACE] func_exit       | func:foo        | frm:foo-12 | cond:null | loop:null
+[TRACE] func_exit       | func:main       | frm:main-0 | cond:cond-main-0-8-10 | loop:null
+[TRACE] return          | func:main       | frm:main-0 | cond:cond-main-0-8-10 | loop:null
+====================================================
+TEST 4: return inside else
+🔧 Instrumenting code (beginner-correct mode)...
+✓ Function definition at line 4: void foo() {}
+✓ Function definition at line 6: int check(int x) {
+✓ Function definition at line 14: int main() {
+✅ Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c11 -fno-omit-frame-pointer -finstrument-functions -nostdinc -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_fd59e3b3-1f1a-406e-8e30-808123a7c904.o
+[Compile] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Compile] Tracer compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -c -g -O0 -std=c++17 -fno-omit-frame-pointer -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\src\cpp\tracer.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_fd59e3b3-1f1a-406e-8e30-808123a7c904.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_fd59e3b3-1f1a-406e-8e30-808123a7c904.o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_fd59e3b3-1f1a-406e-8e30-808123a7c904.o -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_fd59e3b3-1f1a-406e-8e30-808123a7c904.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: ✅
+[HookVerify] __cyg_profile_func_exit: ✅
+[Execute] Executing binary: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_fd59e3b3-1f1a-406e-8e30-808123a7c904.exe
+[Execute] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Execute] TRACE_OUTPUT: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_fd59e3b3-1f1a-406e-8e30-808123a7c904.json
+[TraceFile] File: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_fd59e3b3-1f1a-406e-8e30-808123a7c904.json
+[TraceFile] Events: 20, Functions: 1
+📊 Converting 20 events to beginner-correct steps...
+🔍 User source file: temp_test.c
+[Frame Stack] PUSH main, stack depth=1
+[Event 0] type=func_enter, func="main", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=29
+[Event 1] type=func_enter, func="check", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=6
+[Frame Stack] PUSH check, stack depth=2
+[TRACE STEP] func_enter frame: check-4 cond: null loop: null
+[Event 2] type=declare, func="x", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=6
+[Event 3] type=assign, func="x", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=6
+[Event 4] type=condition_eval, func="main", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=7
+[Event 5] type=branch_taken, func="main", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=9
+[Event 6] type=func_enter, func="bar", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=5
+[Frame Stack] PUSH bar, stack depth=3
+[TRACE STEP] func_enter frame: bar-11 cond: cond-check-4-7-9 loop: null
+[Event 7] type=func_exit, func="bar", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=5
+[Frame Stack] POP bar, stack depth=2
+[TRACE STEP] func_exit frame: bar-11 cond: null loop: null
+[Event 9] type=return, func="main", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=10
+[Event 10] type=func_exit, func="check", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=6
+[Frame Stack] POP check, stack depth=1
+[TRACE STEP] func_exit frame: check-4 cond: cond-check-4-7-9 loop: null
+[TRACE STEP] return frame: check-4 cond: cond-check-4-7-9 loop: null
+[Event 12] type=return, func="main", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=16
+[Event 13] type=func_exit, func="main", file=src_fd59e3b3-1f1a-406e-8e30-808123a7c904.instrumented.c, line=29
+[Frame Stack] POP main, stack depth=0
+[TRACE STEP] func_exit frame: main-0 cond: null loop: null
+[TRACE STEP] return frame: main-0 cond: null loop: null
+[Event 14] type=heap_free, func="operator delete", file=??, line=0
+[Event 15] type=heap_free, func="operator delete", file=??, line=0
+[Event 16] type=heap_free, func="operator delete", file=??, line=0
+[Event 17] type=heap_free, func="operator delete", file=??, line=0
+[Event 18] type=heap_free, func="operator delete", file=??, line=0
+[Event 19] type=heap_free, func="operator delete", file=??, line=0
+✅ Generated 14 steps
+[TRACE] func_enter      | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] func_enter      | func:check      | frm:check-4 | cond:null | loop:null
+[TRACE] condition_eval  | func:check      | frm:check-4 | cond:null | loop:null
+[TRACE] func_enter      | func:bar        | frm:bar-11 | cond:cond-check-4-7-9 | loop:null
+[TRACE] func_exit       | func:bar        | frm:bar-11 | cond:null | loop:null
+[TRACE] func_exit       | func:check      | frm:check-4 | cond:cond-check-4-7-9 | loop:null
+[TRACE] return          | func:check      | frm:check-4 | cond:cond-check-4-7-9 | loop:null
+[TRACE] func_exit       | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] return          | func:main       | frm:main-0 | cond:null | loop:null
+====================================================
+TEST 5: loop + condition
+🔧 Instrumenting code (beginner-correct mode)...
+✓ Function definition at line 4: void foo() {}
+✓ Function definition at line 5: int main() {
+✅ Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c11 -fno-omit-frame-pointer -finstrument-functions -nostdinc -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_52b87bdf-ff61-4030-9faa-4150adb90c86.o
+[Compile] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Compile] Tracer compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -c -g -O0 -std=c++17 -fno-omit-frame-pointer -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\src\cpp\tracer.cpp -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_52b87bdf-ff61-4030-9faa-4150adb90c86.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\src_52b87bdf-ff61-4030-9faa-4150adb90c86.o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\tracer_52b87bdf-ff61-4030-9faa-4150adb90c86.o -o C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_52b87bdf-ff61-4030-9faa-4150adb90c86.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: ✅
+[HookVerify] __cyg_profile_func_exit: ✅
+[Execute] Executing binary: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\exec_52b87bdf-ff61-4030-9faa-4150adb90c86.exe
+[Execute] Working directory: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp
+[Execute] TRACE_OUTPUT: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_52b87bdf-ff61-4030-9faa-4150adb90c86.json
+[TraceFile] File: C:\Users\rcb35\AppData\Local\CodeViz\runtime\temp\trace_52b87bdf-ff61-4030-9faa-4150adb90c86.json
+[TraceFile] Events: 33, Functions: 1
+📊 Converting 33 events to beginner-correct steps...
+🔍 User source file: temp_test.c
+[Frame Stack] PUSH main, stack depth=1
+[Event 0] type=func_enter, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=5
+[Event 1] type=declare, func="i", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=6
+[Event 2] type=assign, func="i", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=6
+[Event 3] type=loop_start, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 4] type=loop_condition, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 5] type=loop_body_start, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 6] type=condition_eval, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=8
+[Event 7] type=loop_end, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 8] type=assign, func="i", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=11
+[Event 9] type=loop_condition, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 10] type=loop_body_start, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 11] type=condition_eval, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=8
+[Event 12] type=branch_taken, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=8
+[Event 13] type=func_enter, func="foo", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=4
+[Frame Stack] PUSH foo, stack depth=2
+[TRACE STEP] func_enter frame: foo-15 cond: cond-main-0-8-13 loop: null
+[Event 14] type=func_exit, func="foo", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=4
+[Frame Stack] POP foo, stack depth=1
+[TRACE STEP] func_exit frame: foo-15 cond: null loop: null
+[Event 15] type=loop_iteration_end, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 16] type=loop_end, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 17] type=assign, func="i", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=11
+[Event 18] type=loop_condition, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 19] type=loop_body_start, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 20] type=condition_eval, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=8
+[Event 21] type=loop_end, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 22] type=assign, func="i", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=11
+[Event 23] type=loop_condition, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 24] type=loop_end, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=7
+[Event 26] type=return, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=13
+[Event 27] type=func_exit, func="main", file=src_52b87bdf-ff61-4030-9faa-4150adb90c86.instrumented.c, line=5
+[Frame Stack] POP main, stack depth=0
+[TRACE STEP] func_exit frame: main-0 cond: cond-main-0-8-21 loop: null
+[TRACE STEP] return frame: main-0 cond: cond-main-0-8-21 loop: null
+[Event 28] type=heap_free, func="operator delete", file=??, line=0
+[Event 29] type=heap_free, func="operator delete", file=??, line=0
+[Event 30] type=heap_free, func="operator delete", file=??, line=0
+[Event 31] type=heap_free, func="operator delete", file=??, line=0
+[Event 32] type=heap_free, func="operator delete", file=??, line=0
+✅ Generated 23 steps
+[TRACE] func_enter      | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] condition_eval  | func:main       | frm:main-0 | cond:null | loop:null
+[TRACE] condition_eval  | func:main       | frm:main-0 | cond:cond-main-0-8-9 | loop:null
+[TRACE] func_enter      | func:foo        | frm:foo-15 | cond:cond-main-0-8-13 | loop:null
+[TRACE] func_exit       | func:foo        | frm:foo-15 | cond:null | loop:null
+[TRACE] condition_eval  | func:main       | frm:main-0 | cond:cond-main-0-8-13 | loop:null
+[TRACE] func_exit       | func:main       | frm:main-0 | cond:cond-main-0-8-21 | loop:null
+[TRACE] return          | func:main       | frm:main-0 | cond:cond-main-0-8-21 | loop:null

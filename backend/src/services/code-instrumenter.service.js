@@ -397,7 +397,17 @@ class CodeInstrumenter {
     this.switchStack = [];
     this.pendingSwitches = [];
     const pendingElseIfWrapperIndents = [];
-    let lastIfConditionId = null; // tracks the conditionId of the most recent if/else-if for else linkage
+
+    // FIX: Use a stack instead of a flat variable so nested if/else chains
+    // correctly map each else to its own parent if, not to the last-seen if.
+    // Each entry: { condId, braceDepthAtOpen }
+    const ifConditionIdStack = [];
+
+    // Helper: peek the top of the if-condition stack (the current open if's condId)
+    const peekIfCondId = () =>
+      ifConditionIdStack.length > 0
+        ? ifConditionIdStack[ifConditionIdStack.length - 1].condId
+        : null;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -474,11 +484,31 @@ class CodeInstrumenter {
         continue;
       }
 
+      // For lines like `} else {` or `} else if (...) {`, C grammar requires the
+      // `}` and `else` to be syntactically adjacent — no statement may appear
+      // between them. Capture these flags BEFORE the openBraces / closeBraces
+      // blocks so both can suppress their trace emissions for these lines.
+      // The suppressed calls are re-emitted *inside* the else body instead.
+      const isElseLine = /^\s*}\s*else\b/.test(trimmed) || /^\s*else\b/.test(trimmed);
+      const depthBeforeProcessing = this.blockDepth;
+      const suppressedBlockEnters = [];
+      const suppressedBlockExits = [];
+
       if (openBraces > 0) {
         for (let b = 0; b < openBraces; b++) {
           this.currentScope++;
           scopeStack.push(this.currentScope);
           this.blockDepth++;
+        }
+        if (!pendingFunctionDef) {
+          for (let b = 0; b < openBraces; b++) {
+            const depthAfterOpen = (this.blockDepth - openBraces + b + 1);
+            if (isElseLine) {
+              suppressedBlockEnters.push(`${indent}  __trace_block_enter(${depthAfterOpen}, ${i + 1});`);
+            } else {
+              out.push(`${indent}__trace_block_enter(${depthAfterOpen}, ${i + 1});`);
+            }
+          }
         }
         if (pendingFunctionDef) {
           out.push(line);
@@ -534,6 +564,11 @@ class CodeInstrumenter {
             scopeStack.pop();
           }
           if (this.blockDepth > 0) {
+            if (isElseLine) {
+              suppressedBlockExits.push(`${indent}  __trace_block_exit(${depthBeforeProcessing}, ${i + 1});`);
+            } else {
+              out.push(`${indent}__trace_block_exit(${this.blockDepth}, ${i + 1});`);
+            }
             this.blockDepth--;
           }
         }
@@ -865,6 +900,21 @@ class CodeInstrumenter {
         }
       }
 
+      // FIX: Pop the ifConditionIdStack when the closing brace matches the depth
+      // at which an if was opened. This keeps the stack in sync with actual scope.
+      // Must run AFTER loop-end handling and BEFORE elseIf wrapper handling.
+      if (trimmed.replace(/\s*\/\/.*$/, '').trim() === '}') {
+        const nextTrimmedAfterBrace = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+        if (!/^else\b/.test(nextTrimmedAfterBrace)) {
+          while (
+            ifConditionIdStack.length > 0 &&
+            ifConditionIdStack[ifConditionIdStack.length - 1].braceDepthAtOpen > this.blockDepth
+          ) {
+            ifConditionIdStack.pop();
+          }
+        }
+      }
+
       if (trimmed.startsWith('}') && trimmed.replace(/\s*\/\/.*$/, '').trim() === '}' && pendingElseIfWrapperIndents.length > 0) {
         const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
         const isElseContinuation = /^(\}\s*)?else\b/.test(nextLine);
@@ -883,37 +933,83 @@ class CodeInstrumenter {
         }
       }
 
+      // ── BRACELESS SINGLE-LINE if: e.g. "if (n == 0) return 1;" ──────────
+      // NOTE: must match BEFORE the braced-if pattern.
       const ifStmtSingleLine = trimmed.match(/^\s*if\s*\(([^)]+)\)\s*(.+)$/);
       const ifStmt = trimmed.match(/^\s*if\s*\(([^)]+)\)\s*\{/);
       if (ifStmtSingleLine && !ifStmt) {
-        // Single-line if: e.g. "if (n == 0) return 1;"
         const condition = ifStmtSingleLine[1];
         const body = ifStmtSingleLine[2].trim();
         const condId = conditionIdCounter++;
-        lastIfConditionId = condId;
+        // Single-line if has no braces → push with sentinel depth -1 so pop never fires
+        ifConditionIdStack.push({ condId, braceDepthAtOpen: -1 });
         out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}if (${condition}) {`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
         out.push(`${indent}  ${body}`);
-        out.push(`${indent}}`);
+        // If the next source line is an else, do NOT close the synthetic if block.
+        // The plain-else handlers below will emit `} else {` to close it cleanly.
+        const nextTrimmed = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+        if (/^else\b/.test(nextTrimmed)) {
+          // Leave block open — else handler will close it.
+          // Do NOT pop the stack yet — else handler needs the condId.
+        } else {
+          out.push(`${indent}}`);
+          ifConditionIdStack.pop();
+        }
         continue;
       }
+
+      // ── BRACELESS MULTI-LINE if body: "if (cond)\n  stmt;" ───────────────
+      // Detect an `if(` with NO `{` and NO inline body — the body is on the next line.
+      const ifStmtNoBrace = trimmed.match(/^\s*if\s*\(([^)]+)\)\s*$/);
+      if (ifStmtNoBrace) {
+        const condition = ifStmtNoBrace[1];
+        const condId = conditionIdCounter++;
+        ifConditionIdStack.push({ condId, braceDepthAtOpen: -1 }); // sentinel -1
+        out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
+        out.push(`${indent}if (${condition}) {`);
+        out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
+        // Consume next line as body
+        const bodyLine = i + 1 < lines.length ? lines[i + 1] : '';
+        out.push(`${indent}  ${bodyLine.trim()}`);
+        i++; // skip next line since we consumed it
+        // If the line AFTER the body is an else, do NOT close the synthetic if block.
+        // The plain-else handlers below will emit `} else {` to close it cleanly.
+        const nextTrimmedAfterBody = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+        if (/^else\b/.test(nextTrimmedAfterBody)) {
+          // Leave block open — else handler will close it.
+          // Do NOT pop the stack yet — else handler needs the condId.
+        } else {
+          out.push(`${indent}}`);
+          ifConditionIdStack.pop();
+        }
+        continue;
+      }
+
+      // ── BRACED if: "if (cond) {" ─────────────────────────────────────────
       if (ifStmt) {
         const [, condition] = ifStmt;
         const condId = conditionIdCounter++;
-        lastIfConditionId = condId;
+        // blockDepth is already incremented for the { on this line (handled above)
+        ifConditionIdStack.push({ condId, braceDepthAtOpen: this.blockDepth });
         out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}if (${condition}) {`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
         continue;
       }
 
-      const elseIfStmt = trimmed.match(/^\s*}\s*else\s+if\s*\(([^)]+)\)\s*\{/);
-      if (elseIfStmt) {
-        const [, condition] = elseIfStmt;
+      // ── Plain `else if (cond) {` — no `}` prefix, follows braceless if ───
+      // Matches: "else if (cond) {" when NOT preceded by }
+      const plainElseIfBraced = !trimmed.startsWith('}') && trimmed.match(/^\s*else\s+if\s*\(([^)]+)\)\s*\{/);
+      if (plainElseIfBraced) {
+        const condition = plainElseIfBraced[1];
+        const isSynthetic = ifConditionIdStack.length > 0 && ifConditionIdStack[ifConditionIdStack.length - 1].braceDepthAtOpen === -1;
         const condId = conditionIdCounter++;
-        lastIfConditionId = condId;
-        out.push(`${indent}} else {`);
+        ifConditionIdStack.push({ condId, braceDepthAtOpen: this.blockDepth });
+        out.push(isSynthetic ? `${indent}} else {` : `${indent}else {`);
+        suppressedBlockExits.forEach(stmt => out.push(stmt));
+        suppressedBlockEnters.forEach(stmt => out.push(stmt));
         out.push(`${indent}  __trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}  if (${condition}) {`);
         out.push(`${indent}    __trace_branch_taken(${condId}, "else-if", ${i + 1});`);
@@ -921,12 +1017,81 @@ class CodeInstrumenter {
         continue;
       }
 
+      // ── Plain `else {` — no `}` prefix, follows braceless if ─────────────
+      // Matches: "else {" when NOT preceded by }
+      const plainElseBraced = !trimmed.startsWith('}') && trimmed.match(/^\s*else\s*\{/);
+      if (plainElseBraced) {
+        const isSynthetic = ifConditionIdStack.length > 0 && ifConditionIdStack[ifConditionIdStack.length - 1].braceDepthAtOpen === -1;
+        const condId = peekIfCondId() !== null ? peekIfCondId() : conditionIdCounter++;
+        out.push(isSynthetic ? `${indent}} else {` : `${indent}else {`);
+        suppressedBlockExits.forEach(stmt => out.push(stmt));
+        suppressedBlockEnters.forEach(stmt => out.push(stmt));
+        out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
+        continue;
+      }
+
+      // ── Plain braceless `else` alone — no `}` prefix, body on next line ──
+      // Matches: "else" alone on a line when NOT preceded by }
+      const plainElseNoBraceStmt = !trimmed.startsWith('}') && trimmed.match(/^\s*else\s*$/);
+      if (plainElseNoBraceStmt) {
+        const isSynthetic = ifConditionIdStack.length > 0 && ifConditionIdStack[ifConditionIdStack.length - 1].braceDepthAtOpen === -1;
+        const condId = peekIfCondId() !== null ? peekIfCondId() : conditionIdCounter++;
+        const elseBodyLine = i + 1 < lines.length ? lines[i + 1] : '';
+        out.push(isSynthetic ? `${indent}} else {` : `${indent}else {`);
+        suppressedBlockExits.forEach(stmt => out.push(stmt));
+        suppressedBlockEnters.forEach(stmt => out.push(stmt));
+        out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
+        out.push(`${indent}  ${elseBodyLine.trim()}`);
+        out.push(`${indent}}`);
+        i++; // consume the body line
+        if (ifConditionIdStack.length > 0) ifConditionIdStack.pop();
+        continue;
+      }
+
+      // ── } else if (cond) { ───────────────────────────────────────────────
+      const elseIfStmt = trimmed.match(/^\s*}\s*else\s+if\s*\(([^)]+)\)\s*\{/);
+      if (elseIfStmt) {
+        const [, condition] = elseIfStmt;
+        const condId = conditionIdCounter++;
+        // else-if belongs to a NEW condId but same group — push it so a later else can find it
+        ifConditionIdStack.push({ condId, braceDepthAtOpen: this.blockDepth });
+        out.push(`${indent}} else {`);
+        suppressedBlockExits.forEach(stmt => out.push(stmt));
+        suppressedBlockEnters.forEach(stmt => out.push(stmt));
+        out.push(`${indent}  __trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
+        out.push(`${indent}  if (${condition}) {`);
+        out.push(`${indent}    __trace_branch_taken(${condId}, "else-if", ${i + 1});`);
+        pendingElseIfWrapperIndents.push(indent);
+        continue;
+      }
+
+      // ── } else { ─────────────────────────────────────────────────────────
       const elseStmt = trimmed.match(/^\s*}\s*else\s*\{/);
       if (elseStmt) {
-        // CRITICAL: reuse the parent if/else-if conditionId so LayoutEngine links them correctly
-        const condId = lastIfConditionId !== null ? lastIfConditionId : conditionIdCounter++;
+        // FIX: Use the stack top — this is always the correct parent if/else-if.
+        // Old code used lastIfConditionId (a flat var) which was overwritten by any inner if.
+        const condId = peekIfCondId() !== null ? peekIfCondId() : conditionIdCounter++;
         out.push(`${indent}} else {`);
+        suppressedBlockExits.forEach(stmt => out.push(stmt));
+        suppressedBlockEnters.forEach(stmt => out.push(stmt));
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
+        continue;
+      }
+
+      // ── Braceless else on its own line: "} else\n  stmt;" ────────────────
+      const elseNoBrace = trimmed.match(/^\s*}\s*else\s*$/);
+      if (elseNoBrace) {
+        const condId = peekIfCondId() !== null ? peekIfCondId() : conditionIdCounter++;
+        const bodyLine = i + 1 < lines.length ? lines[i + 1] : '';
+        out.push(`${indent}} else {`);
+        suppressedBlockExits.forEach(stmt => out.push(stmt));
+        suppressedBlockEnters.forEach(stmt => out.push(stmt));
+        out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
+        out.push(`${indent}  ${bodyLine.trim()}`);
+        out.push(`${indent}}`);
+        i++; // skip consumed body line
+        // pop the matching if from the stack since the else closes this if chain
+        if (ifConditionIdStack.length > 0) ifConditionIdStack.pop();
         continue;
       }
 
