@@ -362,14 +362,14 @@ export function processRawTrace(
     const rawEventType = String(raw?.eventType || raw?.type || "")
       .toLowerCase()
       .trim();
+    let inferredScopeDepthForStep = inferredScopeDepth;
 
     if (rawEventType === 'block_enter') {
       inferredScopeDepth += 1;
-      continue;
-    }
-    if (rawEventType === 'block_exit') {
+      inferredScopeDepthForStep = inferredScopeDepth;
+    } else if (rawEventType === 'block_exit') {
+      inferredScopeDepthForStep = inferredScopeDepth;
       inferredScopeDepth = Math.max(0, inferredScopeDepth - 1);
-      continue;
     }
 
     if (isRuntimeCleanupStep(raw)) continue;
@@ -384,7 +384,7 @@ export function processRawTrace(
     if (step.eventType) step.originalEventType = step.eventType;
     if (step.stdout && step.type === 'output') step.value = step.stdout;
     if (step.scopeDepth === undefined || step.scopeDepth === null) {
-      step.scopeDepth = inferredScopeDepth;
+      step.scopeDepth = inferredScopeDepthForStep;
     }
 
     const originalType = step.type;
@@ -546,14 +546,19 @@ export function processRawTrace(
       .toLowerCase()
       .trim();
     const isReturnEvent = stepEventType === 'return' || stepEventType === 'function_return';
+    const isBlockDepthEvent = stepEventType === 'block_enter' || stepEventType === 'block_exit';
 
-    if (!hasVisualChange(currentMemoryState, nextMemoryState, step) && !isReturnEvent) {
+    if (
+      !hasVisualChange(currentMemoryState, nextMemoryState, step) &&
+      !isReturnEvent &&
+      !isBlockDepthEvent
+    ) {
       currentMemoryState = nextMemoryState;
       continue;
     }
 
     step.id = processedSteps.length;
-    step.hasVisualChange = true;
+    step.hasVisualChange = !isBlockDepthEvent;
 
     processedSteps.push(step as ExecutionStep);
     currentMemoryState = nextMemoryState;

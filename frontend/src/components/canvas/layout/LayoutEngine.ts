@@ -314,7 +314,7 @@ export class LayoutEngine {
   private static activeControlByDepth: Map<string, Map<number, string>> = new Map();
   private static ephemeralControlByDepth: Map<
     string,
-    Map<number, { elementId: string; usedAtStep?: number }>
+    Map<number, { elementId: string; usedAtStep?: number; statementLine?: number }>
   > = new Map();
   private static recentIfGroupByFrame: Map<
     string,
@@ -486,6 +486,105 @@ export class LayoutEngine {
     return Math.max(0, Math.floor(rawDepth));
   }
 
+  private static getFrameScopeDepthSnapshot(frameId: string): number {
+    const rawDepth = Number(this.currentScopeDepth.get(frameId) ?? 0);
+    if (!Number.isFinite(rawDepth)) return 0;
+    return Math.max(0, Math.floor(rawDepth));
+  }
+
+  private static isReturnExpressionFlowStep(
+    executionTrace: ExecutionTrace,
+    stepIndex: number,
+    frameId: string,
+    stepLine: number,
+    stepType: string,
+  ): boolean {
+    const normalizedType = String(stepType || "").toLowerCase();
+    if (
+      normalizedType !== "var_load" &&
+      normalizedType !== "var_assign" &&
+      normalizedType !== "func_enter"
+    ) {
+      return false;
+    }
+    if (!Number.isFinite(stepLine) || stepLine <= 0) return false;
+
+    const maxForwardSameFrameSteps = 6;
+    let sameFrameSeen = 0;
+
+    for (let i = stepIndex + 1; i < executionTrace.steps.length; i++) {
+      const candidate = executionTrace.steps[i] as any;
+      if (String(candidate?.frameId ?? "") !== String(frameId)) continue;
+      sameFrameSeen += 1;
+      if (sameFrameSeen > maxForwardSameFrameSteps) break;
+
+      const candidateLine = Number(candidate?.line ?? -1);
+      if (
+        Number.isFinite(candidateLine) &&
+        candidateLine > 0 &&
+        candidateLine !== stepLine
+      ) {
+        break;
+      }
+
+      const candidateType = String(
+        candidate?.eventType || candidate?.type || "",
+      ).toLowerCase();
+      if (candidateType === "return") {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static resolvePlacementScopeDepth(
+    executionTrace: ExecutionTrace,
+    stepIndex: number,
+    frameId: string,
+    stepLine: number,
+    stepType: string,
+    stepScopeDepth: number,
+  ): number {
+    if (
+      !this.isReturnExpressionFlowStep(
+        executionTrace,
+        stepIndex,
+        frameId,
+        stepLine,
+        stepType,
+      )
+    ) {
+      return stepScopeDepth;
+    }
+    return Math.max(stepScopeDepth, this.getFrameScopeDepthSnapshot(frameId));
+  }
+
+  private static resolveCallSiteScopeDepth(
+    executionTrace: ExecutionTrace,
+    stepIndex: number,
+    parentFrameId: string,
+    prevStep: ExecutionStep | null,
+    callLine: number,
+  ): number {
+    const prevDepth = prevStep ? this.getScopeDepth(prevStep, parentFrameId) : 0;
+    const frameDepth = this.getFrameScopeDepthSnapshot(parentFrameId);
+    const baseDepth = Math.max(prevDepth, frameDepth);
+
+    if (
+      !this.isReturnExpressionFlowStep(
+        executionTrace,
+        stepIndex,
+        parentFrameId,
+        callLine,
+        "func_enter",
+      )
+    ) {
+      return baseDepth;
+    }
+    return Math.max(baseDepth, frameDepth);
+  }
+
   private static getFrameControlDepthMap(frameId: string): Map<number, string> {
     if (!this.activeControlByDepth.has(frameId)) {
       this.activeControlByDepth.set(frameId, new Map());
@@ -495,7 +594,7 @@ export class LayoutEngine {
 
   private static getFrameEphemeralControlDepthMap(
     frameId: string,
-  ): Map<number, { elementId: string; usedAtStep?: number }> {
+  ): Map<number, { elementId: string; usedAtStep?: number; statementLine?: number }> {
     if (!this.ephemeralControlByDepth.has(frameId)) {
       this.ephemeralControlByDepth.set(frameId, new Map());
     }
@@ -544,9 +643,16 @@ export class LayoutEngine {
     frameId: string,
     scopeDepth: number,
     elementId: string,
+    statementLine?: number,
   ): void {
     const map = this.getFrameEphemeralControlDepthMap(frameId);
-    map.set(scopeDepth, { elementId });
+    map.set(scopeDepth, {
+      elementId,
+      statementLine:
+        Number.isFinite(Number(statementLine)) && Number(statementLine) > 0
+          ? Number(statementLine)
+          : undefined,
+    });
   }
 
   private static markEphemeralControlUsed(
@@ -554,6 +660,7 @@ export class LayoutEngine {
     scopeDepth: number,
     parentId: string,
     stepIndex: number,
+    stepLine?: number,
   ): void {
     const map = this.ephemeralControlByDepth.get(frameId);
     if (!map) return;
@@ -564,11 +671,19 @@ export class LayoutEngine {
     if (typeof entry.usedAtStep === "number") return;
 
     entry.usedAtStep = stepIndex;
+    if (
+      entry.statementLine === undefined &&
+      Number.isFinite(Number(stepLine)) &&
+      Number(stepLine) > 0
+    ) {
+      entry.statementLine = Number(stepLine);
+    }
   }
 
   private static pruneEphemeralControls(
     frameId: string,
     stepIndex: number,
+    stepLine?: number,
   ): string[] {
     const map = this.ephemeralControlByDepth.get(frameId);
     if (!map || map.size === 0) return [];
@@ -577,6 +692,15 @@ export class LayoutEngine {
     map.forEach((entry, depth) => {
       if (typeof entry.usedAtStep !== "number") return;
       if (stepIndex <= entry.usedAtStep) return;
+      if (
+        Number.isFinite(Number(stepLine)) &&
+        Number(stepLine) > 0 &&
+        Number.isFinite(Number(entry.statementLine)) &&
+        Number(entry.statementLine) > 0 &&
+        Number(stepLine) === Number(entry.statementLine)
+      ) {
+        return;
+      }
 
       const depthMap = this.getFrameControlDepthMap(frameId);
       if (depthMap.get(depth) === entry.elementId) {
@@ -590,48 +714,12 @@ export class LayoutEngine {
   }
 
   private static resolveControlBodyActivation(
-    executionTrace: ExecutionTrace,
-    stepIndex: number,
-    frameId: string,
+    step: ExecutionStep,
     scopeDepth: number,
   ): { activationDepth: number; ephemeral: boolean } {
-    // Scan forward through the trace looking for a block_exit in the same frame.
-    // The instrumenter emits __trace_block_exit for every closing brace }.
-    // If we find one, this branch body has real braces and can hold many elements.
-    // If we find none, it is a braceless single-line body (only one element fits).
-    //
-    // We do NOT use block_enter as the signal because the instrumenter emits
-    // block_enter BEFORE branch_taken in the trace, so it is never visible
-    // in a forward scan from branch_taken.
-    //
-    // Use a large lookahead window to support deeply nested conditions, loops
-    // inside conditions, recursive calls inside branches, and any complex flow.
-    const lookaheadLimit = Math.min(executionTrace.steps.length, stepIndex + 2000);
-
-    for (let i = stepIndex + 1; i < lookaheadLimit; i++) {
-      const s = executionTrace.steps[i] as any;
-      const sFrameId = String(s?.frameId ?? "");
-
-      // Only consider events that belong to the same frame.
-      // Events from other frames (e.g. a called function) must be skipped.
-      if (sFrameId && sFrameId !== frameId) continue;
-
-      const t = String(s?.eventType || s?.type || "").toLowerCase();
-
-      // block_exit means a closing brace } was hit in this frame.
-      // This confirms the branch body has braces and is not single-line.
-      // Register as NON-EPHEMERAL so all elements inside are placed correctly.
-      // pruneControlDepthForScope will automatically remove the body when
-      // the block_exit event is processed (because depth decreases).
-      if (t === "block_exit") {
-        return { activationDepth: scopeDepth, ephemeral: false };
-      }
-    }
-
-    // No block_exit found in this frame within the lookahead window.
-    // This means the branch body has no braces — it is a single-line body.
-    // Register as EPHEMERAL so it is destroyed after the one element is placed.
-    return { activationDepth: scopeDepth, ephemeral: true };
+    const activationDepth = this.resolveBranchActivationDepth(step, scopeDepth);
+    const isDepthTagged = this.hasExplicitScopeDepth(step);
+    return { activationDepth, ephemeral: !isDepthTagged };
   }
 
   private static getActiveControlParent(
@@ -858,7 +946,8 @@ export class LayoutEngine {
     const sorted = [...candidates].sort((a, b) => {
       const aStep = this.getElementStep(a) ?? -1;
       const bStep = this.getElementStep(b) ?? -1;
-      return bStep - aStep;
+      if (aStep !== bStep) return bStep - aStep;
+      return String(a.id).localeCompare(String(b.id));
     });
 
     return sorted[0] || null;
@@ -869,7 +958,8 @@ export class LayoutEngine {
     children.sort((a, b) => {
       const aStep = a.stepId ?? a.data?.birthStep ?? 0;
       const bStep = b.stepId ?? b.data?.birthStep ?? 0;
-      return aStep - bStep;
+      if (aStep !== bStep) return aStep - bStep;
+      return String(a.id).localeCompare(String(b.id));
     });
   }
 
@@ -1065,7 +1155,8 @@ export class LayoutEngine {
     stepIndex: number,
     functionName: string,
     returnValue: any,
-    scopeDepth: number
+    scopeDepth: number,
+    stepLine?: number,
   ): void {
     const hasRecentReturn = (funcFrame.children || []).some((child) => {
       if (child.type !== "function_return") return false;
@@ -1104,7 +1195,13 @@ export class LayoutEngine {
     };
 
     this.appendElementToPlacement(funcFrame, placement, returnElement);
-    this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+    this.markEphemeralControlUsed(
+      frameId,
+      scopeDepth,
+      placement.parent.id,
+      stepIndex,
+      stepLine,
+    );
 
     layout.elements.push(returnElement);
     this.elementHistory.set(returnElement.id, returnElement);
@@ -1913,15 +2010,16 @@ export class LayoutEngine {
           elseCaller,
           stepIndex,
         );
-        const activation = this.resolveControlBodyActivation(
-          executionTrace,
-          stepIndex,
-          frameId,
-          scopeDepth,
-        );
+        const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, elseBody.id);
+        this.currentScopeDepth.set(frameId, activation.activationDepth);
         if (activation.ephemeral) {
-          this.setEphemeralControlForDepth(frameId, activation.activationDepth, elseBody.id);
+          this.setEphemeralControlForDepth(
+            frameId,
+            activation.activationDepth,
+            elseBody.id,
+            line,
+          );
         }
         return true;
       }
@@ -1983,15 +2081,16 @@ export class LayoutEngine {
           target,
           stepIndex,
         );
-        const activation = this.resolveControlBodyActivation(
-          executionTrace,
-          stepIndex,
-          frameId,
-          scopeDepth,
-        );
+        const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, targetBody.id);
+        this.currentScopeDepth.set(frameId, activation.activationDepth);
         if (activation.ephemeral) {
-          this.setEphemeralControlForDepth(frameId, activation.activationDepth, targetBody.id);
+          this.setEphemeralControlForDepth(
+            frameId,
+            activation.activationDepth,
+            targetBody.id,
+            line,
+          );
         }
       }
       this.syncControlGroupHeight(container);
@@ -2164,15 +2263,16 @@ export class LayoutEngine {
           caseCaller,
           stepIndex,
         );
-        const activation = this.resolveControlBodyActivation(
-          executionTrace,
-          stepIndex,
-          frameId,
-          scopeDepth,
-        );
+        const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, caseBody.id);
+        this.currentScopeDepth.set(frameId, activation.activationDepth);
         if (activation.ephemeral) {
-          this.setEphemeralControlForDepth(frameId, activation.activationDepth, caseBody.id);
+          this.setEphemeralControlForDepth(
+            frameId,
+            activation.activationDepth,
+            caseBody.id,
+            line,
+          );
         }
       }
       groupState.lastStep = stepIndex;
@@ -2298,9 +2398,9 @@ export class LayoutEngine {
         const isRecursive = functionName === parentFrame?.data?.functionName;
 
         const baseX = MAIN_FUNCTION_X + MAIN_FUNCTION_WIDTH + PANEL_GAP;
-        const funcX = baseX + (callDepth - 1) * (FUNCTION_BOX_WIDTH + 60);
+        let funcX = baseX + (callDepth - 1) * (FUNCTION_BOX_WIDTH + 60);
         const orderIndex = this.frameOrderMap.get(frameId) || 0;
-        const funcY =
+        let funcY =
           MAIN_FUNCTION_Y + (orderIndex - 1) * FUNCTION_VERTICAL_SPACING;
         
         // Extract parameters
@@ -2309,20 +2409,29 @@ export class LayoutEngine {
         // Determine arrow source
         let arrowFromX = parentFrame ? parentFrame.x + parentFrame.width : 0;
         let arrowFromY = parentFrame ? parentFrame.y + 75 : 0;
+        let callElement: LayoutElement | null = null;
+        let callScopeDepth = 0;
 
         if (parentFrame) {
           const prevStep = stepIndex > 0 ? executionTrace.steps[stepIndex - 1] : null;
-          const prevType = (prevStep as any)?.eventType || '';
+          const prevType = String(
+            (prevStep as any)?.eventType || (prevStep as any)?.type || "",
+          ).toLowerCase();
           const callStyle = prevType === 'var_declare' ? 'inline' : 'standalone';
+          const callLine = Number((step as any).line ?? (prevStep as any)?.line ?? -1);
           
-          // CRITICAL FIX: The `func_enter` step inherently has a scopeDepth of 0
-          // because it resets the block depth for the newly created frame.
-          // To place the call_site inside the *caller's* correct scope container (like an else body),
-          // we must query the depth of the caller block using the previous step.
-          const callScopeDepth = prevStep ? this.getScopeDepth(prevStep, parentFrameId) : 0;
+          // Use the stronger of previous-step depth and caller frame's persisted depth.
+          // This keeps call_site inside the active control container for single-line branches.
+          callScopeDepth = this.resolveCallSiteScopeDepth(
+            executionTrace,
+            stepIndex,
+            parentFrameId,
+            prevStep as ExecutionStep | null,
+            callLine,
+          );
           const placement = this.getPlacementContext(parentFrame, parentFrameId, callScopeDepth);
 
-          const callElement: LayoutElement = {
+          callElement = {
             id: `call-${parentFrameId}-to-${frameId}`,
             type: "call_site",
             subtype: callStyle,
@@ -2335,12 +2444,19 @@ export class LayoutEngine {
             data: {
               functionName: functionName,
               args: "()",
-              callStyle: callStyle,
-              targetFrameId: frameId
+            callStyle: callStyle,
+            targetFrameId: frameId
             }
           };
 
           this.appendElementToPlacement(parentFrame, placement, callElement);
+          this.markEphemeralControlUsed(
+            parentFrameId,
+            callScopeDepth,
+            placement.parent.id,
+            stepIndex,
+            callLine,
+          );
 
           layout.elements.push(callElement);
           this.elementHistory.set(callElement.id, callElement);
@@ -2356,6 +2472,18 @@ export class LayoutEngine {
               arrowFromY = varElement.y + varElement.height / 2;
             }
           }
+        }
+
+        if (callElement && parentFrameId) {
+          const anchoredRect = this.resolveRightFlowRect(
+            parentFrameId,
+            callElement.x + callElement.width + CONTROL_HORIZONTAL_GAP,
+            callElement.y,
+            FUNCTION_BOX_WIDTH,
+            150,
+          );
+          funcX = anchoredRect.x;
+          funcY = anchoredRect.y;
         }
 
         const functionElement: LayoutElement = {
@@ -2409,8 +2537,8 @@ export class LayoutEngine {
             data: {
               fromX: arrowFromX,
               fromY: arrowFromY,
-              toX: funcX,
-              toY: funcY + 75,
+              toX: funcX + functionElement.width / 2,
+              toY: funcY,
               label: `call ${functionName}()`,
               isRecursive: isRecursive,
             },
@@ -2447,7 +2575,8 @@ export class LayoutEngine {
           stepIndex,
           functionName || funcFrame.data?.functionName || "function",
           returnValue,
-          scopeDepth
+          scopeDepth,
+          Number((step as any).line ?? -1),
         );
       }
       return;
@@ -2469,7 +2598,8 @@ export class LayoutEngine {
         stepIndex,
         functionName,
         returnValue,
-        scopeDepth
+        scopeDepth,
+        Number((step as any).line ?? -1),
       );
       return;
     }
@@ -2480,6 +2610,7 @@ export class LayoutEngine {
     }
 
     const normalizedStepType = String(stepType || "").toLowerCase();
+    const stepLine = Number((step as any).line ?? -1);
 
     // NEW: Handle block scope events to maintain persistent scope depth
     let scopeDepth = this.getScopeDepth(step, frameId);
@@ -2492,9 +2623,10 @@ export class LayoutEngine {
       scopeDepth = Math.max(0, blockDepthFromEvent - 1);
       this.currentScopeDepth.set(frameId, scopeDepth);
     }
+    this.currentScopeDepth.set(frameId, scopeDepth);
     const exitedControlIds = [
       ...this.pruneControlDepthForScope(frameId, scopeDepth),
-      ...this.pruneEphemeralControls(frameId, stepIndex),
+      ...this.pruneEphemeralControls(frameId, stepIndex, stepLine),
     ];
     this.maybeCreateBranchReturnFlow(
       executionTrace,
@@ -2531,7 +2663,15 @@ export class LayoutEngine {
       };
 
       const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placementScopeDepth = this.resolvePlacementScopeDepth(
+        executionTrace,
+        stepIndex,
+        frameId,
+        stepLine,
+        stepType,
+        scopeDepth,
+      );
+      const placement = this.getPlacementContext(ownerFrame, frameId, placementScopeDepth);
       
       const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
       const reservesCursorSpace = !this.isImmediateDeclarationInitialization(
@@ -2564,7 +2704,13 @@ export class LayoutEngine {
         varElement,
         reservesCursorSpace,
       );
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      this.markEphemeralControlUsed(
+        frameId,
+        placementScopeDepth,
+        placement.parent.id,
+        stepIndex,
+        stepLine,
+      );
 
       layout.elements.push(varElement);
       this.elementHistory.set(varId, varElement);
@@ -2662,7 +2808,19 @@ export class LayoutEngine {
       };
 
       const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placementScopeDepth = this.resolvePlacementScopeDepth(
+        executionTrace,
+        stepIndex,
+        frameId,
+        stepLine,
+        stepType,
+        scopeDepth,
+      );
+      const placement = this.getPlacementContext(
+        ownerFrame,
+        frameId,
+        placementScopeDepth,
+      );
       
       // Calculate height based on explanation and function call
       const baseHeight = VARIABLE_HEIGHT;
@@ -2698,7 +2856,13 @@ export class LayoutEngine {
       };
 
       this.appendElementToPlacement(ownerFrame, placement, varElement);
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      this.markEphemeralControlUsed(
+        frameId,
+        placementScopeDepth,
+        placement.parent.id,
+        stepIndex,
+        stepLine,
+      );
 
       layout.elements.push(varElement);
       this.elementHistory.set(varId, varElement);
@@ -2755,7 +2919,7 @@ export class LayoutEngine {
           },
         };
         this.appendElementToPlacement(ownerFrame, placement, ptrElement);
-        this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+        this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
         layout.elements.push(ptrElement);
         this.elementHistory.set(ptrId, ptrElement);
         this.createdInStep.set(ptrId, stepIndex);
@@ -2818,7 +2982,7 @@ export class LayoutEngine {
         },
       };
       this.appendElementToPlacement(ownerFrame, placement, ptrElement);
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
 
       layout.elements.push(ptrElement);
       this.elementHistory.set(ptrId, ptrElement);
@@ -2886,7 +3050,7 @@ export class LayoutEngine {
           },
         };
         this.appendElementToPlacement(ownerFrame, placement, varElement);
-        this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+        this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
         layout.elements.push(varElement);
         this.elementHistory.set(varId, varElement);
         this.createdInStep.set(varId, stepIndex);
@@ -2943,7 +3107,7 @@ export class LayoutEngine {
         },
       };
       this.appendElementToPlacement(ownerFrame, placement, outputElement);
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
       layout.elements.push(outputElement);
       this.elementHistory.set(outputId, outputElement);
       return;
@@ -2983,7 +3147,7 @@ export class LayoutEngine {
       };
 
       this.appendElementToPlacement(ownerFrame, placement, inputElement);
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
       layout.elements.push(inputElement);
       this.elementHistory.set(inputId, inputElement);
       return;
@@ -3043,7 +3207,7 @@ export class LayoutEngine {
       };
 
       this.appendElementToPlacement(ownerFrame, placement, loopElement);
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
       layout.elements.push(loopElement);
       this.elementHistory.set(loopElementId, loopElement);
       this.createdInStep.set(loopElementId, stepIndex);
@@ -3543,3 +3707,4 @@ export class LayoutEngine {
     return false;
   }
 }
+

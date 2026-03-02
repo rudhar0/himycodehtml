@@ -112,7 +112,8 @@ class InstrumentationTracer {
                 parentFrameId: undefined,
                 parentId: 'main-0',
                 conditionId: null,
-                loopId: null
+                loopId: null,
+                scopeDepth: 0,
             };
         }
 
@@ -125,6 +126,10 @@ class InstrumentationTracer {
         const activeLoopId = (current.loopStack && current.loopStack.length > 0)
             ? current.loopStack[current.loopStack.length - 1]
             : (current.activeLoopId || null);
+        const activeScopeDepth =
+            current.blockScopes && current.blockScopes.length > 0
+                ? Number(current.blockScopes[current.blockScopes.length - 1].depth || current.blockScopes.length)
+                : 0;
 
         return {
             frameId: current.frameId,
@@ -134,7 +139,8 @@ class InstrumentationTracer {
             parentFrameId: current.parentFrameId,
             parentId: current.frameId,
             conditionId: activeConditionId,
-            loopId: activeLoopId
+            loopId: activeLoopId,
+            scopeDepth: activeScopeDepth,
         };
     }
 
@@ -708,6 +714,7 @@ class InstrumentationTracer {
         let mainStarted = false;
         let currentFunction = 'main';
         let currentFrame = null;
+        let lastExecutableLine = 0;
         const emittedStepIds = new Set();
         // Maps raw integer conditionId (from tracer.cpp) to the stable string conditionId
         // used in ExecutionStep objects. Key format: "frameId:rawIntId"
@@ -889,11 +896,14 @@ class InstrumentationTracer {
             return map;
         };
 
-        // CRITICAL FIX: Build scope depth map from the INSTRUMENTED file (sourceFile),
-        // because trace events carry line numbers from the instrumented file.
-        // Using sourceNormalizedFile caused a line-number mismatch that put every
-        // element at the wrong scope depth.
-        const scopeDepthByLine = await buildScopeDepthMap(sourceFile);
+        const preferredScopeSource =
+            sourceNormalizedFile && existsSync(sourceNormalizedFile)
+                ? sourceNormalizedFile
+                : sourceFile;
+        let scopeDepthByLine = await buildScopeDepthMap(preferredScopeSource);
+        if (!scopeDepthByLine || scopeDepthByLine.size === 0) {
+            scopeDepthByLine = await buildScopeDepthMap(sourceFile);
+        }
         const computeHeaderInsertIndex = async (filePath) => {
             if (!filePath || !existsSync(filePath)) return null;
             let content = '';
@@ -917,9 +927,23 @@ class InstrumentationTracer {
             return insertIdx;
         };
         const headerInsertIdx = await computeHeaderInsertIndex(sourceNormalizedFile || sourceFile);
+        const usingNormalizedScopeMap = Boolean(
+            sourceNormalizedFile &&
+            preferredScopeSource &&
+            path.resolve(preferredScopeSource) === path.resolve(sourceNormalizedFile)
+        );
         const normalizeScopeLine = (lineNum) => {
-            // No offset needed: we now build the scope depth map from the instrumented file directly.
-            return lineNum;
+            const rawLine = Number(lineNum || 0);
+            if (!Number.isFinite(rawLine) || rawLine <= 0) return 0;
+            if (!usingNormalizedScopeMap || headerInsertIdx === null || headerInsertIdx === undefined) {
+                return rawLine;
+            }
+            // Instrumented file inserts `#include "trace.h"` once after includes.
+            // Convert instrumented line numbers back to normalized-source line numbers.
+            if (rawLine > headerInsertIdx + 1) {
+                return rawLine - 1;
+            }
+            return rawLine;
         };
 
         // Precompute which input lines actually appear in trace events.
@@ -1046,11 +1070,14 @@ class InstrumentationTracer {
             if (rawText.length === 0) return false;
 
             const { rendered, escapes } = this.parseEscapeSequences(rawText);
+            const resolvedMetadata = frameMetadata || this.getCurrentFrameMetadata();
+            const explicitLine = Number(line || 0);
+            const resolvedLine = explicitLine > 0 ? explicitLine : (lastExecutableLine > 0 ? lastExecutableLine : 0);
             pushStep({
                 stepIndex: stepIndex++,
                 eventType: 'output',
-                line: line || 0,
-                function: functionName || 'output',
+                line: resolvedLine,
+                function: functionName || resolvedMetadata.functionName || 'output',
                 scope: 'block',
                 file: normalizeFile(fileName || 'stdout'),
                 timestamp: (lastKnownTimestamp += timestampIncrement),
@@ -1059,7 +1086,7 @@ class InstrumentationTracer {
                 escapeInfo: escapes,
                 explanation: `📤 Output: "${rendered}"`,
                 internalEvents: [],
-                ...(frameMetadata || this.getCurrentFrameMetadata())
+                ...resolvedMetadata
             });
 
             return true;
@@ -1206,6 +1233,10 @@ class InstrumentationTracer {
             // Debug first few events
             if (i < 100) {
                 console.log(`[Event ${i}] type=${ev.type}, func="${info.function}", file=${normalizeFile(info.file)}, line=${info.line}`);
+            }
+
+            if (info?.line && Number(info.line) > 0 && normalizeFile(info.file) === userSourceBase) {
+                lastExecutableLine = Number(info.line);
             }
 
             if (isRuntimeCleanupEvent(ev, info)) {
@@ -2321,7 +2352,7 @@ class InstrumentationTracer {
         // ==========================================
         while (pendingOutputQueue.length > 0) {
             emitOutputStep({
-                line: 0,
+                line: lastExecutableLine || 0,
                 functionName: currentFunction || 'main',
                 frameMetadata: this.getCurrentFrameMetadata(),
                 fileName: sourceFile

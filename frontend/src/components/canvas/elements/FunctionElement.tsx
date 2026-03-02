@@ -146,6 +146,8 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
     }
 
     if (isNew && isInitialMount.current) {
+      // Lock mount state immediately so prop churn (height/children) won't restart enter animation.
+      isInitialMount.current = false;
       group.opacity(0);
       group.scaleX(0.01); // Start small but not zero
       group.scaleY(0.01);
@@ -198,7 +200,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
         tweenRef.current = null;
       }
     };
-  }, [isNew, enterDelay, baseWidth, baseHeight]);
+  }, [isNew, enterDelay]);
 
   const measureContent = useCallback(() => {
     const group = groupRef.current;
@@ -234,10 +236,12 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
 
   useEffect(() => {
     setAutoSize((prev) => {
-      if (prev.width === baseWidth && prev.height === baseHeight) {
+      const nextWidth = Math.max(prev.width, baseWidth);
+      const nextHeight = Math.max(prev.height, baseHeight);
+      if (prev.width === nextWidth && prev.height === nextHeight) {
         return prev;
       }
-      return { width: baseWidth, height: baseHeight };
+      return { width: nextWidth, height: nextHeight };
     });
 
     const raf = requestAnimationFrame(measureContent);
