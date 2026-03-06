@@ -246,8 +246,7 @@ export const ConditionElement: React.FC<ConditionElementProps> = memo(({
     const padding = 16;
     const bottomReserve = FOOTER_HEIGHT; // space for result/branch/step indicators
 
-    // Avoid self-inflating width: content-bounds includes the shell/header which already uses totalWidth.
-    const desiredWidth = Math.ceil(Math.max(baseWidth, bounds.width));
+    const desiredWidth = Math.ceil(Math.max(0, bounds.x + bounds.width) + padding);
     const desiredHeight = Math.ceil(
       Math.max(0, bounds.y + bounds.height) + padding + bottomReserve,
     );
