@@ -38,7 +38,7 @@ describe("LayoutEngine control caller/body layout", () => {
       { eventType: "var_declare", frameId: "main-0", name: "afterChain2", scopeDepth: 0, line: 11 },
     ]);
 
-    const layout = LayoutEngine.calculateLayout(trace, trace.steps.length - 1, 1400, 900);
+    const layout = LayoutEngine.calculateLayout(trace, null, trace.steps.length - 1, 1400, 900);
     const after1 = layout.elements.find((el) => el.id === "var-main-0-afterChain1-5");
     const after2 = layout.elements.find((el) => el.id === "var-main-0-afterChain2-6");
     const first = layout.elements.find((el) => el.id === "var-main-0-a-0");
@@ -64,7 +64,7 @@ describe("LayoutEngine control caller/body layout", () => {
       { eventType: "var_declare", frameId: "main-0", name: "after", scopeDepth: 0, line: 3 },
     ]);
 
-    const layout = LayoutEngine.calculateLayout(trace, trace.steps.length - 1, 1200, 800);
+    const layout = LayoutEngine.calculateLayout(trace, null, trace.steps.length - 1, 1200, 800);
     const caller = layout.elements.find(
       (el) =>
         el.type === "condition" &&
@@ -93,7 +93,7 @@ describe("LayoutEngine control caller/body layout", () => {
       { eventType: "var_declare", frameId: "main-0", name: "insideIf", scopeDepth: 1, line: 3 },
     ]);
 
-    const layout = LayoutEngine.calculateLayout(trace, trace.steps.length - 1, 1200, 800);
+    const layout = LayoutEngine.calculateLayout(trace, null, trace.steps.length - 1, 1200, 800);
     const caller = layout.elements.find(
       (el) =>
         el.type === "condition" &&
@@ -124,7 +124,7 @@ describe("LayoutEngine control caller/body layout", () => {
       { eventType: "var_declare", frameId: "main-0", name: "afterSwitch", scopeDepth: 0, line: 6 },
     ]);
 
-    const layout = LayoutEngine.calculateLayout(trace, trace.steps.length - 1, 1400, 900);
+    const layout = LayoutEngine.calculateLayout(trace, null, trace.steps.length - 1, 1400, 900);
     const callers = layout.elements.filter(
       (el) => el.type === "condition" && el.data?.controlRole === "caller",
     );

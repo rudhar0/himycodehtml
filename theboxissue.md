@@ -1,260 +1,403 @@
-﻿# Architectural Audit & Diagnostic Report: Variable Initializers Rendering "Above" + Inconsistent Stacking/Growth
-
-Target symptoms (as observed)
-- Loop children overlap or drift horizontally.
-- Variable initializer boxes sometimes render above other elements.
-- Parent loop/function containers do not expand correctly.
-- Some elements appear out of stacking order.
-- Layout sometimes shifts during animations.
-
-Scope of this report
-- This is an **architectural audit + diagnostic analysis only**. No code changes or fixes are applied here.
-- Codepaths audited: `frontend/src/components/canvas/layout/LayoutEngine.ts` -> `frontend/src/components/canvas/VisualizationCanvas.tsx` -> Konva elements in `frontend/src/components/canvas/elements/*` plus measurement utilities in `frontend/src/components/canvas/utils/resizeContainer.ts`.
-
----
-
-## Summary
-The "initializer renders above" and "stacking/growth inconsistent" issues are primarily produced by **layout cursor accounting gaps** and secondarily amplified by **Konva draw-order rules** and **measurement/animation timing**:
-
-1) **Layout cursor does not advance for many step types** (including `var_assign` and `output`) in `LayoutEngine`. As a result, multiple elements get the same `y` (or later elements get a `y` that is *behind* what is already on screen), which visually presents as "jumping above" or "out of order".
-
-2) **Loop containers don't advance the parent frame's lane cursor** due to a logic trap in `loop_start`, and `loop_end` never reconciles the parent's cursor to the loop's final height. After a loop completes, new elements can be placed at an older cursor position (higher up), appearing above previous content.
-
-3) **React-Konva draw order is array/JSX order**, not `y` order. When two items overlap (same or close coordinates), the one rendered later appears "on top". Because `LayoutEngine` sorts children by step and `renderElement()` maps in array order, a later initializer can cover earlier boxes.
-
-4) **Variable "declaration vs initializer" duplication is not reliably filtered**, so both boxes can remain visible. A key mismatch exists: `LayoutEngine` uses an empty string placeholder for declared values, while the renderer's duplicate filter looks for `undefined`.
-
-5) **Container "growth" is computed two different ways** (LayoutEngine's own height math + imperative Konva resizing + some elements' internal `autoSize` state). During entrance animations (scale/opacity/y tweens), measurement may be skipped or may resize imperatively without synchronizing state, causing parents to "snap", appear too small, or revert on later re-renders.
-
----
-
-## Root Causes
-
-### RC1 - Lane/cursor accounting is incomplete (LayoutEngine)
-In `frontend/src/components/canvas/layout/LayoutEngine.ts`, frames use lane-based positioning:
-- `getNextCursorY(parent)` returns `parent.y + lanes.LOCALS.startY + lanes.LOCALS.usedHeight` whenever `parent.metadata.lanes` exists.
-- `updateContainerHeights()` uses the **lane totals** (HEADER + PARAMS + LOCALS + RETURN) to size lane-aware parents, rather than scanning actual child bounds.
-
-However, lane height increments are only applied for a small subset of element types:
-- Lane increments exist for: `var_declare`, `call_site`, `function_return`, `conditional_start` (switch), and (intended) `loop_start`.
-- Lane increments do **not** exist for: `var_assign` / `var_load`, `output`, `pointer_alias`, array reference creation (`array_create` / `array_declaration`), and several other event types.
-
-Consequences
-- **Overlaps / "render above"**: multiple children can share the same `y` because the cursor never moved.
-- **Parents don't grow (layout-side)**: `updateContainerHeights()` trusts lane totals; if lane totals are wrong, parent `height` is wrong even if children visually exist.
-
-### RC2 - Loop start never advances the parent lane (logic trap)
-In `loop_start`, `activeLoops.set(loopId, ...)` is executed **before** the code checks whether we're "already in a loop":
-- Immediately afterward, `getActiveLoopForFrame(frameId)` will find the loop that was just added (same `parentFrameId`).
-- This makes the "only if not nested" check evaluate as nested **even for the first loop**, preventing `lane.usedHeight += loopElement.height + spacing` from ever running in typical cases.
-
-Consequences
-- The loop container is inserted into `ownerFrame.children`, but **the owner's lane cursor does not advance**.
-- Post-loop elements can reuse the same cursor slot and appear "above" or overlapping the loop block.
-
-### RC3 - Loop end does not reconcile parent cursor
-`loop_end` marks loop completion and deletes the loop from `activeLoops`, but does not adjust the parent frame's lane cursor to account for the loop's final expanded height.
-
-Consequences
-- Anything laid out after a loop can be placed at a `y` that is effectively "pre-loop", creating the strongest form of the "initializer box appears above earlier elements" symptom.
-
-### RC4 - Declaration vs initializer boxes are not reconciled consistently
-Two overlapping mechanisms exist:
-- Layout-side: `var_declare` creates `var-${frameId}-${name}-${stepIndex}` and increments lane. `var_assign` creates **another** `var-${frameId}-${name}-${stepIndex}` (different stepIndex) and does **not** increment lane.
-- Render-side: `VisualizationCanvas.tsx` has `filterChildren()` that tries to remove duplicates when a "no-value box" and a "value box" are created in the same step.
-
-Problem: In `LayoutEngine`, a declared variable uses `value: ""` (empty string), not `undefined`. The renderer's filter checks for `current.data?.value === undefined`, so the filter does not match the layout's "declared placeholder" representation.
-
-Consequences
-- Both boxes remain visible, and if the cursor is stale they can overlap.
-- Even when they don't overlap, they can contribute to the perception of "double insertion" and inconsistent stacking.
-
-### RC5 - Renderer draw order guarantees "wrong-looking" stacking when overlaps exist
-Konva does not sort by `y`. It draws in tree order:
-- Within a `Layer`, later JSX nodes are drawn later (visually on top).
-- Within a parent element, children are mapped in the order returned by `filterChildren(children).map(...)`.
-- `LayoutEngine.updateContainerHeights()` sorts child arrays by step (ascending), which makes later steps appear later in the array and therefore "on top" in overlaps.
-
-Additionally, top-level rendering order in `VisualizationCanvas.tsx` is fixed:
-1) main frame (`visibleLayout.mainFunction`)
-2) function call frames (`visibleLayout.elements.filter(type==="function_call")`, sorted by `metadata.stackIndex`)
-3) function call arrows
-4) array panel
-5) global panel
-6) update arrows and array reference arrows
-
-Consequences
-- Any overlap between these groups will look like "stacking order is wrong" even when coordinates are "correct", because the z-order is chosen by render sequence, not spatial intent.
-
-### RC6 - Parent growth uses mixed declarative + imperative sizing, with animation-time measurement gaps
-Several container components both:
-- accept `width/height` from layout, and
-- call `resizeContainer()` (imperative mutation of Konva Rect sizes), and/or
-- maintain their own `autoSize` React state based on `getClientRect()`.
-
-Patterns found:
-- `StackFrame.tsx` renders `<Rect name="main-bg" height={Math.max(height,80)} .../>` and also calls `resizeContainer(node, ...)` imperatively.
-- `FunctionElement.tsx`, `LoopElement.tsx`, `ConditionElement.tsx` keep `autoSize` state (`totalWidth/totalHeight`) **and** call `resizeContainer(group, ...)` in animation `onFinish`.
-- Measurement callbacks (`measureContent`) explicitly skip while `group.scaleX/scaleY < 0.05` (common during entrance animation), so `autoSize` may not update on first paint.
-
-Consequences
-- If an imperative resize happens but `autoSize` state doesn't update, a later re-render can revert `main-bg` to the stale `totalWidth/totalHeight` coming from state.
-- Debounced `resizeAllContainers()` in `VisualizationCanvas.tsx` can resize slightly after layout changes, creating visible "snaps".
-- Camera focus tweens (`new Konva.Tween({ node: stage, x, y })`) can make these snaps feel like global layout shifts.
-
----
-
-## Why Initializers Appear Above Elements
-This is not (primarily) a "Konva bug". It is a predictable outcome of **stale cursor + deterministic draw order**.
-
-### The dominant mechanism: stale lane cursor makes `y` go "backwards"
-Example scenario (common in traces):
-1) A loop starts (`loop_start`) and is inserted into a frame's LOCALS lane, but the parent lane cursor is not advanced (RC2).
-2) Many elements are rendered "inside" the loop container (variables, iterations), so visually the loop grows downward.
-3) The loop ends (`loop_end`), but the parent lane cursor is not reconciled (RC3).
-4) A variable initializer occurs after the loop (`var_assign`), and its `y` is computed from `getNextCursorY(ownerFrame)` which still points to the pre-loop cursor.
-
-Result
-- The initializer's absolute `y` can be **higher than content already visible**, so it appears "above" earlier elements in the frame.
-
-### The overlap mechanism: cursor never advances for `var_assign` / `output`
-Within the same frame (outside loops too):
-- `var_assign` inserts a variable element at `getNextCursorY(ownerFrame)` but does not increment the lane cursor afterward.
-- `output` inserts an element at `getNextCursorY(ownerFrame)` but does not increment the lane cursor afterward.
-
-Result
-- Multiple elements land on the same `y`. Whichever is rendered later in the children array is drawn "on top" (Konva order), so initializer boxes can visually cover outputs or prior boxes.
-
-### The duplication mechanism: declaration + initializer both remain visible
-Because the renderer's duplicate filter expects `undefined` but declarations use `""`, both the declared box and initialized box can remain.
-
-Result
-- "Initializer box" can look like it is "jumping above" because it is a second box, drawn later, and may overlap if cursor accounting is stale.
-
----
-
-## Cursor Flow Issues
-
-### Multiple cursor systems are used inconsistently
-There are two competing vertical-flow strategies in `LayoutEngine`:
-1) **Lane-based** (`metadata.lanes.LOCALS.usedHeight`), used for frames like `main` and `function_call`.
-2) **Last-child based** (fallback in `getNextCursorY()` when no lanes exist).
-
-When these interact (e.g., loops inside lane-based frames), any missed lane increments become "cursor resets" at boundaries:
-- Inside the loop, stacking appears to work because the loop container uses the last-child strategy.
-- Outside the loop, the parent frame reverts to the lane strategy, which never advanced to account for the loop's growth.
-
-### "Cursor reset" moments to watch (high probability)
-- Immediately after `loop_end` for a loop that contains any significant content.
-- After any `output` event (since it doesn't advance the lane).
-- After any `var_assign` that is rendered as a new element (since it doesn't advance the lane).
-- After pointer/array events that insert visible elements but don't advance the lane.
-
-### Parent selection is inconsistent across step types (drift risk)
-Some step types are loop-aware (variables), while others are not (e.g., `output`):
-- Loop-aware steps choose `parentId` as the active loop container / iteration container.
-- Non-loop-aware steps attach to the frame, even if they occurred during a loop iteration.
-
-Impact
-- The same runtime "block" can render partly inside a loop box and partly outside it, causing perceived horizontal drift and broken vertical stacking.
-
----
-
-## Render Order Issues
-
-### Konva draw order is structural, not spatial
-- Later siblings in a `Layer` draw on top of earlier siblings.
-- Later children in a `Group` draw on top of earlier children.
-
-Therefore, any coordinate overlap becomes a z-order problem:
-- "Initializer above" often means "initializer rendered later at the same `y`".
-
-### No pre-render spatial sorting exists
-In `VisualizationCanvas.tsx`, children are rendered in their array order; there is no sort by `y` before rendering. The only explicit sort observed is for top-level function frames, sorted by `metadata.stackIndex`.
-
-### Keys/IDs amplify remount and ordering effects
-`LayoutEngine` assigns IDs with step suffixes for many elements (`...-${stepIndex}`), and `VisualizationCanvas` uses `key={id}`.
-
-Impact
-- Boxes representing "the same variable across time" are treated as distinct nodes.
-- Remounting makes animations and measurement more sensitive, and makes stacking appear non-deterministic when coupled with cursor bugs.
-
----
-
-## Parent Sizing Issues
-
-### Layout-side parent heights can be wrong (lane totals are trusted)
-For lane-aware parents, `updateContainerHeights()` uses only lane totals. If lane totals don't include loops/outputs/assignments, the parent's `height` is wrong even if children exist.
-
-Downstream effects
-- Camera focusing and arrow positioning can be wrong because they use layout `height`.
-- Elements can appear "outside" parents if the parent background uses the (wrong) layout height and the auto-resize pass is skipped/delayed.
-
-### Render-side parent visuals can flicker or revert (state vs imperative mismatch)
-Containers that mix `autoSize` state and imperative `resizeContainer()` are vulnerable to:
-- resize occurring during/after entrance animation without corresponding state update
-- later re-renders resetting `<Rect name="main-bg" width/height={totalWidth/totalHeight}>` back to stale values
-
-This matches the observed "sometimes it grows, sometimes it doesn't" behavior.
-
----
-
-## Animation Timing Effects
-
-### Entrance animation scale/opacity/y tweaks interact with measurement
-- Many container elements animate from `scaleX/scaleY ~= 0.01` to `1` and temporarily offset `y`.
-- Component-level measurement (`measureContent`) often early-returns while `scale < 0.05`.
-- `VisualizationCanvas.tsx` runs a debounced `resizeAllContainers(layer, ...)` after step/layout changes, which may measure at different phases of the animation than component-level measurement.
-
-Impact
-- Containers can be measured when "not ready", or measured imperatively but later re-rendered back.
-- Users see "layout shifts" as backgrounds snap to new sizes or as stage focus tweens run concurrently.
-
-### Camera focus tweens can disguise root layout bugs
-The stage is tweened to focus "new/updated" elements each step. If an element is incorrectly placed at a high `y` (cursor reset), focus will jump there, making the problem feel like a global layout drift.
-
----
-
-## Verified Causes vs Possible Causes
-
-### Verified (directly supported by current code)
-1) Lane cursor increments are missing for `var_assign`/`var_load` and `output` in `LayoutEngine`.
-2) `loop_start`'s "not nested in another loop" check is defeated by setting `activeLoops` before calling `getActiveLoopForFrame()`.
-3) `loop_end` does not reconcile the parent frame's lane cursor to include the loop's final height.
-4) Renderer duplicate suppression for declaration->initializer relies on `value === undefined`, but `var_declare` uses `value: ""`, preventing suppression from triggering.
-5) Renderer stacking is strictly structural (JSX/array order); there is no global z-index policy beyond top-level ordering and function frame sorting.
-6) Container sizing mixes declarative props (`width/height` or `autoSize`) with imperative resizing (`resizeContainer`), and some measurement is skipped during scale animations.
-
-### Possible / needs runtime confirmation (very plausible, but requires trace + runtime observation)
-1) Tracer step ordering sometimes emits `var_assign` far away from `var_declare`, increasing duplicate boxes and making initializer "jump" effects more obvious.
-2) Some step types that occur inside loops (e.g., `output`, pointer/array events) should likely attach to the loop container but currently attach to the frame, producing horizontal drift.
-3) Measurement differences across zoom/pan states if any component's `getClientRect({ skipTransform: false })` is used to drive local dimensions (could over-grow when the stage is scaled).
-4) Any store-driven re-renders (hover, active states, loop toggle mode switches) that re-apply stale `autoSize` values can cause parents to revert after an imperative resize.
-
----
-
-## Recommended Fix Strategy (high-level only)
-No fixes are implemented here; this is a strategy outline for a safe diagnostic/fix sequence.
-
-1) Make cursor/height accounting authoritative and complete
-   - Ensure every layout insertion that creates a visible box advances the correct cursor (lane or last-child), including `var_assign`, `output`, pointer/array visuals, and loop containers.
-   - Fix loop boundary accounting so the parent cursor reflects the loop's final occupied height when the loop ends.
-
-2) Reconcile "declaration + initializer" into a single identity model
-   - Decide whether variables are "timeline objects" (new node per step) or "stateful objects" (same node updated).
-   - Align renderer filtering/reconciliation rules with the layout's representation of "no value yet" (empty string vs undefined vs null).
-
-3) Establish an explicit layering policy
-   - Decide which categories must always be on top (arrows, overlays) and which must respect spatial stacking within a frame.
-   - Avoid relying on accidental insertion order when overlaps happen; overlaps should become rare once cursor is correct, but a clear policy reduces surprises.
-
-4) Unify container sizing to one source of truth
-   - Prefer either: (a) purely declarative sizes driven by React state, or (b) purely imperative Konva resizing, but avoid mixing without synchronization.
-   - Ensure any post-animation resize updates whatever state ultimately controls the `<Rect name="main-bg" ...>` props.
-
-5) Add diagnostic instrumentation (temporary)
-   - Log per-step lane cursor values and each inserted element's `y` and height.
-   - In dev mode, assert monotonic `y` ordering for siblings inside a lane-aware container unless explicitly allowed (e.g., overlays).
-
-
-
+﻿Let me analyze the screenshot and the trace carefully. The image shows the visualization at step 33/33 with recursive factorial calls. The issue is clear from the image - elements are being placed in wrong containers.
+Let me trace exactly what's happening by reading the key parts of LayoutEngine.ts more carefully - specifically how the condition body is used as parent for variables, and how function frames are positioned.
+Key observations from the screenshot:
+
+Variables like n appear inside the main frame instead of inside the condition body
+Function call frames appear outside their condition context
+The layout is showing a cascading diagonal pattern which is correct for recursive calls, but the variable placement within conditions is wrong
+Now I need to trace the exact sequence: when a condition is evaluated, a branch is taken, and then a function enters, the subsequent variable declarations need to be placed in the right parent container - specifically within the condition body rather than at the frame level.
+
+Looking at how LayoutEngine handles this, when variables are declared after a branch is taken, the placement context needs to recognize that they belong inside the condition body, not in the outer function frame. resolvePlacementParent tries the tree, then falls back to getActiveControlParent. The tree lookup for variables in factorial-11 should work correctly since each frame has its own condition stack—when factorial-11 enters, it gets a fresh stack, so variables should properly resolve to frame-factorial-11 as their parent. The issue must be elsewhere in LayoutEngine's actual implementation. placement logic.
+Let me look at what happens in LayoutEngine when variables in factorial-11 are processed:
+
+The step has frameId = "factorial-11"
+ownerFrame = this.functionFrames.get("factorial-11") = the factorial function element
+scopeDepth = this.getScopeDepth(step, "factorial-11")
+resolvePlacementParent(ownerFrame, "factorial-11", scopeDepth, stepIndex) is called
+
+In resolvePlacementParent:
+
+Tree lookup: stepToNode.get(stepIndex) → variable node ID → its parentId → frame-factorial-11
+elementHistory.get("frame-factorial-11") → should return functionElement since we bridge it at line 2632
+
+The bridge code registers the function element in the element history for the frame node, so when we look up the placement parent, we get back the function element itself. Then getPlacementContext compares the parent ID with the owner frame ID, and since they match, the variable gets placed correctly inside the function frame. Now I see the real problem - variables that belong inside condition bodies are being placed in the parent frame instead. The condition body itself is rendered as a separate right-flow panel, but the variables within it aren't getting their parent context set correctly, so they end up in the wrong scope. The width calculation uses the parent's dimensions with padding, and isFrameParent is false since the tree parent is the condition body, not the function frame itself. So variables should render inside the condition body in the right-flow panel, but the screenshot shows them appearing elsewhere—I need to trace through what's actually happening versus what should happen based on the placement logic. Looking at the event sequence for the n variable in factorial, events 9-10 handle the declaration and assignment when the factorial-11 frame starts, and since the condition stack is empty at that point, the variable correctly gets placed inside the function frame's locals. Then events 11-12 are where the condition evaluation happens.
+For the recursive call at event 14 when factorial-19 enters, events 15-16 declare and assign n in that new frame—the tree lookup should find the factorial-19 function element and place the variable in the right scope, assuming the frame bridges are properly established.
+But the [LE bridge MISS] log suggests the bridge from the condition to its body element isn't working. When that lookup fails, the code falls back to a depth-based heuristic that returns the active condition body—which could be wrong. Though getActiveControlParent uses the frameId to look up, so it should theoretically only find the active control for that specific frame, not bleed into factorial-11's scope.
+Examining the getActiveControlParent function...
+Looking at the actual screenshot though, the cascading diagonal layout mostly works—each factorial frame has its own if-condition rendered correctly. The real issue must be more subtle. The user's specific complaints are that variables like n end up in the parent frame instead of the condition body, and output elements inside conditions incorrectly connect to main rather than staying in their branch. For the factorial program, the printf in the else branch of main's condition is probably being placed wrong.
+I'm realizing the timing is the culprit here. When the condition body bridge is created early (Event 4), it might get cleaned up before later events like the assignment and printf actually execute. By the time those events happen after all the recursive calls return, the condition context is already gone, so they end up in the wrong scope. 7 (branch_taken): branchTaken = "else" wait no... Event 7 says branch_taken at line 13. This is the else branch.
+Wait, the trace says:
+
+Event 3: block_enter at line 11
+Event 4: condition_eval at line 11
+Event 5: block_exit at line 13
+Event 6: block_enter at line 13
+Event 7: branch_taken at line 13
+
+The condition at line 11 is if (n < 0). Since n=3, it's false, so we go to the else branch. The block_exit at line 13 means the if body (which wasn't taken) exited, and block_enter at line 13 is the else branch being entered.
+So when branch_taken is processed (Event 7), it creates the else branch body. Now I need to connect the tree's condition node to this body through the bridge. The condition node has ID cond-main-0-cond-main-0-11-7, and when the body is created in createControlBodyForCaller, it inherits the caller's conditionId. The bridge then matches nodes by checking if their type is 'condition' and their conditionId matches the body's conditionId within the same frame.
+The tree condition node should have conditionId = "cond-main-0-11-7" set at the top level, so the match should work. But the backend trace shows frameMetadata.conditionId: null | expected: cond-main-0-11-7, which suggests the conditionId might be null somewhere in the backend's frame metadata when it should be set.
+Now I'm checking the exact conditionId format — the backend generates cond-main-0-11-7, and the ESB creates the node ID as cond-main-0-cond-main-0-11-7 with conditionId = "cond-main-0-11-7". In the bridge, we're comparing gNode.conditionId === condId, where condId comes from body.data?.conditionId, which inherits from the caller's data. I need to trace what's actually being passed through there.
+The caller gets created in appendControlCaller with the conditionId from the branch_taken step — Event 7 shows that's cond-main-0-11-7. So both body.data.conditionId and gNode.conditionId should match at "cond-main-0-11-7". The frameId also needs to match, where gNode.frameId = "main-0" from the ESB creation, and I need to verify what groupState.frameId is set to.
+Looking at createOrGetControlGroupContainer, it receives a frameId parameter and assigns it directly to the groupState, so for the condition in the main frame that should also be "main-0". The frameIds match, so the bridge should work — but maybe it's not being registered for some other reason. Let me check where createControlBodyForCaller gets called for the else branch.
+In the else branch, createControlBodyForCaller is invoked with the elseCaller, and the trace shows branch_taken rather than else_eval, so I need to understand what conditionId gets assigned in that path. goes through the branch_taken handler at line 2077:
+typescriptif (stepType === "branch_taken" || stepType === "branch") {
+  ...
+  if (branchTaken === "else") {
+    const elseCaller = this.appendControlCaller(layout, groupState, container, "else", step, stepIndex, "else", true, "else", line, "active", true, origin.id);
+    const elseBody = this.createControlBodyForCaller(layout, groupState, container, elseCaller, stepIndex);
+    ...
+  }
+The elseCaller gets created with the condition ID from the step, and then elseBody inherits that same condition ID. In the bridge, I'm matching on that condition ID, so that should work. But wait—I'm looking at the placement resolution logic and I see it's checking multiple conditions including branchState === 'active'. That might be where things are breaking down. Looking at how the elementHistory bridge maps condition nodes to their body elements, I'm realizing that Attempt 1 might actually work for both frame parents and condition parents if the bridge is set up correctly at the right points in the code.
+But here's the issue: when variables inside a condition are being processed, the condition body element hasn't been created yet because the variables are declared before the condition evaluation happens. So the bridge hasn't been registered, and the lookup fails. The variable n in factorial-11 actually has its tree parentId pointing to the frame itself, not the condition, because the condition stack is empty when those variable events are processed.
+Now I'm trying to understand what the actual bug is from the user's description. They mentioned that n on the condition is rendering on the parent instead of inside the condition body. Let me reconsider what variables would actually appear inside the condition—the parameter n is declared when the function enters, not after the branch is taken, so it shouldn't be inside the condition at all. I need to look more carefully at what's happening with variable placement in the condition branches. I'm trying to understand how resolveCallSiteScopeDepth determines placement for the call_site element—it looks like it uses the parent frame and active control structure to position the call site inside the else condition body, which is correct. The function_call element then gets positioned to the right of that call site. Now I need to trace through what happens after factorial-11 completes and returns.
+When factorial-11 finishes, its variables populate its function box, then the condition evaluator creates a condition caller within that box, the branch taken event creates the condition body, and finally the next function entry (factorial-19) creates a call site inside factorial-11's condition body. The issue is that the condition body is a right-flow element, so placing a call site inside it means the coordinates get pulled from that right-flow context. Looking at the actual screenshot versus what should happen, I'm seeing a cascading diagonal pattern where each level has a function frame, condition chip, condition body panel, and another nested function frame to the right.
+The user's constraint is clear: the condition caller and function should stay inside the parent, while the body goes outside with an arrow connecting them. The real problem seems to be that when the condition body receives variables or elements, they sometimes end up in the wrong container—specifically, the variable n is appearing in the parent frame when it should be in the condition body. But in the factorial code, n is only declared once as a parameter when each factorial function enters, so those n variables should always be at the top of each factorial frame before any conditions.
+The printf call in main's else branch should appear in that else body after factorial returns. I'm wondering if there's a timing issue where the else condition body for main stays marked as "active" in activeControlByDepth, so fact and printf correctly route into it, but something's going wrong with the scope depth calculation when the assign event for fact happens.
+Looking at the scope depth for Event 46 - the step should have a scopeDepth value that gets read from the trace processor's inferredScopeDepth. Since fact = factorial(n); is inside the else block at line 14, the scope depth should be 1, which means getActiveControlParent would correctly return the else condition body. But then Event 47 (the printf control_flow event) doesn't match any standard event type in the switch statement, so it falls through to the default handler.
+The thing is, I don't see an explicit output event in the trace for the printf call - the trace only shows raw events, not the processed steps. So the printf output might have been generated but isn't visible in this trace listing. I'm getting too caught up in the weeds here though. Let me refocus on what the user actually needs fixed - they mentioned n rendering on the condition.
+Looking at the actual issues: there's a non-deterministic placement bug where elements sometimes go to the right parent and sometimes don't, which suggests a race condition or ordering problem in how parents are resolved. The root cause is likely the ID namespace mismatch we've been trying to fix - the condition body bridge isn't firing at the right time or the conditionId on the body's data doesn't match what the tree node expects. When I trace through Event 46 (the assign fact step), the tree lookup should find the variable node, but something in that parent resolution chain is breaking down inconsistently.
+Now I'm tracing through the condition node ID generation to understand what's happening. The ESB creates condition node IDs by combining the frame ID with the condition ID from the raw event, so for main's condition with raw.conditionId = "cond-main-0-11-7", it generates condNodeId = "cond-main-0-cond-main-0-11-7". The else body element should be created when the branch is processed, but the bridge between that body and the tree node isn't connecting properly.
+I'm realizing there's a critical issue with how the bridge works—it maps a single condition node ID to whatever body was created last, but for an if-else structure, both branches share the same condition node in the tree. This means the bridge might be pointing to the wrong branch's body, or the mapping is getting overwritten.
+Let me trace through what actually happens: when the if branch isn't taken (n=3 is not < 0), the code skips creating that body entirely—only the else body gets created. So theoretically the bridge should correctly point to the else body. But I need to look at the actual bridge implementation to see why it might not be working in practice.
+Examining the bridge code...
+Still writing bridge logic... has conditionId: (step as any).conditionId. For branch_taken step (Event 7), step.conditionId = "cond-main-0-11-7".
+But for the ELSE branch via appendControlCaller, let me check what conditionId it gets:
+At line 2077 for else branch:
+typescriptconst elseCaller = this.appendControlCaller(
+  layout, groupState, container, "else", step, stepIndex, "else", true, "else", line, "active", true, origin.id,
+);
+In appendControlCaller, conditionId: (step as any).conditionId. Here step is the branch_taken step. So conditionId = "cond-main-0-11-7". ✓
+Now the condition tree node has conditionId = "cond-main-0-11-7" and frameId = "main-0", which matches the groupState, so the bridge should register the else body in the element history. When the variable fact gets processed at Event 46, I need to trace what parentId it resolves to by checking the frame's parent resolution logic. .conditionStack has cond-main-0-11-7 (pushed when condition_eval at Event 4 was processed, popped when... when does it get popped?)
+In ESB, conditions are popped in handleBlockExit:
+typescriptconst cond = frame.conditionStack[frame.conditionStack.length - 1];
+if (cond && cond.isBraced) {
+  frame.conditionStack.pop();
+  ...
+}
+```
+
+Event 48 is `block_exit` for main at line 16. This would pop the condition. But Event 46 (assign fact) comes BEFORE Event 48. So at Event 46, the condition stack should still have the else condition.
+
+So `resolveParentId(frame)` returns `cond-main-0-11-7"`.
+
+The variable node has `parentId = "cond-main-0-cond-main-0-11-7"`. When LayoutEngine processes Event 46, it looks up this parent ID in elementHistory, which should return the else body if the bridge is working correctly—meaning the variable `fact` would be placed in the right location. The real question is whether that bridge lookup is actually succeeding, and I need to check if the console shows a bridge miss warning when the user runs the program. I'm realizing there's a critical issue with how function calls are being placed in the tree. When a `func_enter` event occurs for a recursive factorial call, the system tries to use the parent condition ID from the caller's frame to locate where the function should be inserted. But this creates a problem: the function call itself happens *before* the condition body is fully established, so it's getting incorrectly nested inside the condition rather than appearing as a sibling or at the proper level in the execution flow. unctionElement) is not placed via `resolvePlacementParent`. It's placed via `resolveRightFlowRect`. The `call_site` element IS placed via `getPlacementContext`. So:
+
+- `call_site` for factorial-19 → placed using `getPlacementContext(parentFrame=factorial-11, parentFrameId="factorial-11", callScopeDepth, stepIndex)`
+- `resolvePlacementParent` → Attempt 1 → `node.parentId` for this call_site step... what does the tree say?
+
+The call_site is not a separate tree node! It's created by LayoutEngine during `func_enter` processing. The `stepToNode` for the `func_enter` step (Event 14) maps to `frame-factorial-19` in the tree.
+
+Now when `getPlacementContext` runs with the `func_enter` step as the `stepIndex`, the tree shows that `frame-factorial-19` has a parentId of `cond-factorial-11-cond-factorial-11-23-17`. But `getPlacementContext` is being called with `parentFrame` as factorial-11's frame and `parentFrameId = "factorial-11"`, making factorial-11 the ownerFrame. So in `resolvePlacementParent`, I'm looking up the node for that func_enter step—which gives me `frame-factorial-19`—and then checking its parent in the tree.
+
+The tree says the parent is the condition body. Since the ownerFrame is factorial-11's frame but the treeParent is the condition body (different IDs), `isFrameParent` becomes false, and the call_site gets positioned relative to the condition body instead of the frame itself.
+
+So call_sites end up inside the condition body's right-flow panel, which actually makes sense for this layout. Variables should appear in their function frames, and when they're inside a condition body, they render there instead of jumping to the parent frame—unless the bridge is failing to register the condition body properly.
+
+I'm wondering what's causing the bridge to fail intermittently. When `fact = factorial(n)` gets processed, if the else body was registered under the right key, the assign step should find it through `handleVariable`. Let me trace where that lookup happens.
+
+Actually, I think the real issue might be with `n` in the main frame itself, not inside the condition. The main frame declares `int n = 3` before the condition even starts, so when `n` is referenced later...
+
+Wait, let me trace through this more carefully. When `n` gets declared in the factorial function (Events 9-10), those steps have `frameId = "factorial-11"`, and since factorial's condition stack is empty at that point, the variable's parent should resolve to `frame-factorial-11`. But I need to check what `resolvePlacementParent` is actually returning when the owner frame is factorial-11.
+
+The bridge should register `frame-factorial-11` → functionElement when Event 8 (the func_enter) is processed. Since the LayoutEngine iterates linearly through steps, the func_enter happens before the variable declarations, so the bridge should already exist by the time we're resolving the variable's parent. But I'm realizing there might be a timing issue with how the LayoutEngine processes these events sequentially.
+
+Let me look at what the actual visualization shows at the final state—there are multiple frames cascading diagonally with the main frame on the left containing variables and conditions, and function frames extending to the right.
+
+The core issue seems to be about timing: the condition body bridge needs the body created before variables inside it are processed, but for `branch_taken` events, the body gets created at that exact step, so variables coming after should find it correctly while parameters coming before go to the frame itself. I'm wondering about the `else` branch body for the deepest recursion level—factorial-35's else clause—and whether that's being handled properly.
+
+Looking at the trace, factorial-35 has a false condition, takes the else branch, but then immediately hits a return statement with no variables in between, so nothing would populate that else body. The skipped if branch correctly doesn't create a body since `shouldExpand` is false. The remaining bugs are likely that the variable `n` sometimes appears in main's condition body due to a fallback mechanism using `getActiveControlParent`, and the `fact` assignment might be going to the wrong frame instead of the else body.
+
+I think I've found the core issue: the bridge registers the condition body under the tree condition node ID, but when processing variables inside the condition branch, `resolvePlacementParent` looks up the node's parent ID in `elementHistory`. Since variables in the tree are children of the condition node itself rather than the body element, there's a mismatch between where the bridge expects them and where they actually belong in the tree structure.
+
+Wait, actually that should work—the bridge did register the condition node ID pointing to the else body, so Attempt 1 should correctly place variables there. Let me reconsider what's actually failing here.
+
+The real problem might be timing-related. When variables in a particular frame are being processed, the element history might not have the right entries yet, or there's a sequencing issue with how the condition body gets registered versus when variables try to resolve their placement. So at Event 8 when the function enters, the else body should already exist from Event 7, so the bridge lookup should work. But I need to reconsider the block_exit at Event 5—that's actually for the if body (the one that wasn't taken), not the else branch where factorial is being called.
+
+Looking at the actual event sequence, it seems the instrumentation fires block_enter first, then condition_eval, then block_exit for the evaluated block, then block_enter for the taken branch, and finally branch_taken. So the else body registration at Event 7 should happen before the factorial call at Event 8, which means the bridge should resolve correctly. I see the issue now—Event 3 (block_enter) fires before Event 4 (condition_eval), so when block_enter runs, the condition hasn't been created yet and the condition stack is still empty. The condition only gets created and pushed to the stack during Event 4, where `detectBracedBody` looks ahead to determine if the body is braced.
+
+But here's the problem: Event 5 (block_exit) pops that condition off the stack before Event 7 (branch_taken) even fires, which means the condition is no longer available when we need to associate it with the branch decision. in LayoutEngine's `resolvePlacementParent` for `fact`, the node's parentId points to `frame-main-0`, so it resolves to the mainFunction element, and since that element's id matches the ownerFrame, the placement logic treats it as a direct frame parent rather than recognizing it should be nested under the condition node.
+
+The root cause is that the ESB pops the condition from the stack at block_exit before branch_taken fires, so variables declared in the else body end up with the frame as their tree parent instead of the condition node, and the layout engine has no way to distinguish them from regular frame-level variables.
+
+The solution is to defer popping the condition until after branch_taken executes, so the tree structure correctly reflects which branch each variable belongs to. and then keep the condition alive until the taken branch's block_exit.
+
+This is a complex fix in ESB. Let me think about the right approach.
+
+Looking at the event sequence:
+```
+block_enter (line 11) - entering the if condition's scope  
+condition_eval (line 11) - condition evaluated
+block_exit (line 13) - exiting the if scope (because n < 0 is false)
+block_enter (line 13) - entering else scope
+branch_taken (line 13) - else branch taken
+[else body content]
+block_exit (line 16) - exiting else scope
+The ESB needs to understand that:
+
+block_exit after condition_eval but before branch_taken = exiting the UN-TAKEN if body → don't pop condition
+branch_taken after this = the taken branch is confirmed
+Keep condition on stack until the TAKEN branch's block_exit
+
+The key insight is to only pop the condition from the stack when we're exiting a block that actually had its branch taken, rather than popping whenever we see a block_exit. I can modify the handleBlockExit logic to check whether the branch was actually taken before removing the condition from the stack.
+Let me trace through the factorial case to verify this approach works there too. I see the issue now—when a block exits before the branch is determined, I shouldn't pop the condition from the stack. Once the branch is finally taken, the condition stays available for resolving parent IDs in subsequent function calls.
+Now I need to verify that the LayoutEngine can properly handle finding the body when an ESB variable has a condition node as its parent.
+The bridge maps the condition node ID to its else body, so when the LayoutEngine looks up the parent, it retrieves the correct body and places the variable there. For the factorial case, the condition gets pushed onto the stack during the branch_taken event with branchTaken set, and variables processed afterward will find that condition still on the stack with a non-'none' branch value, so they'll be placed in the correct branch body.
+The condition pops when the if body's block_exit fires, but in factorial's trace there's no explicit block_exit before the function exits—instead, the frame exit clears the entire condition and loop stacks directly. That's fine for the tree structure since the condition node's range just extends to the function exit. For the else branch in factorial's base case, I'm looking at the event sequence to see how the block structure handles the else body. Looking at the condition lifecycle for factorial-35, the condition node stays on the stack until the function exits since there's no block_exit event after the branch_taken. With my fix to handleBlockExit, I'm checking if branchTaken is 'none' before popping the condition from the stack, which preserves it so that when branch_taken fires, it can properly set the branch type and when return executes, it correctly resolves the parent condition node.
+Implementing the fix in handleBlockExit... Writing condition and loop handling...
+Actually, I'm realizing there's an issue with how I'm checking the branchTaken field—it stores the branch label, not just a simple 'none' flag, so I need to verify it hasn't been set yet before proceeding with the logic.
+Looking at the ConditionContext structure, branchTaken initializes as 'none' and gets updated when a branch fires, so my check for cond.branchTaken !== 'none' should work correctly.
+Now I'm examining the LayoutEngine's condition parent resolution logic...
+Checking branch state registration...
+With the ESB fix, when the else branch fires at Event 7, the bridge should register the else body correctly, so when factorial-11 enters at Event 8, Attempt 1 will find it through the condition node's parent reference. But I'm realizing each frame maintains its own condition stack, so main's condition stays in main's frame while factorial-11 has its own—I need to verify how the stack isolation actually works when the nested call enters. ), in ESB:
+
+A new BuilderFrame is created for factorial-11 with empty conditionStack
+Variables in factorial-11 (Events 9-10) use factorial-11's frame → conditionStack is empty → parentId = frame-factorial-11
+
+So factorial-11's n variable still goes to frame-factorial-11. ✓
+Main's condition stack: after Event 7 (branch_taken), cond.branchTaken = "else". The condition is still on main's conditionStack. Variables processed in main's ELSE body would have main's frame and main's condition stack active. But factorial-11's variables use factorial-11's frame! So they don't see main's condition stack.
+So the fix is clean and shouldn't break the variable placement for factorial parameters.
+Now I need to trace when main's condition gets popped. After factorial returns, the assign statement for fact still sees the else condition, then the block_exit at line 16 pops it since branchTaken is set to "else" rather than 'none'. So the condition is properly cleaned up before main returns.
+The ESB fix is straightforward: in handleBlockExit, only pop a condition if branchTaken !== 'none'. Now I need to think through the LayoutEngine side of this. The ESB fix is to add a branchTaken !== 'none' check in handleBlockExit before popping the condition, which ensures the condition stays on the stack when the else body needs it as a parent. Now for the LayoutEngine issue—the current design places the condition caller inside the function frame while the body content sits outside to the right with an arrow, and I'm looking at how condition_caller elements are rendered as ConditionCallerForParent components in the visualization.
+The variable and output placement problem stems from that ESB bug—once fixed, variables in condition bodies will correctly reference the condition node as their parent, and LayoutEngine will place them properly. I'm checking the existing LayoutEngine logic: the bridge in createControlBodyForCaller is already correct, resolvePlacementParent has all three placement attempts covered, and the loop iteration bridge is in place. So the main fix needed is just the ESB handleBlockExit change, but I need to verify that Attempt 2 in the placement logic is working correctly. in resolvePlacementParent works correctly as a fallback. Looking at it:
+typescriptel.data?.conditionId === parentNode.conditionId &&
+el.data?.controlRole === 'body' &&
+el.data?.branchState === 'active'
+The issue here: when both an if-body (not taken, "skipped") and an else-body (taken, "active") exist for the same condition, we want to find the active one. The branchState check for 'active' should handle this.
+But actually for the case where if is not taken: shouldExpand = false → body not created. So there's only ONE body per if-else pair. The check for branchState === 'active' is therefore redundant but harmless.
+OK, I think the core fix is the ESB handleBlockExit change.
+Now I'm wondering if the LayoutEngine's placement of call_sites needs the same fix. When func_enter for factorial-11 gets processed, the call_site is placed using the parent frame context, and the tree node for that step points to the condition node in main's if-else. With the ESB fix applied, I need to trace through whether factorial-11's tree structure gets set up correctly.
+Looking at handleFuncEnter in ESB: when factorial-11 enters, the caller frame is main-0, and resolveParentId should return the condition node ID since main's condition is still on the stack. So the parentId should be correctly set to the condition node, which means the tree structure should be correct.
+In LayoutEngine, when we look up that condition node ID in elementHistory, we get the else body from the bridge, and the call site gets positioned inside it with the factorial frame flowing to the right—this all checks out.
+Now I'm noticing that after all the recursive calls unwind and we're back processing the assign statement in main, the condition body for main's else is still marked as active in activeConditions, and it's also registered in elementHistory under the condition node ID.
+For the fact assignment event, the frame is main but the condition is still on the stack from the ESB fix, so the variable's tree parent becomes the condition node ID. When we look that up in elementHistory, we get the else body, and since the else body isn't the same as the main function itself, the assignment correctly gets placed inside the else body. The same logic applies if there's an output printf event inside that else body.
+This confirms the fix works—the key change was in how ESB handles block exits. Let me think through whether there are any edge cases I'm missing.
+For a simple if without else, when the condition is false and there's no else branch, the block_exit fires without a preceding branch_taken event. With my fix, the block_exit would see that branchTaken is still 'none' and wouldn't pop the condition from the stack, which is the correct behavior.
+The key insight is distinguishing between an untaken if with no else versus an untaken if with an else: in the latter case, there's a block_enter for the else body before the branch_taken event fires, whereas in the former case, block_exit happens immediately after condition_eval without any branch_taken. I need to figure out how to distinguish between a false if-condition that exits without an else body versus one that does have an else. The key insight is that when there's no else, the condition should be popped at block_exit, but when there is an else, it stays on the stack until after the else body executes. I could track whether each block_exit corresponds to the if body or a taken branch body, or I could examine what comes next in the trace to determine if an else is coming. I could pass allSteps down to handleBlockExit to look ahead and see if a branch_taken is coming for this condition, but that adds complexity. Let me consider a simpler approach instead—maybe marking conditions as "waiting for branch" when branchTaken is 'none', then only popping them when we encounter a step that's neither branch_taken nor block_enter in the same frame.
+Actually, I'm noticing the production code already has lookahead logic with detectBracedBody. What if I just add a helper to check whether an else branch follows, or set a hasElse flag on the condition context when we see else_eval or a branch_taken with branch="else"?
+Even simpler: in handleBlockExit when branchTaken is 'none' and the block is braced, I could scan ahead to see if there's a matching branch_taken event coming—if there is, keep the condition on the stack; if not, pop it now.
+But I'm realizing the simplest fix might have an edge case: for a FALSE if with no else, the condition stays on the stack and could incorrectly become the parent for variables placed after the block. That said, this pattern might be rare enough that it's worth trying the simpler approach first and documenting the limitation. Let me trace through what LayoutEngine does in this scenario—when no branch is taken, the condition's body never expands, so the depth handling might already account for this.
+Actually, looking at the fallback logic more carefully: even if ESB marks a variable with the condition as parent, LayoutEngine's attempt to find the body fails, triggering the depth heuristic which correctly returns the ownerFrame. So the fallback mechanism saves the fix even in this edge case—the condition gets marked as parent in ESB, but LayoutEngine can't find it in elementHistory and falls back to the right parent anyway.
+Now I'm wondering about a different scenario: what happens when a FALSE if with no else is followed by another valid condition? The ESB condition stack still has the FALSE condition on it, and pushing a new condition could create unexpected nesting.
+Let me trace through an example where the first if is FALSE with no else, then a second if is TRUE. My current fix would leave the first condition on the stack, and when the second condition's branch_taken fires, it would only pop the second one, leaving the first orphaned. That's definitely a problem I need to solve differently.
+The real distinction is what happens after block_exit: if there's another block_enter in the same frame right after, that's an else clause, so I shouldn't pop yet. If there's no else following, I should pop immediately. I'll add lookahead logic to handleBlockExit to check what event comes next in the execution steps.
+Implementing lookahead in handleBlockExit... Still writing condition handling... Writing helper methods... and correct. Let me now write the final prompt.
+Actually, I should verify whether handleConditionalBranch properly handles the case where the condition already has branchTaken='none'. Looking at the implementation, it finds the condition on the stackShow less  e real question is what scopeDepth gets assigned to the var n declaration in factorial-11. When the layout engine processes this variable, it needs to find its placement parent by walking up the tree from the function frame, checking the ESB-corrected parent chain to locate the appropriate control structure.
+But here's the issue: getActiveControlParent looks up the active control for factorial-11's frame specifically, and at the time var n is being processed, no control has been marked active for that frame yet. So the active control lookup returns null. The tree lookup in Attempt 1 succeeds instead, finding the condition body from main's frame. However, that condition body doesn't belong to factorial-11's frame—it belongs to main's frame. When getPlacementContext validates whether the parent frame matches the owner frame, the condition body's ID won't match factorial-11's ID, so the placement fails.
+The real bug is that Attempt 1 succeeds with the tree lookup and places var n inside the condition body from main instead of inside factorial-11's FunctionElement where it should go.
+Let me trace through this more carefully. The var n node has parentId frame-factorial-11, and when Attempt 1 looks that up in elementHistory, it gets the FunctionElement for factorial-11. Since the FunctionElement's id is function-factorial-11 and that matches the ownerFrame, isFrameParent should be true, which means it uses the LOCALS lane. So actually, this should be working correctly...
+The func_enter factorial-11 creates a call_site in MAIN's else condition body, which is right. And var n in factorial-11 goes into the FunctionElement's LOCALS lane. Both of those check out.
+So maybe the issue is actually with the assign n operation in factorial-11?
+Actually, I think I've found it. The LayoutEngine is using two conflicting systems at once: one tree-based approach that resolves placement through the current graph, and another scope-depth-based approach that uses active control depths. If steps have inconsistent scopeDepth values, some will find the condition body as their parent while others won't, causing them to fall back to the frame instead. That's probably why the user sees inconsistent behavior.
+Let me focus on what the user actually reported: variables showing on the parent instead of inside the condition body, and output variables connecting to main when they should stay in the condition. The real question is whether ESB is even setting the correct parentIds in the tree for these steps in the first place. back to the scope-depth system when tree lookup fails. The key issue is that the bridge connecting condition bodies to their elements relies on matching the conditionId from the tree node with what gets stored in the element's data, but there's a mismatch between when the condition_eval step creates a condition_caller versus when the actual condition type caller receives the body element.
+Looking at the flow more carefully: condition_eval creates the inline chip, but the real control node on the right-flow canvas comes from branch_taken processing, which is where the body gets created with the correct conditionId. For the else branch, there's a separate else caller being appended...
+Still writing branch logic... When factorial-11 enters through func_enter, the LayoutEngine looks up its frame in the functionFrames map, but since it hasn't been created yet, it falls back to using the main function as the owner frame. Let me trace through what happens next as the step processes.
+The call site gets positioned within the parent frame's context (main-0), and when resolving the placement, the ESB's step-to-node mapping points to the frame-factorial-11 node, whose parent is the condition node. The placement logic correctly identifies the body as the target, so the call site ends up inside the condition body, while the FunctionElement for factorial-11 itself gets created and positioned on the right side. Now I'm working through how the declare n step inside factorial-11 gets handled.
+The variable declaration step maps to the variable-n node with factorial-11 as its parent frame, and the element history lookup finds the FunctionElement for factorial-11, so the variable gets placed correctly inside it. For the inner condition evaluation in factorial-11, I'm tracing through how the condition node gets resolved within the factorial-11 function's context.
+Now the condition node itself maps to the cond-factorial-11 node with the same parent frame, and it's placed inside the FunctionElement as expected. When the branch is taken, the body gets registered in the control flow tracking for that frame. Then when entering the nested factorial-19 call, a new frame node is created with the condition node as its parent, and I'm checking how that frame lookup resolves.
+Looking at the actual events though, I'm noticing the variable assignments in main don't match what I initially thought—there's no "assign n" after factorial returns, just the assignment of the return value to fact and then the printf call. Let me trace through how the LayoutEngine handles that var_assign event for fact.
+When it processes the assignment of the factorial return value to fact, it checks if the previous step was a function exit, which it was. So it looks for the original declaration element for fact from earlier in main and updates that instead of creating a new element. But here's the problem: fact was declared at the top of main before the condition, so its element lives in main's LOCALS lane. When the assignment happens inside the else branch and updates that declaration element, it doesn't actually move it into the condition body where the assignment occurs.
+Actually, wait—that might be correct behavior since fact is genuinely a local variable of main, not scoped to the else branch. Let me reconsider what the user is actually complaining about. They said the output variable goes to main instead of staying in the condition. Maybe the issue is with the printf output itself, not the variable assignment. The printf call at line 15 is inside the else branch, so its output should appear there, but it's being placed in main instead. I need to check how output events are being handled in the layout engine.
+Looking at the trace, I see control_flow events but I'm not seeing explicit stdout events for the printf. Either the output is captured separately or the control_flow event itself represents the printf step. With 49 steps versus 64 events, something isn't mapping cleanly.
+Rather than chase every detail, let me focus on the real problem: there are two competing systems for placing steps. The tree-based approach uses the parent node from the graph, while the scope-depth fallback uses the active control structure at that depth. These two systems are giving different answers about where a step belongs, and that's causing the mismatch.
+The LayoutEngine's resolvePlacementParent returns the first successful result from the tree-based approach, which seems to work correctly for most cases. But when the scope-depth system kicks in as a fallback, it might be using different logic that contradicts what the tree says. I need to trace through what happens when a branch_taken event fires and how the scope-depth resolution actually determines placement. I'm seeing that both the bridge system and the depth-based fallback should correctly place the call_site in the condition body for func_enter, while var n in factorial-11 gets placed via the FunctionElement parent since no body has been registered yet for that frame. Now I need to trace through where var n in main gets placed.
+The step has the right frameId pointing to factorial-11, and the ESB step index matches the LayoutEngine step index since they're processing the same steps array in order. So the issue might be something else entirely—maybe how the LayoutEngine determines which frame a declare step actually belongs to.
+Looking at the event trace more carefully, the declare and assign events show func="n" which is the variable name, not a function name, so the frameId should be coming from a separate field in the trace data. Let me trace through exactly what information is available when these events are processed to see if the frameId is being set correctly. , and LayoutEngine uses a fallback to "main-0" if frameId isn't present. So if all factorial steps carry their respective frameIds like "factorial-11" or "factorial-19", they should route to the correct frames. But there's a potential issue: when LayoutEngine encounters a step with frameId "factorial-11", it looks up that frame in functionFrames, and if it hasn't been registered yet because the func_enter event hasn't been processed, it falls back to the main frame instead—which would be wrong. The func_enter for factorial-11 should come before any declare or assign steps within that frame, so I need to verify the event ordering is correct.
+Looking at the trace, func_enter for factorial-11 fires before the declare and assign events for that frame, so functionFrames should have the entry by the time those steps are processed. Let me shift perspective and look at what's actually appearing in the output. The main frame shows n = 3, fact, a condition header, what looks like a factorial call in orange, and some text elements. Something's off with how the nested call is being rendered.
+Actually, examining the screenshot more carefully, I see the factorial(n) call site is appearing in the main frame instead of inside the condition body where it should be. This suggests the call_site for factorial-11 is being placed in the wrong parent frame. When func_enter processes, it looks up the parentId from the condition element, but if that bridge hasn't been registered in elementHistory yet, the lookup would fail and fall back to the wrong frame. Though branch_taken for the else branch fires before func_enter in the trace, so the bridge should already exist.
+Let me trace through the step ordering to see if that's the issue. If block events are included in the steps, branch_taken happens after block_exit and block_enter, creating the body and setting the bridge before func_enter fires—so the lookup should succeed. But if block events aren't in the steps, the timing changes and the bridge might not be registered yet when func_enter tries to use it.
+Actually, I think the real problem might be with the bridge condition itself. The condition checks if the graph node's conditionId matches the one from the body data, but I need to verify that the else caller actually has the right conditionId attached to it.
+Looking at the trace logs, the backend is definitely generating conditionId values for branch steps, but I'm not certain whether those IDs are being preserved when the branch_taken event gets processed into a step object. The trace shows the backend pushing cond-main-0-11-7, but I need to confirm that this value actually makes it into the step's conditionId field so the bridge can find it. The core issue is whether the branch_taken step actually includes the conditionId field—if it does, the IDs match and everything works; if not, LayoutEngine falls back to a generated ID that won't align with what the backend produced, breaking the grouping logic. The visualization is partially working though, which suggests the depth-based fallback system might be compensating for the missing conditionId.
+I'm narrowing down the root causes: the ESB might be popping conditions too early when block events appear in steps, and the LayoutEngine's bridge logic could fail if conditionId is missing or formatted differently between the two systems. The inline condition chip itself seems to be placed correctly, so the issue is specifically with how nested elements get grouped under conditions. Looking at the condition_eval step for factorial-11's inner condition, I'm tracing through the resolution: the step node points to the condition itself, its parent is the frame, and when I resolve via Attempt 1, I correctly get the FunctionElement for factorial-11, which puts the variable in the LOCALS lane. But I'm realizing the actual problem might be even more fundamental than I thought.
+The condition_caller gets placed inside factorial-11's FunctionElement, and after the branch is taken for the if-condition (n=3 goes into the if-branch), a body is created and bridged to the condition node while updating the active control. Then when func_enter factorial-19 is processed, I need to figure out what ownerFrame should be—factorial-19 doesn't exist in the function frames yet, so it defaults to mainFunction, but I'm realizing the logic for handling function entry might be doing something different than I expected.
+Now I'm tracing through the placement context resolution: the parent frame is factorial-11, and when I call resolvePlacementParent, it's trying to find where the new frame should attach. The step node for factorial-19 gets a parentId pointing to the condition node from earlier, and I'm checking if that node exists in the element history.
+So with the ESB fix in place, this should actually work—the key is preventing the condition from being popped prematurely when the block exits. But I need to think through whether detectBracedBody returning false causes issues when the condition stays on the stack longer than expected.
+Let me trace through what happens with a braceless condition in main's else branch: when factorial-11 enters, it correctly resolves its parent to the condition since that's still on the stack. Then as variables get assigned and output happens, the condition remains available to capture them, with bodyUsed flipping to true on the first variable. This should work as long as the condition doesn't get popped before those events fire.
+For the recursive factorial frames taking the if-branch, the condition gets pushed but no variables are assigned in that branch—just a recursive call—so no eviction would trigger anyway. And when we hit the base case in factorial-35's else branch, the condition is pushed again and should handle that path similarly.
+The real question is whether block_enter and block_exit events are actually making it into the steps array. Looking at the event count, I'm seeing 64 total events but only 49 steps recorded. I filtered out 12 heap_free events and a few others, but if block_enter and block_exit were all being filtered, the math doesn't quite add up. Let me recount the block_enter events from the trace more carefully. Looking at the event log more carefully, I notice there are gaps in the numbering sequence - events 34, 37, 40, 43, and 49 are missing from the trace entirely. These skipped numbers represent filtered events that don't get logged, which explains the discrepancy between the total event count and the step count.
+The key insight is that block_enter and block_exit events do appear in the trace with explicit event numbers, but since they don't modify memory state, they likely don't generate steps in the output.
+However, if block events somehow do make it into the steps that ESB processes, they'd pop conditions prematurely and break the logic. Given the inconsistent behavior the user reports, I'm suspecting either block events are occasionally leaking into steps (perhaps when scope variables change nearby), or the scope_depth tracking in LayoutEngine is producing unreliable results. I should investigate whether the distinction between declare and assign events might be the culprit here.
+Now I'm noticing a potential mismatch in how event types are being handled. The traceProcessor preserves "declare" as-is, and ESB routes it to handleVariable, but LayoutEngine is checking for "var_declare" and "var_assign" as step types. The actual step type coming through might just be "declare" rather than the prefixed "var_declare", which would cause those conditional checks to fail silently. But the step.type (after traceProcessor normalization) for a declare event would be 'declare' (not 'var_declare'). So LayoutEngine would NOT match stepType === "var_declare" and would fall through all the checks without placing the variable!
+And var_assign - the assign event normalizes to 'assign', not 'var_assign'.
+Wait, but looking at traceProcessor's switch:
+typescriptcase 'var':
+  // handles variable...
+And declare maps to... looking at STEP_TYPE_MAP: declare: 'declare'. So 'declare' stays as 'declare'.
+But LayoutEngine checks for var_declare, not declare. So if the step type is 'declare', it won't be handled as a variable declaration in LayoutEngine!
+Now I need to find where LayoutEngine actually checks the stepType to see what it's matching against.Show lessRead the main processStep switch/if chain to find all stepType triggersFind all stepType checks for variables and eventsScriptCheck how stepType is derived at the top of processStep in LayoutEngineNow I see the key issue. At line 2483:
+typescriptconst stepType: string = (step as any).eventType || (step as any).type;
+The eventType is preferred. The raw backend events have eventType: "declare", eventType: "assign" etc. After traceProcessor, the step has BOTH eventType (original) AND type (normalized). So:
+
+For a declare event: step.eventType = "declare", step.type = "declare" (since 'declare' isn't in STEP_TYPE_MAP, stays as-is)
+stepType = "declare" (from eventType)
+
+LayoutEngine checks:
+
+stepType === "var_declare" → MISS (it's "declare" not "var_declare")
+stepType === "var_assign" → MISS (it's "assign" not "var_assign")
+
+So declare and assign events from the factorial trace are NOT handled by LayoutEngine's variable logic! They fall through all the if checks without creating any element! This is the root bug—the variable n in factorial-11 comes as declare/assign events from the backend, but LayoutEngine never processes them because it's looking for var_declare and var_assign instead.
+But wait, if that's true, then n in main shouldn't render either since it also comes through as declare/assign events. Yet the screenshot clearly shows n in main. Let me check if traceProcessor normalizes these event types through a STEP_TYPE_MAP—looking at the mapping, it just passes them through as-is without converting them to the var_declare/var_assign format that LayoutEngine expects. Hmm, 'declare' maps to 'declare' and 'assign' maps to 'assign'. Not 'var_declare'/'var_assign'.
+But wait - looking at the traceProcessor switch statement, it handles 'var' type specially, while 'declare' and 'assign' fall through to the default case without any special processing.
+After traceProcessor, the step has type = "declare" and eventType = "declare" (preserved). LayoutEngine uses stepType = (step as any).eventType || (step as any).type = "declare", then checks stepType === "var_declare" → MISS! But we SEE n rendered in the screenshot, so either LayoutEngine handles "declare" somewhere else, or the step actually has eventType = "var_declare" from the backend.
+Looking at the extractParameters function, it checks for step.eventType === 'var_declare', which suggests LayoutEngine expects 'var_declare' as eventType. The trace log shows type=declare, but that's the raw tracer output—the backend might actually send var_declare as the eventType in the JSON step, so the trace log could be simplified. I need to check what eventType the step actually has. I'm wondering if the backend is actually sending events with type='var' and a separate eventType field that specifies whether it's a declare or assign operation, which would explain why the traceProcessor's switch statement only checks for type='var' but the visualization still shows the variable declarations correctly. I'm realizing the backend might be converting the raw "declare" event type to something like "var_declare" before sending it to the frontend, so what appears in the internal trace logs as a "declare" event could actually be transmitted differently to the visualization layer. So ESB handles both 'declare' and 'var_declare' as case statements, but LayoutEngine only recognizes 'var_declare', which means the step's eventType must be normalized to 'var_declare' somewhere in the processing pipeline. Looking at the trace processor, it seems like the original eventType gets preserved while the type field gets normalized, so I need to trace through exactly where the eventType gets set to understand why LayoutEngine might not be receiving the right value.
+Actually, I'm realizing the backend's trace log showing 'declare' might be from before normalization happens—the actual step sent to the frontend could have a different type value, especially if the C tracer is sending something like type: "var" with variable metadata that gets converted during the node backend's processing.
+Let me assume the steps arriving at the frontend have the correct normalized types like var_declare, var_assign, condition, branch, and func_enter. The trace log is just showing the intermediate internal representation. Now I need to trace through the actual execution flow to find where the bug is occurring.
+With properly typed steps, the sequence should be: func_enter main sets up the main function, then var_declare n and var_assign n create and update the variable in main's scope. When we hit the condition and branch into the else block, func_enter factorial should trigger a recursive call, creating a new function element to the right. Inside factorial, we declare and assign n again, then evaluate another condition. The flow continues through the nested function calls and branches.
+Now I'm checking whether ESB's step type handling aligns with what the trace processor outputs—specifically whether condition_eval gets mapped to condition and if the conditional handler processes it correctly. B also checks 'condition_eval' explicitly, but if the step.type is now 'condition' and step.eventType is 'condition_eval':
+ESB processStep extracts the eventType by checking raw.eventType first, so if it's "condition_eval" it matches the case and calls handleConditionalStart. LayoutEngine does the same thing, prioritizing eventType and matching on "condition_eval" or "condition". The step types line up correctly.
+For branch_taken events, both ESB and LayoutEngine handle the various branch-related cases consistently. So the step type handling looks solid.
+But then why is the visualization showing the issue the user described? Looking at the actual trace, I see the condition_eval event firing for the main function at line 11, and ESB is generating a condition ID based on the conditionId from that event.
+The traceProcessor normalizes the condition step by preserving the expression and result fields, but doesn't explicitly modify the conditionId—it just carries through from the raw step. So if the raw event has conditionId set, it should persist through to the final step object. The conditionId should flow through properly since the backend tracks it and the condition_eval step has it, so the bridge and tree lookup should work. But I'm realizing the real blocker might be the isFunctionEntry flag—if that's not set on the func_enter step, the LayoutEngine skips the entire function frame creation, which would explain why the frame isn't being built at all.
+The backend doesn't seem to explicitly set isFunctionEntry, so if it's undefined, the func_enter block gets skipped entirely. Yet the screenshot clearly shows factorial frames exist, so somehow this flag must be getting set. Rather than trying to trace every detail without seeing the actual step JSON, I'm going to add comprehensive logging throughout the flow to pinpoint exactly where things break down, then fix it from there.
+The user is describing a specific visual bug: variables declared inside a condition body (like n in factorial) are sometimes rendering in the parent frame instead of inside the condition body. Also, output variables sometimes connect to main instead of staying in the condition.
+Let me analyze the trace carefully:
+The core issue from the trace:
+For factorial-11:
+
+Event 8: func_enter for factorial → creates frame factorial-11
+Event 9: declare n in factorial-11
+Event 10: assign n in factorial-11
+Event 11: block_enter in factorial-11 (line 23 — the if (n >= 1) block)
+Event 12: condition_eval (line 23) → creates condition cond-factorial-11-23-17
+Event 13: branch_taken → sets active control body for depth
+
+The issue is that n gets declared and assigned before the condition body is even created, so it ends up in the function frame rather than the condition scope. But wait — n is actually a parameter, so it should be in the function frame. Let me look more carefully at what the user is actually seeing versus what the trace shows.
+The real problem appears in the trace: when steps execute inside a condition body, the frameMetadata.conditionId is coming through as null instead of the actual condition ID like cond-main-0-11-7. So even though the condition is being created and entered, the steps happening within it aren't being tagged with the correct condition ID, which means they're not being properly scoped to that condition. The real issue is that when the condition evaluation step is built, the frame's conditionId metadata is null in the ESB, so subsequent steps don't know they should belong inside the condition body rather than at the parent frame level. The variable n is declared before the condition in the factorial function, so it should correctly appear in the frame, but the problem seems to be about which frame n is being associated with when rendering. The real issue is that scopeDepth isn't being set correctly when processing variable declarations and assignments inside condition bodies, so they end up placed in the parent frame instead of where they should be. I'm tracing through the factorial example to see exactly when the scope depth gets lost and why the return statement isn't landing in the else branch where it belongs. Looking at how ESB records steps to the current context, I need to understand whether the conditionId gets properly attached to steps that occur inside a condition body. The debug log format suggests ESB is tracking what the conditionId should be versus what's actually in the frame metadata, so I'm trying to trace through the step metadata building logic to see where the disconnect happens. Now I have the full picture. Let me analyze the exact bug:
+ESB does NOT write conditionId or scopeDepth back onto the raw step object. ESB builds an internal ExecutionGraph with stepToNode mapping, but does NOT mutate the actual steps that LayoutEngine reads.
+LayoutEngine reads conditionId and scopeDepth from the raw step object:
+
+step.scopeDepth → from getScopeDepth(step, frameId)
+step.conditionId → from `(stestep as any).conditionId (for branch_taken etc.) 
+The real issue is how variables get placed. When a var_declare or var_assign step fires, it has a scopeDepth from the trace, and getPlacementContext uses that to find the active control parent through depthMap. But this depthMap only gets populated when branch_taken steps fire, so if the variable declaration happens before the condition is fully resolved, the depth mapping might not be set up correctly yet.
+Then when func_enter processes a new frame, it's using resolveCallSiteScopeDepth instead of getPlacementContext, which means it's not checking the same placement logic that variables use.
+Looking back at the user's actual issues — variables on conditions rendering in the parent frame, output variables connecting back to main, and inconsistent behavior — I think the real problem is that the trace steps themselves don't include scopeDepth or conditionId metadata, so I can't actually verify where things should be placed. For instance, when return 1 executes in the base case, I don't know its scopeDepth, so I can't tell if it should go into the else body or the frame.
+The getScopeDepth function tries to work around this by falling back to a cached currentScopeDepth map that gets updated as control flow changes, but this is fragile and depends on the order of step processing.
+Looking at the actual symptom in the screenshot, the visualization is rendering correctly overall, but certain elements are ending up in the wrong containers. The real problem seems to be that variable declarations and assignments happen before the branch evaluation that would set the proper scope depth, so they're getting placed at the wrong nesting level.
+When factorial-11 enters, it should be positioned inside the else body of main's condition, but it's likely floating outside or in the parent frame instead. The issue is probably that the placement logic isn't correctly accounting for which branch body the caller should be nested within. I need to trace through what happens when func_enter for factorial-11 fires — by that point, main-0's currentScopeDepth should already reflect the activation depth from the branch_taken event that preceded it. The key is understanding how resolveControlBodyActivation determines the activation depth based on the scopeDepth from the branch event, and then how getActiveControlParent uses that depth to find the correct parent. Let me look at how resolveCallSiteScopeDepth actually resolves the call site's scope depth to see if there's a mismatch in how the depth is being calculated. Now I can see the root cause clearly.
+The resolveControlBodyActivation returns { activationDepth, ephemeral: !isDepthTagged }. Since the trace steps don't have explicit scopeDepth tags (hasExplicitScopeDepth(step) returns false for most steps), ephemeral: true.
+When ephemeral: true, setEphemeralControlForDepth is called. Ephemeral controls are temporary — they get cleaned up.
+The resolveBranchActivationDepth says:
+typescript
+
+return this.hasExplicitScopeDepth(step) ? scopeDepth + 1 : scopeDepth;
+So if branch_taken step has no explicit scopeDepth, the activationDepth = scopeDepth (not +1). And scopeDepth of branch_taken comes from getScopeDepth(step, frameId) which falls back to currentScopeDepth.get(frameId) which is 0 initially.
+So activationDepth = 0, and then setActiveControlForDepth(frameId, 0, conditionBody) registers the control at depth 0, but since it's ephemeral, it gets cleaned up before the next step executes.
+When func_enter for the next factorial runs, resolveCallSiteScopeDepth returns frameDepth = 0 from the parent frame, and getActiveControlParent('main-0', 0) should find the condition body in the depth map — but the ephemeral flag means that control was already removed, so the lookup fails and theShow less
+ So if branch_taken step has no explicit scopeDepth, the activationDepth = scopeDepth (not +1). And scopeDepth of branch_taken comes from getScopeDepth(step, frameId) which falls back to currentScopeDepth.get(frameId) which is 0 initially.
+So activationDepth = 0, and then setActiveControlForDepth(frameId, 0, conditionBody) registers the control at depth 0, but since it's ephemeral, it gets cleaned up before the next step executes.
+When func_enter for the next factorial runs, resolveCallSiteScopeDepth returns frameDepth = 0 from the parent frame, and getActiveControlParent('main-0', 0) should find the condition body in the depth map — but the ephemeral flag means that control was already removed, so the lookup fails and the call site doesn't get placed inside the condition body as it should.
+Now I'm looking at how ephemeral controls are marked and evicted — when an activation is ephemeral, setEphemeralControlForDepth registers it, and then markEphemeralControlUsed gets called when variables are placed inside to track that the control is actually being used.
+But I think I've found the real issue: branch_taken doesn't have an explicit scopeDepth, so activationDepth ends up being 0, the same depth as the frame itself. The bug is that resolveBranchActivationDepth uses scopeDepth directly instead of scopeDepth + 1 when there's no explicit scope depth tag, which means the condition body competes with the base frame at the same depth level. This causes the intermittent behavior where getActiveControlParent sometimes finds the branch state when it's active, but then after the body gets used, it gets evicted and subsequent lookups fail.
+The real fix is for ESB to write the scopeDepth back onto each step it processes, so LayoutEngine can reliably determine the correct scope depth without relying on missing metadata. When ESB processes a branch_taken step, it should annotate it with the proper depth so the condition body becomes permanent rather than ephemeral. Root Cause Analysis
+The fundamental problem:
+
+branch_taken steps have NO scopeDepth field in the trace → hasExplicitScopeDepth(step) returns false → resolveControlBodyActivation returns { activationDepth: scopeDepth, ephemeral: true } → The condition body is registered as ephemeral at the same depth as the frame (depth 0)
+Because the body is ephemeral: after the first element is placed inside it (markEphemeralControlUsed marks it), the next step on a different line triggers pruneEphemeralControls which evicts the body.
+Once evicted, subsequent elements like n, return values, and output fall back to the frame instead of staying in the condition body.
+This creates the "sometimes works, sometimes not" behavior: the FIRST element after branch_taken lands in the body correctly (it's still active), but everything after gets evicted and falls back to the frame.
+ESB never writes conditionId or scopeDepth back onto step objects, so LayoutEngine has no structured way to know which steps belong inside which condition body.
+
+The Fix
+The correct approach: ESB should annotate each step with its context (conditionId, scopeDepth) so LayoutEngine can use structured placement rather than fragile depth heuristics.
+Specifically:
+
+In ESB processStep: After determining the context (frame, conditionStack, loopStack), write raw.conditionId, raw.loopId, and raw.scopeDepth back onto the step object before ESB internal node creation. This gives LayoutEngine reliable context.
+In LayoutEngine branch_taken: When a body is created and no explicit scopeDepth exists, force activationDepth = 1 (not 0) so the body is at depth > 0 and doesn't collide with the frame depth. Also mark it as permanent (not ephemeral) since we're inside braced blocks.
+In LayoutEngine resolveBranchActivationDepth: Always return scopeDepth + 1 to ensure proper nesting depth calculation.
+ESB scope depth annotation: For each step, compute the actual scope depth (conditionStack.length + loopStack.length) and write it back to raw.scopeDepth so LayoutEngine can rely on explicit depth values rather than inferring them. Now I have the complete picture. Let me trace the exact scenario step by step to confirm the bug:
+Scenario: Event 7 (branch_taken for else in main) → Event 8 (func_enter factorial-11)
+At Event 7 (branch_taken):
+
+frameId = main-0
+scopeDepth = getScopeDepth(step, 'main-0') = currentScopeDepth.get('main-0') = 0 (because block_enter step at Event 6 set it, but Event 6 has no explicit scopeDepth either → falls back to currentScopeDepth.get('main-0') which is 0)
+The activation resolver determines there's no explicit scope depth, so it registers the else body as ephemeral at depth 0 for the main frame.
+
+At Event 8, when the factorial function enters, the scope depth calculation doesn't account for the ephemeral control structure that was just registered, causing the mismatch. (func_enter factorial-11):
+
+parentFrameId = main-0
+callScopeDepth = resolveCallSiteScopeDepth(...):
+
+prevStep = branch_taken step
+prevDepth = getScopeDepth(prevStep, 'main-0') = 0 (no scopeDepth on step, falls back to currentScopeDepth.get('main-0') = 0)
+frameDepth = getFrameScopeDepthSnapshot('main-0') = currentScopeDepth.get('main-0') = 0
+baseDepth = max(0, 0) = 0
+Returns 0
+
+
+getPlacementContext(parentFrame, 'main-0', 0, stepIndex):
+
+resolvePlacementParent(ownerFrame, 'main-0', 0, stepIndex):
+
+getActiveControlParent('main-0', 0):
+
+depth 0: elseBodyId is registered, branchState is 'active', controlRole is 'body' → FOUND!
+Returns the else body
+
+
+Returns else body
+
+
+Returns placement inside else body ✓
+
+
+callElement.parentId = elseBodyId → call_site goes inside else body ✓
+markEphemeralControlUsed('main-0', 0, elseBodyId, stepIndex, callLine) marks the body as used at this step, then at the next step after Event 8 processes for main...
+
+When processing resumes at Event 46 (assign fact) at a different line, the pruning logic evicts the else body since it was marked used at step 8 but we're now at step 46 with a different line number, so subsequent statements like the assignment fall back to the main-0 frame directly.
+The real issue is that condition bodies created from branch_taken are always marked ephemeral because trace steps lack scopeDepth information, causing them to be cleaned up prematurely even though the else block doesn't actually exit until Event 48.
+The solution is to have ESB annotate each step with the current scope depth before processing, so LayoutEngine can determine whether a body should persist beyond its initial use.
+Annotating steps with scope depth... I see there's a timing issue with when annotations happen relative to handler execution. For condition_eval, the annotation captures scopeDepth = 0 before the condition gets pushed onto the stack, but then the handler pushes it, making the depth 1 afterward. For branch_taken, the condition is already on the stack from the previous step, so scopeDepth = 1 is correct. Inside conditions, variables see the right depth since the condition is already active. When entering a nested function like factorial-11 from main-0's context, I need to track that main-0 still has its condition on the stack.
+The problem is that func_enter uses the new frame's ID (factorial-11), but that frame doesn't exist yet when the annotation tries to look it up, so it returns null and the annotation fails. What I actually need is the parent frame's (main-0's) scope depth at the call site, not the new frame's depth. I need to handle func_enter specially to capture the caller's context instead of waiting for the callee's frame to exist.
+Annotating steps with parent scope depth... me think through the LayoutEngine side—if a step has an explicit parentScopeDepth, I should use that in resolveCallSiteScopeDepth. For the branch_taken events, I could make them non-ephemeral by default since block_exit already handles cleanup properly, though I need to be careful about braceless if statements that might not trigger cleanup.
+The real solution is to annotate raw.scopeDepth in ESB's processStep with the current frame's scope depth before dispatching, using the parent frame's depth for func_enter calls.
+Adding scope annotation to steps... I need to access the current step from the execution trace to check if it has a callerScopeDepth property, so I'll extract it using the stepIndex and cast it to check for that field. If it exists and is a valid number, I'll use it as the explicit caller depth, otherwise I'll fall back to the frame depth calculation.
+Now I'm working through the n variable issue for the factorial case — tracing through the condition stack at the return statement to verify what scope depth should be annotated. I'm tracking how the branch_taken step gets processed in LayoutEngine—it has an explicit scope depth of 1, which sets the activation depth to 2 and registers the else body as the active control at that depth. Then when the return step comes through with its own scope depth of 1, I need to check what active control is registered at that depth for the factorial frame.
+The issue is becoming clearer: the return step is actually nested inside the else body, so it should have a scope depth of 2 to match where the else body was registered, but the ESB only has a condition stack length of 1 at that point. The mismatch between where the else body is registered (depth 2) and where the return step is looking (depth 1) is causing the lookup to fail and fall back to the frame instead of finding the correct control parent. depths <= scopeDepth. So if body is at depth 2 and scopeDepth = 1, depth 2 > 1, so it's skipped.
+If body is at depth 1 and scopeDepth = 1, depth 1 <= 1, found! ✓
+So the activation depth should be = 1 (same as the annotation depth), NOT +1. The resolveBranchActivationDepth formula scopeDepth + 1 when explicit is wrong for this scenario.
+Actually let me re-read: hasExplicitScopeDepth returns true when scopeDepth has an explicit value. Currently:
+
+resolveBranchActivationDepth: explicit → scopeDepth + 1, else → scopeDepth
+
+The intent was: if there's an explicit depth tag, the body should be at depth+1, but for implicit cases use the same depth.
+With ESB annotation: the branch_taken step has scopeDepth = 1 (conditionStack.length = 1), and hasExplicitScopeDepth = true, so activationDepth = 2. But the return step also has scopeDepth = 1, so it can't find a body at depth 2. The return step would need scopeDepth = 2 to work, but ESB's conditionStack only has length 1 at that point—it tracks which conditions we're inside but doesn't distinguish between being at the condition header versus inside the condition body.
+The real fix is to track a separate depth counter that increments after branch_taken fires (when we're actually inside the body) and decrements at block_exit, rather than relying on conditionStack.length.
+Now I'm tracing through the execution: main starts with depth 0, the condition evaluation annotates n at depth 0, then branch_taken increments to 1 before entering the else body. When factorial-11 is called, it captures the parent's depth of 1 for the caller annotation. Inside factorial-11, the local scope starts fresh at depth 0, so variable declarations and assignments there get annotated correctly.
+Continuing this pattern through factorial-19 and into the base case in factorial-35: variables declared and assigned stay at depth 0 within that frame, the condition evaluation for the base case check happens at depth 0, but I need to verify how block_exit should handle the scope depth when the if branch isn't taken. I see the pattern now—block_exit fires for the not-taken if branch while block_enter fires for the else branch that actually executes. So tracking scope depth through branch_taken events makes more sense: when the else branch is taken, activeScopeDepth increments to 1, and the return statement inside sees that depth. Now I need to check how LayoutEngine handles the branch_taken event to properly sync the scope tracking. with scopeDepth = 0 (annotated before branch_taken increment):
+
+activationDepth = 0 + 1 = 1 (explicit +1)
+Body registered at depth 1
+Ephemeral: false (explicit depth)
+
+Then return step with scopeDepth = 1:
+
+getActiveControlParent(depth=1): body at depth 1 ≤ 1 → FOUND ✓
+Return element goes inside condition body ✓
+
+For n in factorial-35 (before any condition):
+
+scopeDepth = 0 → getActiveControlParent(depth=0): body not yet registered → frame ✓
+
+So the tracking approach is: ESB tracks activeScopeDepth per frame, incrementing at branch_taken and decrementing at block_exit. The tricky part is that block_exit fires for both taken and not-taken branches, so I need to only decrement when exiting a branch that actually had its depth incremented. Looking at the actual event sequence: condition evaluation happens at depth 0, then block_exit fires for the not-taken branch (no decrement needed), then branch_taken increments the depth before the body executes, and finally block_exit for the taken branch decrements it back. and we decrement at block_exit. We need to be careful about spurious block_exit calls (for not-taken branches).
+The approach: track a pendingBodyDepth counter per frame. When branch_taken fires, increment activeScopeDepth. When block_exit fires, only decrement if activeScopeDepth > 0.
+Let me trace factorial-35 again:
+
+Start: activeScopeDepth = 0
+block_enter (29): → no change
+condition_eval (30): annotate depth = 0 → no change
+block_exit (31): activeScopeDepth is 0 → DON'T decrement (guard: max(0, depth-1) but current is already 0)
+block_enter (32): → no change
+branch_taken (33): annotate depth = 0, then activeScopeDepth++ → 1
+return (35): annotate depth = 1 ✓
+func_exit (36): no annotation
+
+Now tracing factorial-11 with n=2 taking the if-true branch: I start at depth 0, evaluate the condition, then when the branch fires I increment to depth 1. When factorial-19 enters as a nested call, it should capture that parent depth of 1 as its caller scope depth. The block_exit for the else fires at Event 48, but the assign fact happens earlier at Event 46 while activeScopeDepth is still 1, so it correctly gets placed inside the else body. After the block exits, the depth decrements back to 0, and then the return and func_exit events complete with depth 0 as expected. I need to check if there's actually a printf output step in the trace for main since I'm not seeing it yet.
+Now I'm working through the core fixes needed: the ESB needs to track activeScopeDepth per frame, incrementing at branch_taken and decrementing at block_exit, then annotating each step with this depth before dispatch. For function entries, I'll also capture the parent frame's scope depth as callerScopeDepth. The LayoutEngine will then use callerScopeDepth to determine...
+Checking for explicit caller depth in the execution trace...
+And for branch activation, when we have explicit scopeDepth from the annotation, the activation depth becomes scopeDepth plus one.  The body elements at that depth get properly retained until block_exit fires and triggers the scope pruning. For block_exit events, the annotated scopeDepth reflects the depth after decrementing, so pruning removes all bodies deeper than that scope level.
+Looking at the LayoutEngine logic, when a block_exit step comes through with its annotated scopeDepth, it calculates the effective depth by subtracting 1 from that value, clamped to 0. So with scopeDepth = 1 on the block_exit, the pruning depth becomes 0, which clears out the bodies that were added at depth 1.
+Now I'm checking what happens when activeScopeDepth is already 0 at block_exit—meaning we're exiting a branch that was never entered. The annotation would be 0, and LayoutEngine would compute 0 - 1 = -1, clamped to 0, so no pruning occurs. The block_exit annotation for the post-body case should capture activeScopeDepth = 1 before decrementing, which then becomes 0 in the layout engine, allowing it to prune the condition body at depth 1. The fix is straightforward: add an activeScopeDepth field to the builder frame initialized to 0, then update it in the step processor before the switch statement.
+Setting up the scope depth assignment... I'm checking the timing of when activeScopeDepth gets captured versus when it's modified—for branch_taken, the annotation should capture it before the handler increments it, so LayoutEngine receives scopeDepth = 0 and calculates activationDepth = 1 correctly. Now I need to figure out exactly where in handleConditionalBranch to increment activeScopeDepth.
+Implementing the handler logic... I'm tracking scope depth through block entry and exit events, incrementing on branch_taken and decrementing safely on block_exit with a guard to prevent negative values. The issue is that spurious block_exits for untaken branches are harmlessly ignored since activeScopeDepth starts at zero, but I'm noticing the else branch in factorial-35 doesn't have a corresponding block_exit after the return statement, which means the scope depth annotation at func_exit might not be capturing the right value. After the recursive calls unwind, factorial-11 returns with its activeScopeDepth still at 1 (from the branch_taken event), so the return statement correctly gets annotated as being inside the if-true branch body. Now I need to check whether there's a block_exit event for that if branch to properly close out the scope depth tracking. Looking at the trace, I need to verify that after factorial-11 returns to main-0, the assignment and subsequent control flow events maintain the correct scope depth of 1 while still inside the else body, and then when the block_exit fires for the else clause, the scope depth gets properly decremented back to 0.
+Now I'm examining the handleBlockExit logic and realizing there's a timing issue: the condition stack pop happens inside the handler after the annotation is captured, but the annotation fires before dispatch, so there's a mismaShow less

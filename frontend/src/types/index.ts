@@ -21,6 +21,7 @@ export type StepType =
   | 'heap_allocation'
   | 'heap_free'
   | 'loop_start'
+  | 'loop_body_start'
   | 'loop_iteration'
   | 'loop_compressed'
   | 'loop_end'
@@ -324,3 +325,20 @@ export interface StepExecutionState {
   variables: any;
   changes?: any[];
 }
+
+// ============================================
+// EXECUTION GRAPH TYPES
+// ============================================
+
+export type {
+  ExecutionNodeType,
+  ExecutionNode,
+  ExecutionEdge,
+  ExecutionEdgeType,
+  ExecutionPath,
+  ExecutionGraph,
+  ExecutionGraphMetadata,
+  ConditionContext,
+  LoopContext,
+  BuilderFrame,
+} from './execution-graph.types';

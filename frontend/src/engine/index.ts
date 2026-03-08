@@ -17,3 +17,5 @@ export type { CameraTransform, FocusOptions } from './camera';
 
 export { AnimationController } from './animationController';
 export type { AnimationTarget } from './animationController';
+
+export { ExecutionStructureBuilder } from './ExecutionStructureBuilder';

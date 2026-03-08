@@ -37,6 +37,7 @@ export default function StepInfo() {
       case 'heap_free':
         return COLORS.memory.heap.DEFAULT;
       case 'loop_start':
+      case 'loop_body_start':
       case 'loop_iteration':
         return COLORS.flow.control.DEFAULT;
       case 'input_request':

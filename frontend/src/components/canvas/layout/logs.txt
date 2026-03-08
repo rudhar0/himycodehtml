@@ -1,0 +1,19 @@
+﻿
+LayoutEngine.ts:783:          // 
+console.log(`[LE tree HIT] step 
+${stepIndex} → parent "${node.parentId}" 
+(direct)`);
+LayoutEngine.ts:1807:          
+console.log(`[LE bridge] body 
+"${body.id}" → tree node "${gNodeId}" 
+(condId: ${condId})`);
+LayoutEngine.ts:3384:                
+console.log(`[LE bridge] iteration 
+"${iterationId}" → tree node 
+"${treeIterNodeId}"`);
+LayoutEngine.ts:3725:    console.log('🔍 
+Validating Layout...');
+LayoutEngine.ts:3737:    console.log('✅ 
+Layout validation complete');
+
+

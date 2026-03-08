@@ -65,6 +65,7 @@ class InstrumentationTracer {
         this.addressToName = new Map();
         this.addressResolutionCache = new Map();
         this.activeProcesses = new Set();
+        this._stdoutLineBuffer = '';
     }
 
     registerProcess(proc) {
@@ -162,8 +163,8 @@ class InstrumentationTracer {
             scopeStack: [],
             // FIX Bug 1: Inherit condition context from parent so recursive/nested
             // calls stay inside their branch container.
-            conditionStack: parentFrame?.conditionStack ? [...parentFrame.conditionStack] : [],
-            activeConditionId: parentFrame?.activeConditionId || null,
+            conditionStack: [],
+            activeConditionId: null,
             // FIX Bug 2: Inherit loop context from parent so calls inside loops keep loopId.
             loopStack: parentFrame?.loopStack ? [...parentFrame.loopStack] : [],
             activeLoopId: parentFrame?.activeLoopId || null,
@@ -601,12 +602,21 @@ class InstrumentationTracer {
             let stdout = '', stderr = '';
             const stdoutChunks = [];
             const stdoutTimestamps = [];
+            this._stdoutLineBuffer = '';
 
             proc.stdout.on('data', d => {
                 const chunk = d.toString();
-                stdout += chunk;
-                stdoutChunks.push(chunk);
-                stdoutTimestamps.push(Date.now() * 1000);
+                this._stdoutLineBuffer += chunk;
+
+                let newlineIndex;
+                while ((newlineIndex = this._stdoutLineBuffer.indexOf('\n')) !== -1) {
+                    const completeLine = this._stdoutLineBuffer.substring(0, newlineIndex + 1);
+                    this._stdoutLineBuffer = this._stdoutLineBuffer.substring(newlineIndex + 1);
+
+                    stdout += completeLine;
+                    stdoutChunks.push(completeLine);
+                    stdoutTimestamps.push(Date.now() * 1000);
+                }
             });
             proc.stderr.on('data', d => stderr += d.toString());
 
@@ -618,6 +628,15 @@ class InstrumentationTracer {
 
             proc.on('close', async (code) => {
                 clearTimeout(timeout);
+
+                // Flush any remaining partial line
+                if (this._stdoutLineBuffer.length > 0) {
+                    stdout += this._stdoutLineBuffer;
+                    stdoutChunks.push(this._stdoutLineBuffer);
+                    stdoutTimestamps.push(Date.now() * 1000);
+                    this._stdoutLineBuffer = '';
+                }
+
                 if (code === 0 || code === null) {
                     resolve({ stdout, stderr, stdoutChunks, stdoutTimestamps });
                 } else {
@@ -760,6 +779,32 @@ class InstrumentationTracer {
                 pendingOutputQueue.push({ text, ts });
             }
             pendingOutputQueue.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+            // FIX 3: Defensive merge pass (Part B)
+            // Combine chunks that do not end with a newline to ensure one printf => one step.
+            if (pendingOutputQueue.length > 1) {
+                const mergedQueue = [];
+                let currentChunk = null;
+
+                for (const item of pendingOutputQueue) {
+                    if (currentChunk === null) {
+                        currentChunk = { ...item };
+                    } else {
+                        currentChunk.text += item.text;
+                        // Keep the earlier timestamp
+                    }
+
+                    if (item.text.endsWith('\n')) {
+                        mergedQueue.push(currentChunk);
+                        currentChunk = null;
+                    }
+                }
+                if (currentChunk !== null) {
+                    mergedQueue.push(currentChunk);
+                }
+                pendingOutputQueue.length = 0;
+                pendingOutputQueue.push(...mergedQueue);
+            }
         } else {
             const normalizedLines = tracePlatformAdapter.normalizeOutputEvents(outputLines);
             for (let idx = 0; idx < normalizedLines.length; idx++) {
@@ -1277,6 +1322,20 @@ class InstrumentationTracer {
                 // Capture caller's metadata including conditionId before pushing new frame
                 const parentMetadata = this.getCurrentFrameMetadata();
 
+                // BUG 1 Fix: Defensive: also read directly from conditionStack top (in case activeConditionId is stale)
+                const _parentFrame = this.frameStack[this.frameStack.length - 1];
+                const _parentConditionId = (
+                    _parentFrame?.conditionStack?.length > 0
+                        ? _parentFrame.conditionStack[_parentFrame.conditionStack.length - 1].conditionId
+                        : null
+                ) || parentMetadata.conditionId || null;
+
+                const _parentLoopId = (
+                    _parentFrame?.loopStack?.length > 0
+                        ? _parentFrame.loopStack[_parentFrame.loopStack.length - 1]
+                        : null
+                ) || parentMetadata.loopId || null;
+
                 const newFrame = enterFunctionFrame(info.function);
                 validateFrameStack(`Entering ${info.function}`);
 
@@ -1294,15 +1353,15 @@ class InstrumentationTracer {
                     explanation: `➡️ Entering ${info.function}`,
                     internalEvents: [],
                     frameId: newFrame.frameId,
-                    conditionId: parentMetadata.conditionId || null, // Inherit caller's active branch
-                    loopId: parentMetadata.loopId || null,
+                    conditionId: _parentConditionId, // BUG 1 Fix: Inherit caller's active branch
+                    loopId: _parentLoopId,
                     callDepth: newFrame.callDepth,
                     callIndex: newFrame.entryCallIndex,
                     parentFrameId: newFrame.parentFrameId,
                     parentId: newFrame.frameId,
                     isFunctionEntry: true
                 });
-                console.log('[ENTER]', newFrame.frameId, 'cond:', parentMetadata.conditionId || null, 'loop:', parentMetadata.loopId || null);
+                console.log('[ENTER]', newFrame.frameId, 'cond:', _parentConditionId, 'loop:', _parentLoopId);
                 continue;
             }
 
@@ -1372,10 +1431,12 @@ class InstrumentationTracer {
                     continue;
                 }
 
-                // Preserve condition context for the exit/return steps
-                const frameConditionId = exitingFrame.conditionStack && exitingFrame.conditionStack.length > 0
-                    ? exitingFrame.conditionStack[exitingFrame.conditionStack.length - 1].conditionId
-                    : exitingFrame.activeConditionId || null;
+                // BUG 2 Fix: Preserve condition context for the exit/return steps using lastKnownConditionId fallback
+                const frameConditionId = (
+                    exitingFrame.conditionStack && exitingFrame.conditionStack.length > 0
+                        ? exitingFrame.conditionStack[exitingFrame.conditionStack.length - 1].conditionId
+                        : null
+                ) || exitingFrame.activeConditionId || exitingFrame.lastKnownConditionId || null;
 
                 const frameLoopId = exitingFrame.activeLoops && exitingFrame.activeLoops.size > 0
                     ? Array.from(exitingFrame.activeLoops.keys()).pop()
@@ -1490,6 +1551,8 @@ class InstrumentationTracer {
                         });
                     }
                     currentFrame.activeConditionId = conditionId;
+                    // BUG 2 Fix: Snapshot: always track the most recent conditionId regardless of stack mutations
+                    currentFrame.lastKnownConditionId = conditionId;
                     // Register raw integer id → stable string id so branch_taken can look it up
                     if (ev.conditionId !== undefined && ev.conditionId !== null) {
                         const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
@@ -1538,6 +1601,8 @@ class InstrumentationTracer {
                         });
                     }
                     currentFrame.activeConditionId = conditionId;
+                    // BUG 2 Fix: Snapshot: always track the most recent conditionId regardless of stack mutations
+                    currentFrame.lastKnownConditionId = conditionId;
                     // Register raw integer id → stable string id so branch_taken can look it up
                     if (ev.conditionId !== undefined && ev.conditionId !== null) {
                         const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
@@ -1568,8 +1633,9 @@ class InstrumentationTracer {
 
             } else if (ev.type === 'branch_taken') {
                 // Prefer the raw integer conditionId from the trace event (most accurate).
-                // Fall back to the condition stack top if the raw id is missing.
-                let conditionId = frameMetadata.conditionId;
+                // Fall back to the condition stack top if the raw id is missing, or lastKnownConditionId
+                // if the condition block just closed and popped the stack.
+                let conditionId = frameMetadata.conditionId || (currentFrame ? currentFrame.lastKnownConditionId : null) || null;
                 if (ev.conditionId !== undefined && ev.conditionId !== null) {
                     const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
                     const stableId = rawConditionIdToStable.get(rawKey);
@@ -1595,25 +1661,29 @@ class InstrumentationTracer {
                     internalEvents: [],
                 };
 
-                // After emitting an else or else-if step, pop the matching condition from the
-                // stack so it no longer poisons subsequent branch lookups.
-                const branchTypeLower = String(ev.branchType || '').toLowerCase();
-                if (
-                    currentFrame &&
-                    currentFrame.conditionStack &&
-                    (branchTypeLower === 'else' || branchTypeLower === 'else-if' || branchTypeLower === 'elseif')
-                ) {
-                    const matchingIndex = currentFrame.conditionStack.findIndex(entry => {
-                        if (ev.conditionId === undefined || ev.conditionId === null) return false;
-                        const rawKey = `${frameMetadata.frameId}:${ev.conditionId}`;
-                        return rawConditionIdToStable.get(rawKey) === entry.conditionId;
-                    });
-                    if (matchingIndex !== -1) {
-                        currentFrame.conditionStack.splice(matchingIndex, 1);
-                        currentFrame.activeConditionId = currentFrame.conditionStack.length > 0
-                            ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1].conditionId
-                            : null;
+                // CRITICAL FIX: re-push conditionId onto conditionStack for the branch body.
+                // block_exit (condition evaluation scope) pops the condition BEFORE branch_taken fires.
+                // Without this, all events inside the branch body (including func_enter calls) see
+                // an empty conditionStack and get conditionId: null.
+                if (currentFrame && conditionId) {
+                    const branchBodyDepth = (ev.blockDepth !== undefined)
+                        ? ev.blockDepth
+                        : currentFrame.blockScopes.length;
+                    const alreadyTracked = currentFrame.conditionStack.some(
+                        e => e.conditionId === conditionId
+                    );
+                    if (!alreadyTracked) {
+                        currentFrame.conditionStack.push({
+                            conditionId,
+                            blockDepthAtPush: branchBodyDepth
+                        });
                     }
+                    currentFrame.activeConditionId = conditionId;
+                    // Keep lastKnownConditionId in sync
+                    currentFrame.lastKnownConditionId = conditionId;
+                    console.log('[DEBUG BRANCH_TAKEN] Pushed conditionId:', conditionId, 'stack length:', currentFrame.conditionStack.length, 'depth:', branchBodyDepth);
+                } else {
+                    console.log('[DEBUG BRANCH_TAKEN] Failed to push. currentFrame:', !!currentFrame, 'conditionId:', conditionId);
                 }
 
             } else if (ev.type === 'conditional_branch') {
@@ -1959,6 +2029,10 @@ class InstrumentationTracer {
                 });
 
             } else if (ev.type === 'block_exit') {
+                // FIX 2: snapshot context BEFORE mutations
+                const condBefore = currentFrame?.activeConditionId || null;
+                const loopBefore = currentFrame?.activeLoopId || null;
+
                 if (currentFrame && currentFrame.scopeStack.length > 0) {
                     const topScope = currentFrame.scopeStack[currentFrame.scopeStack.length - 1];
                     if (topScope.type === 'block') {
@@ -1978,7 +2052,9 @@ class InstrumentationTracer {
                                 destroyedSymbols: destroyedSymbols,
                                 explanation: `} Block scope exit - destroying: ${destroyedSymbols.join(', ')}`,
                                 internalEvents: [],
-                                ...frameMetadata
+                                ...frameMetadata,
+                                conditionId: condBefore,
+                                loopId: loopBefore
                             });
                         }
 
@@ -2020,7 +2096,9 @@ class InstrumentationTracer {
                     blockDepth: ev.blockDepth || 0,
                     explanation: `} Exiting code block`,
                     internalEvents: [],
-                    ...frameMetadata
+                    ...frameMetadata,
+                    conditionId: condBefore,
+                    loopId: loopBefore
                 });
 
             } else if (ev.type === 'array_create') {

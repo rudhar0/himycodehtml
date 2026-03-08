@@ -22,6 +22,7 @@ export type BackendStepType =
   | 'condition_evaluation'
   | 'loop_iteration'
   | 'loop_start'
+  | 'loop_body_start'
   | 'loop_end'
   | 'heap_allocation'
   | 'heap_deallocation'
@@ -81,6 +82,7 @@ const STEP_TYPE_MAPPING: Record<BackendStepType, FrontendAnimationAction> = {
   
   // Control flow (LEGACY support)
   'loop_start': 'animateLoopPulse',
+  'loop_body_start': 'animateLoopPulse',
   'loop_end': 'animateLoopPulse',
   
   // I/O
