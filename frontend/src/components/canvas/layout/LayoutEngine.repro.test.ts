@@ -35,7 +35,7 @@ describe("LayoutEngine Reproduction BUG", () => {
       { eventType: "var_declare", frameId: "main-0", name: "insideIf", line: 3 }, 
     ]);
 
-    const layout = LayoutEngine.calculateLayout(trace, null, trace.steps.length - 1, 1200, 800);
+    const layout = LayoutEngine.calculateLayout(trace, null, trace.steps.length - 1, 1200);
     const varElement = layout.elements.find((el) => el.id.startsWith("var-main-0-insideIf"));
     const body = layout.elements.find(
       (el) => el.type === "condition" && el.data?.controlRole === "body" && el.data?.controlKind === "if",

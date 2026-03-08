@@ -321,6 +321,8 @@ export class LayoutEngine {
     { groupId: string; stepIndex: number; line: number; scopeDepth: number }
   > = new Map();
   private static currentScopeDepth: Map<string, number> = new Map();
+  private static bodyByStepKey: Map<string, LayoutElement> = new Map();
+  private static conditionTree: { nodes: Map<string, any> } | null = null;
   private static rightFlowOccupancy: Map<
     string,
     Array<{ x: number; y: number; width: number; height: number }>
@@ -766,13 +768,44 @@ export class LayoutEngine {
     ownerFrame: LayoutElement,
     frameId: string,
     scopeDepth: number,
+    step?: any,
   ): LayoutElement {
+    const debugType = step ? String((step as any).eventType || (step as any).type || '?') : '?';
+    const debugKey = step?.stepKey ?? 'none';
+    const debugParentKey = step?.placementParentKey ?? 'none';
+
+    // Layer 1 — StepKey: direct lookup via placementParentKey
+    if (step?.placementParentKey) {
+      const body = this.bodyByStepKey.get(step.placementParentKey);
+      if (body) {
+        console.log('[PLACEMENT] Layer1-StepKey', debugType, debugKey, '→ parent:', debugParentKey, 'bodyId:', body.id);
+        return body;
+      }
+    }
+
+    // Layer 2 — ConditionTree: lookup via conditionId
+    if (step?.conditionId && this.conditionTree) {
+      const node = this.conditionTree.nodes.get(String(step.conditionId));
+      if (node?.takenBranchStepKey) {
+        const body = this.bodyByStepKey.get(node.takenBranchStepKey);
+        if (body) {
+          console.log('[PLACEMENT] Layer2-Tree', debugType, debugKey, 'conditionId:', step.conditionId, '→ bodyId:', body.id);
+          return body;
+        }
+      }
+    }
+
+    // Layer 3 — Depth (existing fallback)
     const controlParent = this.getActiveControlParent(frameId, scopeDepth);
-    if (controlParent) return controlParent;
+    if (controlParent) {
+      console.log('[PLACEMENT] Layer3-Depth', debugType, debugKey, '→ bodyId:', controlParent.id);
+      return controlParent;
+    }
 
     const loopParent = this.getLoopContainerParent(frameId);
     if (loopParent) return loopParent;
 
+    console.log('[PLACEMENT] Layer3-Frame fallback', debugType, debugKey, '→ ownerFrame:', ownerFrame.id);
     return ownerFrame;
   }
 
@@ -780,6 +813,7 @@ export class LayoutEngine {
     ownerFrame: LayoutElement,
     frameId: string,
     scopeDepth: number,
+    step?: any,
   ): {
     parent: LayoutElement;
     x: number;
@@ -788,7 +822,7 @@ export class LayoutEngine {
     isFrameParent: boolean;
     lane?: LaneState;
   } {
-    const parent = this.resolvePlacementParent(ownerFrame, frameId, scopeDepth);
+    const parent = this.resolvePlacementParent(ownerFrame, frameId, scopeDepth, step);
     const isFrameParent = parent.id === ownerFrame.id;
     const indent = getIndentSize(ownerFrame);
 
@@ -1156,6 +1190,7 @@ export class LayoutEngine {
     functionName: string,
     returnValue: any,
     scopeDepth: number,
+    step?: any,
     stepLine?: number,
   ): void {
     const hasRecentReturn = (funcFrame.children || []).some((child) => {
@@ -1171,7 +1206,7 @@ export class LayoutEngine {
       }
     }
 
-    const placement = this.getPlacementContext(funcFrame, frameId, scopeDepth);
+    const placement = this.getPlacementContext(funcFrame, frameId, scopeDepth, step);
 
     const returnElement: LayoutElement = {
       id: `return-${frameId}-${stepIndex}`,
@@ -1401,7 +1436,11 @@ export class LayoutEngine {
     step: ExecutionStep,
     scopeDepth: number,
   ): number {
-    return this.hasExplicitScopeDepth(step) ? scopeDepth + 1 : scopeDepth;
+    // traceProcessor stamps scopeDepth AFTER block_enter already ran.
+    // So branch_taken.scopeDepth is already the inside-body depth.
+    // Adding +1 here registers the body at depth N+1 while all elements
+    // inside arrive at depth N — they can never find the body.
+    return scopeDepth;
   }
 
   private static resolveIfGroupForBranch(
@@ -1730,6 +1769,7 @@ export class LayoutEngine {
   private static createOrGetControlGroupContainer(
     layout: Layout,
     ownerFrame: LayoutElement,
+    step: any,
     frameId: string,
     scopeDepth: number,
     stepIndex: number,
@@ -1744,10 +1784,11 @@ export class LayoutEngine {
       }
     }
 
-    const parent = this.getControlParentForDepth(ownerFrame, frameId, scopeDepth);
-    const placement = this.resolveControlContainerPlacement(
+    const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
+    
+    const resolvePlacement = this.resolveControlContainerPlacement(
       ownerFrame,
-      parent,
+      placement.parent,
       frameId,
     );
 
@@ -1755,9 +1796,9 @@ export class LayoutEngine {
       id: `control-group-${groupId}`,
       type: "condition",
       subtype: "group",
-      x: placement.x,
-      y: placement.y,
-      width: Math.max(240, Math.min(CONTROL_BASE_WIDTH, placement.width)),
+      x: resolvePlacement.x,
+      y: resolvePlacement.y,
+      width: Math.max(240, Math.min(CONTROL_BASE_WIDTH, resolvePlacement.width)),
       height: CONTROL_CALLER_HEIGHT,
       parentId: ownerFrame.id,
       stepId: stepIndex,
@@ -1767,8 +1808,8 @@ export class LayoutEngine {
         controlRole: "group",
         controlGroupId: groupId,
         branchState: "active",
-        triggerStepId: placement.triggerStepId ?? stepIndex,
-        triggerElementId: placement.triggerElementId,
+        triggerStepId: resolvePlacement.triggerStepId ?? stepIndex,
+        triggerElementId: resolvePlacement.triggerElementId,
         isActive: true,
         headerOnly: true,
         isControlNode: true,
@@ -1791,8 +1832,8 @@ export class LayoutEngine {
       containerElementId: container.id,
       controlType,
       parentControlElementId:
-        parent.type === "condition" ? parent.id : undefined,
-      parentContainerId: parent.id,
+        placement.parent.type === "condition" ? placement.parent.id : undefined,
+      parentContainerId: placement.parent.id,
       parentContainerDepth: scopeDepth,
       members: [],
       lastStep: stepIndex,
@@ -1847,7 +1888,7 @@ export class LayoutEngine {
       const groupState = this.resolveIfGroupForBranch(frameId, conditionId);
       if (!groupState) return true;
 
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
       const inFlowElseId = `condition-caller-${groupState.groupId}-${stepIndex}-else`;
 
       const inFlowElseCaller: LayoutElement = {
@@ -1907,7 +1948,7 @@ export class LayoutEngine {
       // Step 1: Create the in-flow caller (the "if" chip inside the frame) FIRST.
       // This must exist before createOrGetControlGroupContainer runs so that
       // resolveControlContainerPlacement can use it as the arrow trigger.
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
       const callerId = `condition-caller-${groupId}-${stepIndex}`;
 
       const callerElement: LayoutElement = {
@@ -1941,6 +1982,7 @@ export class LayoutEngine {
       const { groupState } = this.createOrGetControlGroupContainer(
         layout,
         ownerFrame,
+        step,
         frameId,
         scopeDepth,
         stepIndex,
@@ -2010,6 +2052,10 @@ export class LayoutEngine {
           elseCaller,
           stepIndex,
         );
+        // Layer 1: Register else body by stepKey for downstream placement
+        if ((step as any).stepKey) {
+          this.bodyByStepKey.set((step as any).stepKey, elseBody);
+        }
         const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, elseBody.id);
         this.currentScopeDepth.set(frameId, activation.activationDepth);
@@ -2081,6 +2127,10 @@ export class LayoutEngine {
           target,
           stepIndex,
         );
+        // Layer 1: Register if/else-if body by stepKey for downstream placement
+        if ((step as any).stepKey) {
+          this.bodyByStepKey.set((step as any).stepKey, targetBody);
+        }
         const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, targetBody.id);
         this.currentScopeDepth.set(frameId, activation.activationDepth);
@@ -2105,6 +2155,7 @@ export class LayoutEngine {
       const { groupState, container } = this.createOrGetControlGroupContainer(
         layout,
         ownerFrame,
+        step,
         frameId,
         scopeDepth,
         stepIndex,
@@ -2339,6 +2390,8 @@ export class LayoutEngine {
     this.recentIfGroupByFrame.clear();
     this.currentScopeDepth.clear();
     this.rightFlowOccupancy.clear();
+    this.bodyByStepKey.clear();
+    this.conditionTree = (executionTrace as any).conditionTree ?? null;
 
     this.functionFrames.set("main-0", layout.mainFunction);
     this.frameDepthMap.set("main-0", 0);
@@ -2576,6 +2629,7 @@ export class LayoutEngine {
           functionName || funcFrame.data?.functionName || "function",
           returnValue,
           scopeDepth,
+          step,
           Number((step as any).line ?? -1),
         );
       }
@@ -2599,6 +2653,7 @@ export class LayoutEngine {
         functionName,
         returnValue,
         scopeDepth,
+        step,
         Number((step as any).line ?? -1),
       );
       return;
@@ -2671,7 +2726,7 @@ export class LayoutEngine {
         stepType,
         scopeDepth,
       );
-      const placement = this.getPlacementContext(ownerFrame, frameId, placementScopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, placementScopeDepth, step);
       
       const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
       const reservesCursorSpace = !this.isImmediateDeclarationInitialization(
@@ -2820,6 +2875,7 @@ export class LayoutEngine {
         ownerFrame,
         frameId,
         placementScopeDepth,
+        step,
       );
       
       // Calculate height based on explanation and function call
@@ -2897,7 +2953,7 @@ export class LayoutEngine {
         };
 
         const scopeDepth = this.getScopeDepth(step, frameId);
-        const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+        const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
         const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
 
         const ptrElement: LayoutElement = {
@@ -2961,7 +3017,7 @@ export class LayoutEngine {
       };
 
       const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
       const elementHeight = explanation
         ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT
         : VARIABLE_HEIGHT;
@@ -3032,7 +3088,7 @@ export class LayoutEngine {
         };
 
         const scopeDepth = this.getScopeDepth(step, frameId);
-        const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+        const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
 
         const varElement: LayoutElement = {
           id: varId,
@@ -3086,7 +3142,7 @@ export class LayoutEngine {
       if (this.elementHistory.has(outputId)) return;
 
       const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
       const baseHeight = 60;
       const elementHeight = explanation ? baseHeight + EXPLANATION_HEIGHT : baseHeight;
 
@@ -3118,7 +3174,7 @@ export class LayoutEngine {
       if (this.elementHistory.has(inputId)) return;
 
       const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
       const hasAssignments = !!(step as any).assignments;
       const baseHeight = 80;
       const extraHeight = hasAssignments ? 24 : 0;
@@ -3161,7 +3217,7 @@ export class LayoutEngine {
 
       const loopElementId = `loop-${frameId}-${loopId}-${stepIndex}`;
       const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
       
       // Look ahead to find end step for skip functionality
       let endStep: number | undefined;

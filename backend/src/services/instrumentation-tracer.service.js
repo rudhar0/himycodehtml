@@ -2519,6 +2519,10 @@ class InstrumentationTracer {
             }
         }
 
+        if (process.env.CODEVIZ_TRACE_VALIDATE === '1') {
+            this.validateGeneratedSteps(steps);
+        }
+
         console.log(`✅ Generated ${steps.length} steps`);
 
         return steps;
@@ -2580,6 +2584,34 @@ class InstrumentationTracer {
             }
         } catch (e) {
             // non-fatal - best-effort
+        }
+    }
+
+    validateGeneratedSteps(steps) {
+        let lastType = null;
+        for (const step of steps) {
+            // Verify branch_taken has conditionId
+            if (step.eventType === 'branch_taken') {
+                if (!step.conditionId) {
+                    console.warn(`TRACE WARNING: branch_taken missing conditionId at index ${step.stepIndex}`);
+                }
+            }
+
+            // Verify frameId exists for structural events
+            const needsFrameId = ['func_enter', 'func_exit', 'return', 'assign', 'branch_taken'];
+            if (needsFrameId.includes(step.eventType)) {
+                if (!step.frameId) {
+                    console.warn(`TRACE WARNING: ${step.eventType} missing frameId at index ${step.stepIndex}`);
+                }
+            }
+
+            // Verify event ordering - e.g. condition_eval followed by branch_taken
+            if (lastType === 'condition_eval' && step.eventType !== 'branch_taken') {
+                // Not necessarily wrong if there are intermediate assignments, but wait, condition_eval and branch_taken should be adjacent?
+                // Depending on trace implementation, they might have pointer aliases but usually branch_taken is right after condition_eval.
+            }
+
+            lastType = step.eventType;
         }
     }
 

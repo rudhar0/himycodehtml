@@ -19,6 +19,10 @@ import type {
   MemoryState,
   StepType,
 } from '../types';
+import {
+  annotateStepsWithPlacementKeys,
+  buildConditionTree,
+} from '../ExecutionStructureBuilder';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -390,18 +394,36 @@ export function processRawTrace(
     const originalType = step.type;
     step.type = normalizeStepType(step.type) as StepType;
 
+    // PART 1: Inherit frame conditionId
+    const currentFrame = currentMemoryState.callStack[currentMemoryState.callStack.length - 1] as any;
+    if (currentFrame && !step.conditionId && currentFrame.conditionId) {
+      step.conditionId = currentFrame.conditionId;
+    }
+
     const nextMemoryState: MemoryState = structuredClone(currentMemoryState);
     const functionName = (step.function || '').trim().replace(/\r/g, '');
 
     // --- Step type switch ---
     switch (step.type) {
-      case 'func_enter':
-        nextMemoryState.callStack.push({
+      case 'func_enter': {
+        const parentFrame = currentMemoryState.callStack.length > 0 
+            ? currentMemoryState.callStack[currentMemoryState.callStack.length - 1] as any
+            : null;
+        
+        const newFrame: any = {
           function: functionName,
           line: step.line,
           locals: {},
-        });
+        };
+
+        // PART 3: Inherit condition into the new frame
+        if (parentFrame && parentFrame.conditionId) {
+            newFrame.conditionId = parentFrame.conditionId;
+        }
+
+        nextMemoryState.callStack.push(newFrame);
         break;
+      }
 
       case 'func_exit':
         if (nextMemoryState.callStack.length > 0) {
@@ -520,6 +542,13 @@ export function processRawTrace(
 
       case 'branch': {
         step.branch = step.branch || step.branchType || 'if';
+
+        // IMPORTANT: update current frame condition
+        const frame = nextMemoryState.callStack[nextMemoryState.callStack.length - 1] as any;
+        if (frame && step.conditionId) {
+            frame.conditionId = step.conditionId;
+        }
+
         break;
       }
 
@@ -571,6 +600,10 @@ export function processRawTrace(
     (s) => s && s.type !== 'noop' && s.type !== 'empty'
   );
 
+  // Layer 1 + 2: Annotate steps with stepKey/placementParentKey and build conditionTree
+  annotateStepsWithPlacementKeys(finalSteps);
+  const conditionTree = buildConditionTree(finalSteps);
+
   const trace: ExecutionTrace = {
     steps: finalSteps,
     totalSteps: finalSteps.length,
@@ -582,6 +615,9 @@ export function processRawTrace(
       hasSemanticInfo: true,
     },
   };
+
+  // Attach conditionTree for LayoutEngine's 3-layer placement system
+  (trace as any).conditionTree = conditionTree;
 
   return { trace, arrayRegistry };
 }
