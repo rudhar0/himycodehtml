@@ -754,9 +754,9 @@ export class LayoutEngine {
       selected = element;
       selectedDepth = depth;
     });
-
+    
     if (selected) {
-      console.log(`[PLACEMENT_DEBUG] Found active control parent: ${selected.id} at depth: ${selectedDepth} for scopeDepth: ${scopeDepth}`);
+      console.log(`[PLACEMENT_DEBUG] Frame: ${frameId} -> Found active control parent: ${selected.id} at depth: ${selectedDepth} for scopeDepth: ${scopeDepth}`);
     }
 
     return selected;
@@ -803,21 +803,21 @@ export class LayoutEngine {
       }
     }
     if (Layer2Result) {
-      console.log(`[PLACEMENT] Layer2-Tree ${debugType} ${debugKey} conditionId: ${step.conditionId} → bodyId: ${Layer2Result.id}`);
+      console.log(`[PLACEMENT] Frame: ${frameId} -> Layer2-Tree ${debugType} ${debugKey} conditionId: ${step.conditionId} → bodyId: ${Layer2Result.id}`);
       return Layer2Result;
     }
 
     // Layer 3: Persistent Scope Mapping (Fallback)
     const Layer3Result = this.getActiveControlParent(frameId, scopeDepth);
     if (Layer3Result) {
-      console.log(`[PLACEMENT] Layer3-Depth ${debugType} ${debugKey} → bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
+      console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3-Depth ${debugType} ${debugKey} → bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
       return Layer3Result;
     }
 
     const loopParent = this.getLoopContainerParent(frameId);
     if (loopParent) return loopParent;
 
-    console.log(`[PLACEMENT] Layer3-Frame fallback ${debugType} ${debugKey} → ownerFrame: ${ownerFrame.id}`);
+    console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3-Frame fallback ${debugType} ${debugKey} → ownerFrame: ${ownerFrame.id}`);
     return ownerFrame;
   }
 
@@ -1448,7 +1448,10 @@ export class LayoutEngine {
     step: ExecutionStep,
     scopeDepth: number,
   ): number {
-    return scopeDepth;
+    // 🔧 FIX: Bodies MUST be at depth scopeDepth + 1
+    // This strictly separates body-contained elements (at depth scopeDepth + 1)
+    // from sibling elements (at depth scopeDepth).
+    return scopeDepth + 1;
   }
 
   private static resolveIfGroupForBranch(

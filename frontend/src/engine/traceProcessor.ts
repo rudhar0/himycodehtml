@@ -413,9 +413,9 @@ export function processRawTrace(
     if (step.eventType && !step.type) step.type = step.eventType;
     if (step.eventType) step.originalEventType = step.eventType;
     if (step.stdout && step.type === "output") step.value = step.stdout;
-    if (step.scopeDepth === undefined || step.scopeDepth === null) {
-      step.scopeDepth = inferredScopeDepthByFrame.get(frameId) ?? 0;
-    }
+    
+    // 🔧 FORCE SYNC: Always use inferred depth for EVERY step to ensure nesting alignment
+    step.scopeDepth = inferredScopeDepthByFrame.get(frameId) ?? 0;
 
     const originalType = step.type;
     step.type = normalizeStepType(step.type) as StepType;
@@ -450,7 +450,9 @@ export function processRawTrace(
         }
       }
       if (closed.length > 0) {
-        console.log(`[TRACE] scopeDepth: ${scopeDepth} < bodyDepth: ${activeCondStack[activeCondStack.length - 1]?.bodyDepth || 'N/A'} -> Closing conditions:`, closed);
+        // Log the final resulting depth of the stack or N/A
+        const remainingDepth = activeCondStack.length > 0 ? activeCondStack[activeCondStack.length - 1].bodyDepth : 'N/A';
+        console.log(`[TRACE] scopeDepth: ${scopeDepth} < bodyDepth: ${remainingDepth} -> Closing conditions:`, closed);
         step.closedConditionIds = closed;
       }
     }
@@ -655,9 +657,9 @@ export function processRawTrace(
         ) {
           stack.push({
             conditionId: String(step.conditionId),
-            bodyDepth: scopeDepth,
+            bodyDepth: scopeDepth + 1,
           });
-          console.log(`[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth}`);
+          console.log(`[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth + 1}`);
         }
 
         break;
