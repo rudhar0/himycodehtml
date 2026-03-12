@@ -163,8 +163,8 @@ class InstrumentationTracer {
             scopeStack: [],
             // FIX Bug 1: Inherit condition context from parent so recursive/nested
             // calls stay inside their branch container.
-            conditionStack: [],
-            activeConditionId: null,
+            conditionStack: parentFrame?.conditionStack ? [...parentFrame.conditionStack] : [],
+            activeConditionId: parentFrame?.activeConditionId || null,
             // FIX Bug 2: Inherit loop context from parent so calls inside loops keep loopId.
             loopStack: parentFrame?.loopStack ? [...parentFrame.loopStack] : [],
             activeLoopId: parentFrame?.activeLoopId || null,
@@ -1436,7 +1436,7 @@ class InstrumentationTracer {
                     exitingFrame.conditionStack && exitingFrame.conditionStack.length > 0
                         ? exitingFrame.conditionStack[exitingFrame.conditionStack.length - 1].conditionId
                         : null
-                ) || exitingFrame.activeConditionId || exitingFrame.lastKnownConditionId || null;
+                ) || exitingFrame.activeConditionId || null;
 
                 const frameLoopId = exitingFrame.activeLoops && exitingFrame.activeLoops.size > 0
                     ? Array.from(exitingFrame.activeLoops.keys()).pop()
@@ -2069,7 +2069,7 @@ class InstrumentationTracer {
                             // Pop all conditions that were opened at a depth deeper than exitingBlockDepth
                             while (
                                 currentFrame.conditionStack.length > 0 &&
-                                currentFrame.conditionStack[currentFrame.conditionStack.length - 1].blockDepthAtPush > exitingBlockDepth
+                                currentFrame.conditionStack[currentFrame.conditionStack.length - 1].blockDepthAtPush >= exitingBlockDepth
                             ) {
                                 currentFrame.conditionStack.pop();
                             }
@@ -2100,6 +2100,26 @@ class InstrumentationTracer {
                     conditionId: condBefore,
                     loopId: loopBefore
                 });
+
+                // CLOSE CONDITION WHEN BLOCK ENDS
+if (currentFrame && currentFrame.conditionStack && currentFrame.conditionStack.length > 0) {
+
+    const closedCond = currentFrame.conditionStack.pop();
+
+    currentFrame.activeConditionId =
+        currentFrame.conditionStack.length > 0
+            ? currentFrame.conditionStack[currentFrame.conditionStack.length - 1].conditionId
+            : null;
+
+    console.log(
+        '[COND END]',
+        closedCond?.conditionId,
+        'frame:',
+        currentFrame.frameId,
+        'remaining:',
+        currentFrame.conditionStack.length
+    );
+}
 
             } else if (ev.type === 'array_create') {
                 if (ev.addr) {

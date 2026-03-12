@@ -91,6 +91,10 @@ export interface ExecutionStep {
   isFunctionEntry?: boolean;
   isFunctionExit?: boolean;
   scopeDepth?: number;
+  conditionId?: string | null;
+  closedConditionIds?: string[];
+  stepKey?: string;
+  placementParentKey?: string | null;
   varType?: string;
   symbol?: string;
   returnValue?: any;

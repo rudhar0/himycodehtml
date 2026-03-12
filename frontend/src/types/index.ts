@@ -52,6 +52,12 @@ export interface ExecutionStep {
   classInfo?: ClassInfo;
   function?: string;
 
+  // Control/placement metadata (instrumentation + LayoutEngine)
+  conditionId?: string | null;
+  closedConditionIds?: string[];
+  stepKey?: string;
+  placementParentKey?: string | null;
+
   // Old fields
   animation?: AnimationConfig;
   pauseExecution?: boolean;

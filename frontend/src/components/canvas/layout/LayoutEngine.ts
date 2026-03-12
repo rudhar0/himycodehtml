@@ -607,8 +607,12 @@ export class LayoutEngine {
     const depthMap = this.getFrameControlDepthMap(frameId);
     const removed: string[] = [];
 
-    depthMap.forEach((elementId, depth) => {
-      if (depth > scopeDepth) {
+    // Collect keys first to avoid modification during iteration
+    const depthsToRemove = Array.from(depthMap.keys()).filter(d => d > scopeDepth);
+    
+    depthsToRemove.forEach((depth) => {
+      const elementId = depthMap.get(depth);
+      if (elementId) {
         removed.push(elementId);
         depthMap.delete(depth);
       }
@@ -616,11 +620,14 @@ export class LayoutEngine {
 
     const ephemeralMap = this.ephemeralControlByDepth.get(frameId);
     if (ephemeralMap) {
-      ephemeralMap.forEach((_entry, depth) => {
-        if (depth > scopeDepth) {
-          ephemeralMap.delete(depth);
-        }
+      const ephemeralDepthsToRemove = Array.from(ephemeralMap.keys()).filter(d => d > scopeDepth);
+      ephemeralDepthsToRemove.forEach((depth) => {
+        ephemeralMap.delete(depth);
       });
+    }
+
+    if (removed.length > 0) {
+      console.log(`[PLACEMENT_DEBUG] Pruned controls for scopeDepth: ${scopeDepth} in frame: ${frameId}. Removed:`, removed);
     }
 
     return removed;
@@ -748,6 +755,10 @@ export class LayoutEngine {
       selectedDepth = depth;
     });
 
+    if (selected) {
+      console.log(`[PLACEMENT_DEBUG] Found active control parent: ${selected.id} at depth: ${selectedDepth} for scopeDepth: ${scopeDepth}`);
+    }
+
     return selected;
   }
 
@@ -784,28 +795,29 @@ export class LayoutEngine {
     }
 
     // Layer 2 — ConditionTree: lookup via conditionId
+    let Layer2Result: LayoutElement | null = null;
     if (step?.conditionId && this.conditionTree) {
       const node = this.conditionTree.nodes.get(String(step.conditionId));
       if (node?.takenBranchStepKey) {
-        const body = this.bodyByStepKey.get(node.takenBranchStepKey);
-        if (body) {
-          console.log('[PLACEMENT] Layer2-Tree', debugType, debugKey, 'conditionId:', step.conditionId, '→ bodyId:', body.id);
-          return body;
-        }
+        Layer2Result = this.bodyByStepKey.get(node.takenBranchStepKey) || null;
       }
     }
+    if (Layer2Result) {
+      console.log(`[PLACEMENT] Layer2-Tree ${debugType} ${debugKey} conditionId: ${step.conditionId} → bodyId: ${Layer2Result.id}`);
+      return Layer2Result;
+    }
 
-    // Layer 3 — Depth (existing fallback)
-    const controlParent = this.getActiveControlParent(frameId, scopeDepth);
-    if (controlParent) {
-      console.log('[PLACEMENT] Layer3-Depth', debugType, debugKey, '→ bodyId:', controlParent.id);
-      return controlParent;
+    // Layer 3: Persistent Scope Mapping (Fallback)
+    const Layer3Result = this.getActiveControlParent(frameId, scopeDepth);
+    if (Layer3Result) {
+      console.log(`[PLACEMENT] Layer3-Depth ${debugType} ${debugKey} → bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
+      return Layer3Result;
     }
 
     const loopParent = this.getLoopContainerParent(frameId);
     if (loopParent) return loopParent;
 
-    console.log('[PLACEMENT] Layer3-Frame fallback', debugType, debugKey, '→ ownerFrame:', ownerFrame.id);
+    console.log(`[PLACEMENT] Layer3-Frame fallback ${debugType} ${debugKey} → ownerFrame: ${ownerFrame.id}`);
     return ownerFrame;
   }
 
@@ -1436,10 +1448,6 @@ export class LayoutEngine {
     step: ExecutionStep,
     scopeDepth: number,
   ): number {
-    // traceProcessor stamps scopeDepth AFTER block_enter already ran.
-    // So branch_taken.scopeDepth is already the inside-body depth.
-    // Adding +1 here registers the body at depth N+1 while all elements
-    // inside arrive at depth N — they can never find the body.
     return scopeDepth;
   }
 
@@ -2671,7 +2679,7 @@ export class LayoutEngine {
     let scopeDepth = this.getScopeDepth(step, frameId);
     if (normalizedStepType === "block_enter") {
       this.currentScopeDepth.set(frameId, scopeDepth);
-    } else if (normalizedStepType === "block_exit") {
+    } else if (normalizedStepType === "block_exit" || normalizedStepType === "scope_exit") {
       // block_exit carries the depth of the scope that is CLOSING.
       // After exit, current depth = that value minus 1.
       const blockDepthFromEvent = (step as any).blockDepth ?? scopeDepth;
@@ -2679,6 +2687,10 @@ export class LayoutEngine {
       this.currentScopeDepth.set(frameId, scopeDepth);
     }
     this.currentScopeDepth.set(frameId, scopeDepth);
+    
+    if (normalizedStepType === "scope_exit") {
+        console.log(`[PLACEMENT_DEBUG] scope_exit in frame: ${frameId} -> scopeDepth: ${scopeDepth}`);
+    }
     const exitedControlIds = [
       ...this.pruneControlDepthForScope(frameId, scopeDepth),
       ...this.pruneEphemeralControls(frameId, stepIndex, stepLine),

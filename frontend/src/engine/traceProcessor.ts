@@ -18,11 +18,11 @@ import type {
   Variable,
   MemoryState,
   StepType,
-} from '../types';
+} from "../types";
 import {
   annotateStepsWithPlacementKeys,
   buildConditionTree,
-} from '../ExecutionStructureBuilder';
+} from "../ExecutionStructureBuilder";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -32,8 +32,8 @@ import {
 export const MAX_TRACE_STEPS = 500;
 
 const __DEV__ =
-  typeof process !== 'undefined'
-    ? process.env.NODE_ENV !== 'production'
+  typeof process !== "undefined"
+    ? process.env.NODE_ENV !== "production"
     : false;
 
 // ---------------------------------------------------------------------------
@@ -42,77 +42,77 @@ const __DEV__ =
 
 const STEP_TYPE_MAP: Record<string, string> = {
   // Array events
-  array_create: 'array_declaration',
-  array_init: 'array_initialization',
-  array_index_assign: 'array_assignment',
+  array_create: "array_declaration",
+  array_init: "array_initialization",
+  array_index_assign: "array_assignment",
 
   // Instrumentation backend
-  func_enter: 'func_enter',
-  func_exit: 'func_exit',
-  var: 'var',
-  heap_alloc: 'heap_allocation',
-  heap_free: 'heap_free',
-  program_end: 'program_end',
-  program_start: 'program_start',
-  stdout: 'output',
-  print: 'output',
-  declare: 'declare',
-  assign: 'assign',
+  func_enter: "func_enter",
+  func_exit: "func_exit",
+  var: "var",
+  heap_alloc: "heap_allocation",
+  heap_free: "heap_free",
+  program_end: "program_end",
+  program_start: "program_start",
+  stdout: "output",
+  print: "output",
+  declare: "declare",
+  assign: "assign",
 
   // LLDB
-  step_in: 'function_call',
-  step_out: 'function_return',
-  step_over: 'line_execution',
+  step_in: "function_call",
+  step_out: "function_return",
+  step_over: "line_execution",
 
   // Semantic
-  line_execution: 'line_execution',
-  variable_declaration: 'variable_declaration',
-  pointer_declaration: 'variable_declaration',
-  array_declaration: 'array_declaration',
-  assignment: 'assignment',
-  object_creation: 'object_creation',
-  object_destruction: 'object_destruction',
-  function_call: 'function_call',
-  function_return: 'function_return',
-  loop_start: 'loop_start',
-  loop_iteration: 'loop_iteration',
-  loop_end: 'loop_end',
-  conditional_start: 'conditional_start',
-  conditional_branch: 'conditional_branch',
-  array_access: 'array_access',
-  pointer_deref: 'pointer_deref',
-  heap_allocation: 'heap_allocation',
-  output: 'output',
-  input: 'input_request',
-  input_request: 'input_request',
-  input_call: 'input_call',
-  input_assign: 'input_assign',
+  line_execution: "line_execution",
+  variable_declaration: "variable_declaration",
+  pointer_declaration: "variable_declaration",
+  array_declaration: "array_declaration",
+  assignment: "assignment",
+  object_creation: "object_creation",
+  object_destruction: "object_destruction",
+  function_call: "function_call",
+  function_return: "function_return",
+  loop_start: "loop_start",
+  loop_iteration: "loop_iteration",
+  loop_end: "loop_end",
+  conditional_start: "conditional_start",
+  conditional_branch: "conditional_branch",
+  array_access: "array_access",
+  pointer_deref: "pointer_deref",
+  heap_allocation: "heap_allocation",
+  output: "output",
+  input: "input_request",
+  input_request: "input_request",
+  input_call: "input_call",
+  input_assign: "input_assign",
 
   // Backend primitive types → var
-  int: 'var',
-  double: 'var',
-  float: 'var',
-  char: 'var',
-  bool: 'var',
-  long: 'var',
-  short: 'var',
-  string: 'var',
-  variable: 'var',
-  variable_assignment: 'assignment',
-  variable_change: 'assignment',
+  int: "var",
+  double: "var",
+  float: "var",
+  char: "var",
+  bool: "var",
+  long: "var",
+  short: "var",
+  string: "var",
+  variable: "var",
+  variable_assignment: "assignment",
+  variable_change: "assignment",
 
   // GDB
-  next: 'line_execution',
-  step: 'function_call',
-  finish: 'function_return',
+  next: "line_execution",
+  step: "function_call",
+  finish: "function_return",
 
   // Extended semantic types the plan requires
-  arg_bind: 'arg_bind',
-  expression_eval: 'expression_eval',
-  condition_eval: 'condition',
-  branch_taken: 'branch',
-  pointer_alias: 'pointer_alias',
-  pointer_deref_write: 'pointer_write',
+  arg_bind: "arg_bind",
+  expression_eval: "expression_eval",
+  condition_eval: "condition",
+  branch_taken: "branch",
+  pointer_alias: "pointer_alias",
+  pointer_deref_write: "pointer_write",
 };
 
 // ---------------------------------------------------------------------------
@@ -124,13 +124,15 @@ const STEP_TYPE_MAP: Record<string, string> = {
  * NEVER silently falls back to `line_execution` — preserves originals.
  */
 export function normalizeStepType(type: string | undefined): string {
-  if (!type) return 'line_execution';
+  if (!type) return "line_execution";
   const key = type.toLowerCase().trim();
   const mapped = STEP_TYPE_MAP[key];
   if (mapped) return mapped;
 
   if (__DEV__) {
-    console.warn(`[TraceProcessor] Unknown step type: "${type}" — preserving as-is.`);
+    console.warn(
+      `[TraceProcessor] Unknown step type: "${type}" — preserving as-is.`,
+    );
   }
   // Preserve original rather than silently mapping
   return key;
@@ -140,7 +142,7 @@ function normalizeCallStack(
   callStack: any,
 ): Array<{ function: string; line: number; locals: Record<string, Variable> }> {
   if (Array.isArray(callStack) && callStack.length > 0) return callStack;
-  return [{ function: '(global scope)', line: 0, locals: {} }];
+  return [{ function: "(global scope)", line: 0, locals: {} }];
 }
 
 function normalizeLocals(locals: any): Record<string, Variable> {
@@ -155,83 +157,88 @@ function normalizeLocals(locals: any): Record<string, Variable> {
 }
 
 function isRuntimeCleanupStep(raw: any): boolean {
-  const eventType = String(raw?.eventType || raw?.type || '')
+  const eventType = String(raw?.eventType || raw?.type || "")
     .toLowerCase()
     .trim();
-  const fn = String(raw?.function || raw?.func || '')
+  const fn = String(raw?.function || raw?.func || "")
     .toLowerCase()
     .trim();
-  const file = String(raw?.file || '')
+  const file = String(raw?.file || "")
     .toLowerCase()
     .trim();
 
-  if (eventType === 'heap_free') return true;
-  if (fn.includes('operator delete')) return true;
-  if ((file === '??' || file === 'unknown') && fn.startsWith('std::')) return true;
-  if (file.includes('libc++') || file.includes('libstdc++')) return true;
+  if (eventType === "heap_free") return true;
+  if (fn.includes("operator delete")) return true;
+  if ((file === "??" || file === "unknown") && fn.startsWith("std::"))
+    return true;
+  if (file.includes("libc++") || file.includes("libstdc++")) return true;
 
   return false;
 }
 
 const NON_VISUAL_EVENTS = new Set([
-  'program_start',
-  'program_end',
-  'func_exit',
-  'scope_exit',
-  'heap_free',
-  'cleanup',
-  'block_enter',
-  'block_exit',
+  "program_start",
+  "program_end",
+  "func_exit",
+  "scope_exit",
+  "heap_free",
+  "cleanup",
+  "block_enter",
+  "block_exit",
 ]);
 
 const ALWAYS_VISUAL_EVENTS = new Set([
-  'func_enter',
-  'return',
-  'output',
-  'input_request',
-  'input',
-  'input_call',
-  'input_assign',
-  'var',
-  'var_declare',
-  'var_assign',
-  'declare',
-  'assign',
-  'assignment',
-  'array_declaration',
-  'array_initialization',
-  'array_assignment',
-  'loop_start',
-  'loop_body_start',
-  'loop_iteration',
-  'loop_iteration_end',
-  'loop_end',
-  'loop_condition',
-  'loop_break',
-  'loop_continue',
-  'condition',
-  'branch',
-  'conditional_start',
-  'conditional_branch',
-  'condition_eval',
-  'branch_taken',
-  'pointer_alias',
-  'pointer_write',
-  'pointer_deref',
-  'pointer_deref_write',
-  'heap_alloc',
-  'heap_write',
-  'function_call',
-  'function_return',
+  "func_enter",
+  "return",
+  "output",
+  "input_request",
+  "input",
+  "input_call",
+  "input_assign",
+  "var",
+  "var_declare",
+  "var_assign",
+  "declare",
+  "assign",
+  "assignment",
+  "array_declaration",
+  "array_initialization",
+  "array_assignment",
+  "loop_start",
+  "loop_body_start",
+  "loop_iteration",
+  "loop_iteration_end",
+  "loop_end",
+  "loop_condition",
+  "loop_break",
+  "loop_continue",
+  "condition",
+  "branch",
+  "conditional_start",
+  "conditional_branch",
+  "condition_eval",
+  "branch_taken",
+  "pointer_alias",
+  "pointer_write",
+  "pointer_deref",
+  "pointer_deref_write",
+  "heap_alloc",
+  "heap_write",
+  "function_call",
+  "function_return",
 ]);
 
-function hasVisualChange(prevState: MemoryState, nextState: MemoryState, step: any): boolean {
-  const eventType = String(step?.type || step?.eventType || '')
+function hasVisualChange(
+  prevState: MemoryState,
+  nextState: MemoryState,
+  step: any,
+): boolean {
+  const eventType = String(step?.type || step?.eventType || "")
     .toLowerCase()
     .trim();
 
   if (NON_VISUAL_EVENTS.has(eventType)) return false;
-  if (ALWAYS_VISUAL_EVENTS.has(eventType)) return true;
+  if (ALWAYS_VISUAL_EVENTS.has(eventType) || eventType === "scope_exit") return true;
 
   return JSON.stringify(prevState) !== JSON.stringify(nextState);
 }
@@ -278,10 +285,10 @@ function mergeInputSteps(steps: any[]): any[] {
     const step = steps[i];
     const nextStep = steps[i + 1];
 
-    if (step.type === 'input_call' && nextStep?.type === 'input_assign') {
+    if (step.type === "input_call" && nextStep?.type === "input_assign") {
       merged.push({
         ...step,
-        type: 'input',
+        type: "input",
         assignments: nextStep.assignments,
         returnValue: nextStep.returnValue,
         returnValueVar: nextStep.returnValueVar,
@@ -338,7 +345,7 @@ export function processRawTrace(
   }
 
   if (expandedSteps.length === 0) {
-    throw new Error('No steps found in received trace data.');
+    throw new Error("No steps found in received trace data.");
   }
 
   // Enforce step cap
@@ -353,88 +360,183 @@ export function processRawTrace(
     stack: [],
     heap: {},
     callStack: [],
-    stdout: '',
+    stdout: "",
   };
 
   const arrayRegistry = new Map<string, ArrayState>();
   const variableBirthStepMap = new Map<string, number>();
   const processedSteps: ExecutionStep[] = [];
-  let inferredScopeDepth = 0;
+  const inferredScopeDepthByFrame = new Map<string, number>();
+  
+  // Local control-context stacks (do NOT store on MemoryState/callStack frames).
+  // Each entry corresponds 1:1 with currentMemoryState.callStack depth.
+  type ConditionCtx = { conditionId: string; bodyDepth: number };
+  const conditionStacks: ConditionCtx[][] = [];
 
   for (let index = 0; index < limit; index++) {
     const raw = expandedSteps[index];
     const rawEventType = String(raw?.eventType || raw?.type || "")
       .toLowerCase()
       .trim();
+    const frameId = String(raw.frameId || "main-0");
 
-    if (rawEventType === 'block_enter') {
-      inferredScopeDepth += 1;
+    if (rawEventType === "block_enter") {
+      const current = inferredScopeDepthByFrame.get(frameId) ?? 0;
+      inferredScopeDepthByFrame.set(frameId, current + 1);
+      console.log(`[TRACE] block_enter frame: ${frameId} -> depth: ${current + 1}`);
       continue;
     }
-    if (rawEventType === 'block_exit') {
-      inferredScopeDepth = Math.max(0, inferredScopeDepth - 1);
-      continue;
+    if (rawEventType === "block_exit") {
+      const current = inferredScopeDepthByFrame.get(frameId) ?? 0;
+      const next = Math.max(0, current - 1);
+      inferredScopeDepthByFrame.set(frameId, next);
+      
+      console.log(
+        `[TRACE] block_exit frame: ${frameId} -> depth: ${next} (from ${current})`
+      );
+      // create a structural step so condition stacks can close properly
+      const step: any = structuredClone(raw);
+      step.scopeDepth = next;
+      step.type = "scope_exit";
+
+      expandedSteps[index] = step;
     }
 
     if (isRuntimeCleanupStep(raw)) continue;
     const logicalIndex = processedSteps.length;
 
     // Clone — structuredClone replaces JSON round-trip
-    const step: any = structuredClone(raw);
+    const step: any = structuredClone(expandedSteps[index]);
 
     // Field normalisation: addr → address, eventType → type
     if (step.addr && !step.address) step.address = step.addr;
     if (step.eventType && !step.type) step.type = step.eventType;
     if (step.eventType) step.originalEventType = step.eventType;
-    if (step.stdout && step.type === 'output') step.value = step.stdout;
+    if (step.stdout && step.type === "output") step.value = step.stdout;
     if (step.scopeDepth === undefined || step.scopeDepth === null) {
-      step.scopeDepth = inferredScopeDepth;
+      step.scopeDepth = inferredScopeDepthByFrame.get(frameId) ?? 0;
     }
 
     const originalType = step.type;
     step.type = normalizeStepType(step.type) as StepType;
 
-    // PART 1: Inherit frame conditionId
-    const currentFrame = currentMemoryState.callStack[currentMemoryState.callStack.length - 1] as any;
-    if (currentFrame && !step.conditionId && currentFrame.conditionId) {
-      step.conditionId = currentFrame.conditionId;
+    // Keep conditionStacks aligned with the runtime call stack (defensive).
+    while (conditionStacks.length < currentMemoryState.callStack.length) {
+      conditionStacks.push([]);
+    }
+    while (conditionStacks.length > currentMemoryState.callStack.length) {
+      conditionStacks.pop();
+    }
+
+    // Condition scope handling:
+    // - push on taken branches (branch_taken → normalized 'branch')
+    // - pop when scopeDepth drops below the branch body depth
+    // - fill missing step.conditionId from current active condition (top of stack)
+    const scopeDepth = Number(step.scopeDepth ?? (inferredScopeDepthByFrame.get(frameId) ?? 0));
+    const activeCondStack =
+      conditionStacks.length > 0
+        ? conditionStacks[conditionStacks.length - 1]
+        : null;
+
+    if (activeCondStack && activeCondStack.length > 0) {
+      const closed: string[] = [];
+      while (
+        activeCondStack.length > 0 &&
+        scopeDepth < activeCondStack[activeCondStack.length - 1].bodyDepth
+      ) {
+        const popped = activeCondStack.pop();
+        if (popped?.conditionId) {
+          closed.push(String(popped.conditionId));
+        }
+      }
+      if (closed.length > 0) {
+        console.log(`[TRACE] scopeDepth: ${scopeDepth} < bodyDepth: ${activeCondStack[activeCondStack.length - 1]?.bodyDepth || 'N/A'} -> Closing conditions:`, closed);
+        step.closedConditionIds = closed;
+      }
+    }
+
+    if (
+      (step.conditionId === undefined || step.conditionId === null) &&
+      activeCondStack &&
+      activeCondStack.length > 0
+    ) {
+      const activeCondition =
+        activeCondStack[activeCondStack.length - 1].conditionId;
+
+      const condFrame = activeCondition.split("-").slice(1, 3).join("-");
+      const stepFrame = String(step.frameId);
+
+      if (condFrame === stepFrame) {
+        step.conditionId = activeCondition;
+        console.log(`[TRACE] Inheriting conditionId: ${activeCondition} for step: ${step.type} at line: ${step.line}`);
+      }
     }
 
     const nextMemoryState: MemoryState = structuredClone(currentMemoryState);
-    const functionName = (step.function || '').trim().replace(/\r/g, '');
+    const functionName = (step.function || "").trim().replace(/\r/g, "");
 
     // --- Step type switch ---
     switch (step.type) {
-      case 'func_enter': {
-        const parentFrame = currentMemoryState.callStack.length > 0 
-            ? currentMemoryState.callStack[currentMemoryState.callStack.length - 1] as any
+      case "func_enter": {
+        const parentFrame =
+          currentMemoryState.callStack.length > 0
+            ? (currentMemoryState.callStack[
+                currentMemoryState.callStack.length - 1
+              ] as any)
             : null;
-        
+
         const newFrame: any = {
           function: functionName,
           line: step.line,
           locals: {},
         };
 
-        // PART 3: Inherit condition into the new frame
-        if (parentFrame && parentFrame.conditionId) {
-            newFrame.conditionId = parentFrame.conditionId;
-        }
-
         nextMemoryState.callStack.push(newFrame);
+        inferredScopeDepthByFrame.set(step.frameId || "unknown", 0);
+
+        // Seed callee condition stack with caller's currently-active condition (if any),
+        // using bodyDepth=-1 so it never auto-closes inside the callee.
+        const callerStack =
+          conditionStacks.length > 0
+            ? conditionStacks[conditionStacks.length - 1]
+            : null;
+        const activeCaller =
+          callerStack && callerStack.length > 0
+            ? callerStack[callerStack.length - 1]
+            : null;
+        const calleeStack: ConditionCtx[] = [];
+        if (activeCaller?.conditionId) {
+          if (activeCaller?.conditionId) {
+            calleeStack.push({
+              conditionId: String(activeCaller.conditionId),
+              bodyDepth: -1,
+            });
+          }
+        }
+        conditionStacks.push(calleeStack);
         break;
       }
 
-      case 'func_exit':
+      case "func_exit":
         if (nextMemoryState.callStack.length > 0) {
           nextMemoryState.callStack.pop();
+        }
+
+        // clear condition stack when returning to caller
+        if (conditionStacks.length > 0) {
+          const stack = conditionStacks[conditionStacks.length - 1];
+          if (stack) stack.length = 0;
+        }
+
+        if (conditionStacks.length > 0) {
+          conditionStacks.pop();
         }
         break;
 
       // --- Arrays ---
-      case 'array_declaration': {
+      case "array_declaration": {
         const name = step.name;
-        const baseType = step.baseType || 'int';
+        const baseType = step.baseType || "int";
         const dims = step.dimensions || [1];
         const addr = step.address || step.addr;
         const totalSize = dims.reduce((a: number, b: number) => a * b, 1);
@@ -445,13 +547,13 @@ export function processRawTrace(
           values: new Array(totalSize).fill(0),
           address: addr,
           birthStep: logicalIndex,
-          owner: functionName || 'main',
+          owner: functionName || "main",
         });
         step.arrayData = arrayRegistry.get(name);
         break;
       }
 
-      case 'array_initialization': {
+      case "array_initialization": {
         const arr = arrayRegistry.get(step.name);
         if (arr) {
           arr.values = [...(step.values || [])];
@@ -460,13 +562,10 @@ export function processRawTrace(
         break;
       }
 
-      case 'array_assignment': {
+      case "array_assignment": {
         const arr = arrayRegistry.get(step.name);
         if (arr) {
-          const flat = calculateFlatIndex(
-            step.indices || [],
-            arr.dimensions,
-          );
+          const flat = calculateFlatIndex(step.indices || [], arr.dimensions);
           if (flat >= 0 && flat < arr.values.length) {
             arr.values[flat] = step.value;
             step.arrayData = { ...arr };
@@ -477,7 +576,7 @@ export function processRawTrace(
       }
 
       // --- Variables ---
-      case 'var': {
+      case "var": {
         const frame =
           nextMemoryState.callStack[nextMemoryState.callStack.length - 1];
         const declaredType = step.varType || step.eventType || originalType;
@@ -493,7 +592,7 @@ export function processRawTrace(
               type: declaredType,
               primitive: declaredType,
               address: step.addr || step.address,
-              scope: 'local',
+              scope: "local",
               isInitialized: true,
               isAlive: true,
               birthStep: logicalIndex,
@@ -512,7 +611,7 @@ export function processRawTrace(
               type: declaredType,
               primitive: declaredType,
               address: step.addr || step.address,
-              scope: 'global',
+              scope: "global",
               isInitialized: true,
               isAlive: true,
               birthStep: logicalIndex,
@@ -525,13 +624,13 @@ export function processRawTrace(
         break;
       }
 
-      case 'output':
+      case "output":
         nextMemoryState.stdout =
-          (nextMemoryState.stdout || '') + (step.value ?? '');
+          (nextMemoryState.stdout || "") + (step.value ?? "");
         break;
 
-      case 'condition': {
-        step.condition = step.condition || step.expression || '';
+      case "condition": {
+        step.condition = step.condition || step.expression || "";
         const rawResult = step.result ?? step.value ?? null;
         step.result = rawResult;
         if (rawResult !== null && rawResult !== undefined) {
@@ -540,20 +639,32 @@ export function processRawTrace(
         break;
       }
 
-      case 'branch': {
-        step.branch = step.branch || step.branchType || 'if';
-
-        // IMPORTANT: update current frame condition
-        const frame = nextMemoryState.callStack[nextMemoryState.callStack.length - 1] as any;
-        if (frame && step.conditionId) {
-            frame.conditionId = step.conditionId;
+      case "branch": {
+        step.branch = step.branch || step.branchType || "if";
+        // Push condition context for the taken branch body.
+        // bodyDepth = scopeDepth + 1 because backend scopeDepth uses "start depth" for control
+        // steps (branch_taken), while body statements are at the deeper "max depth".
+        const stack =
+          conditionStacks.length > 0
+            ? conditionStacks[conditionStacks.length - 1]
+            : null;
+        if (
+          stack &&
+          step.conditionId !== undefined &&
+          step.conditionId !== null
+        ) {
+          stack.push({
+            conditionId: String(step.conditionId),
+            bodyDepth: scopeDepth,
+          });
+          console.log(`[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth}`);
         }
 
         break;
       }
 
-      case 'pointer_write': {
-        step.target = step.target || step.name || step.symbol || '';
+      case "pointer_write": {
+        step.target = step.target || step.name || step.symbol || "";
         break;
       }
 
@@ -571,12 +682,16 @@ export function processRawTrace(
       step.explanation = `Executing ${step.type} at line ${step.line}`;
     }
 
-    const stepEventType = String(step.type || step.eventType || '')
+    const stepEventType = String(step.type || step.eventType || "")
       .toLowerCase()
       .trim();
-    const isReturnEvent = stepEventType === 'return' || stepEventType === 'function_return';
+    const isReturnEvent =
+      stepEventType === "return" || stepEventType === "function_return";
 
-    if (!hasVisualChange(currentMemoryState, nextMemoryState, step) && !isReturnEvent) {
+    if (
+      !hasVisualChange(currentMemoryState, nextMemoryState, step) &&
+      !isReturnEvent
+    ) {
       currentMemoryState = nextMemoryState;
       continue;
     }
@@ -590,18 +705,20 @@ export function processRawTrace(
 
   const validSteps = processedSteps.filter((s) => s.id !== undefined);
   if (validSteps.length === 0) {
-    throw new Error('No valid steps after processing.');
+    throw new Error("No valid steps after processing.");
   }
 
   // Merge consecutive input_call + input_assign into a single 'input' step
   const mergedSteps = mergeInputSteps(validSteps);
   // Remove any empty/noop steps that should not appear as visual timeline entries
   const finalSteps = mergedSteps.filter(
-    (s) => s && s.type !== 'noop' && s.type !== 'empty'
+    (s) => s && s.type !== "noop" && s.type !== "empty",
   );
 
   // Layer 1 + 2: Annotate steps with stepKey/placementParentKey and build conditionTree
-  annotateStepsWithPlacementKeys(finalSteps);
+  if (!finalSteps[0]?.stepKey) {
+    annotateStepsWithPlacementKeys(finalSteps);
+  }
   const conditionTree = buildConditionTree(finalSteps);
 
   const trace: ExecutionTrace = {
@@ -611,7 +728,7 @@ export function processRawTrace(
     functions: rawChunks[0]?.functions || [],
     metadata: {
       ...(rawChunks[0]?.metadata || {}),
-      debugger: 'instrumentation',
+      debugger: "instrumentation",
       hasSemanticInfo: true,
     },
   };
