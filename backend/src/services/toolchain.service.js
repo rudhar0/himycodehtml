@@ -2,6 +2,7 @@
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import fssync from 'fs';
 import resourceResolver from './resource-resolver.service.js';
@@ -35,6 +36,9 @@ class ToolchainService {
     console.log(`[ToolchainService] Initialized for platform: ${this.platform}, arch: ${this.arch}`);
     console.log(`[ToolchainService] Toolchain Root: ${TOOLCHAIN_ROOT}`);
     console.log(`[ToolchainService] Internal Headers: ${this.internalHeadersPath}`);
+
+    // Optimization: trigger initial AV scan and OS caching
+    this.warmup().catch(err => console.warn(`[ToolchainService] Warmup failed: ${err.message}`));
   }
 
   _resolveToolchainPath() {
@@ -365,6 +369,42 @@ class ToolchainService {
     }
 
     return results;
+  }
+
+  /**
+   * Optimization: Trigger the OS to load the compiler and tools.
+   * On Windows, this performs the initial AV/SmartScreen scan so subsequent
+   * calls are much faster.
+   */
+  async warmup() {
+    const tools = [
+      this.getCompiler('cpp'),
+      path.join(path.dirname(this.getCompiler('cpp')), this.platform === 'win32' ? 'llvm-nm.exe' : 'llvm-nm'),
+      path.join(path.dirname(this.getCompiler('cpp')), this.platform === 'win32' ? 'llvm-addr2line.exe' : 'llvm-addr2line')
+    ];
+
+    console.log('[ToolchainService] Warming up toolchain binaries...');
+
+    const tasks = tools.map(tool => {
+      return new Promise((resolve) => {
+        try {
+          // Just run --version to trigger scan
+          const p = spawn(tool, ['--version']);
+          p.on('error', () => resolve());
+          p.on('close', () => resolve());
+          // Timeout quickly if something is wrong
+          setTimeout(() => {
+            try { p.kill(); } catch (e) { /* ignore */ }
+            resolve();
+          }, 5000);
+        } catch (e) {
+          resolve();
+        }
+      });
+    });
+
+    await Promise.all(tasks);
+    console.log('[ToolchainService] Toolchain warm-up complete.');
   }
 
 }

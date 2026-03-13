@@ -68,6 +68,9 @@ class InstrumentationTracer {
         this.addressResolutionCache = new Map();
         this.activeProcesses = new Set();
         this._stdoutLineBuffer = '';
+
+        // Optimization: persistent tracer object cache
+        this.cachedTracerObj = path.resolve(path.join(this.tempDir, 'tracer_cached.o'));
     }
 
     /**
@@ -346,6 +349,79 @@ class InstrumentationTracer {
         return finalInfo;
     }
 
+    /**
+     * Optimization: Batch resolve multiple addresses using a single addr2line process.
+     * Essential for performance on Windows.
+     */
+    async batchResolveLineInfo(executable, uniqueAddresses) {
+        if (!uniqueAddresses || uniqueAddresses.length === 0) return new Map();
+
+        const results = new Map();
+        const toResolve = uniqueAddresses.filter(addr => {
+            const cacheKey = `${executable}:${addr}`;
+            if (this.addressResolutionCache.has(cacheKey)) {
+                results.set(addr, this.addressResolutionCache.get(cacheKey));
+                return false;
+            }
+            return true;
+        });
+
+        if (toResolve.length === 0) return results;
+
+        const bin = path.join(
+            path.dirname(toolchainService.getCompiler('cpp')),
+            process.platform === 'win32' ? 'llvm-addr2line.exe' : 'llvm-addr2line'
+        );
+
+        console.log(`[LineInfo] Batch resolving ${toResolve.length} addresses using ${bin}`);
+
+        try {
+            const output = await new Promise((resolve, reject) => {
+                const proc = spawn(bin, ['-e', executable, '-f', '-C', '-i']);
+                this.registerProcess(proc);
+                let stdout = '', stderr = '';
+                proc.stdout.on('data', d => stdout += d.toString());
+                proc.stderr.on('data', d => stderr += d.toString());
+                proc.on('error', e => reject(e));
+                proc.on('close', code => code === 0 ? resolve(stdout) : reject(new Error(stderr)));
+
+                // Write addresses to stdin
+                proc.stdin.write(toResolve.join('\n') + '\n');
+                proc.stdin.end();
+            });
+
+            const lines = output.trim().split('\n');
+            // llvm-addr2line -f -C -i produces 2 lines per address (func, file:line)
+            // Plus extra lines for inlined frames if -i is used, but we'll take top-level.
+            for (let i = 0; i < toResolve.length; i++) {
+                const addr = toResolve[i];
+                const fnLine = lines[i * 2] || '??';
+                const locLine = lines[i * 2 + 1] || '??:0';
+
+                const m = locLine.match(/^(.+):(\d+)$/);
+                const info = {
+                    function: this.normalizeFunctionName(fnLine !== '??' ? fnLine : 'unknown'),
+                    file: m ? m[1] : 'unknown',
+                    line: m ? parseInt(m[2], 10) || 0 : 0
+                };
+
+                if (!m || info.file === '??' || info.file === 'unknown' || info.line === 0) {
+                    info.isUnresolved = true;
+                }
+
+                this.addressResolutionCache.set(`${executable}:${addr}`, info);
+                results.set(addr, info);
+            }
+        } catch (e) {
+            console.warn(`[LineInfo] Batch resolution failed: ${e.message}. Falling back to individual resolution.`);
+            for (const addr of toResolve) {
+                results.set(addr, await this.getLineInfo(executable, addr));
+            }
+        }
+
+        return results;
+    }
+
     shouldFilterEvent(info, event, userSourceFile) {
         const { file, function: fn, line } = info;
 
@@ -440,7 +516,7 @@ class InstrumentationTracer {
         const sourceNormalizedFile = path.resolve(path.join(this.tempDir, `src_${sessionId}.normalized.${ext}`));
         const sourceFile = path.resolve(path.join(this.tempDir, `src_${sessionId}.instrumented.${ext}`));
         const userObj = path.resolve(path.join(this.tempDir, `src_${sessionId}.o`));
-        const tracerObj = path.resolve(path.join(this.tempDir, `tracer_${sessionId}.o`));
+        const tracerObj = this.cachedTracerObj;
         const executable = path.resolve(path.join(this.tempDir, `exec_${sessionId}${process.platform === 'win32' ? '.exe' : ''}`));
         const traceOutput = path.resolve(path.join(this.tempDir, `trace_${sessionId}.json`));
         const headerCopy = path.resolve(path.join(this.tempDir, 'trace.h'));
@@ -482,7 +558,7 @@ class InstrumentationTracer {
             p.on('error', e => reject(e));
         });
 
-        const compileTracer = new Promise((resolve, reject) => {
+        const compileTracer = (async () => {
             const disableInstrFlag = tracerCompiler.includes('clang') ? null : '-fno-instrument-functions';
             let tracerArgs = ['-c', '-g', '-O0', tracerStdFlag, '-fno-omit-frame-pointer',
                 ...tracerIncludeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline', this.tracerCpp, '-o', tracerObj];
@@ -493,16 +569,33 @@ class InstrumentationTracer {
                     ...tracerArgs.slice(tracerArgs.length - 2)
                 ];
             }
+
+            // Check if tracer object is already cached and up-to-date
+            try {
+                const [srcStat, objStat] = await Promise.all([
+                    fs.stat(this.tracerCpp),
+                    fs.stat(tracerObj).catch(() => null)
+                ]);
+                if (objStat && objStat.mtime >= srcStat.mtime) {
+                    console.log('[Compile] Using cached tracer object:', tracerObj);
+                    return;
+                }
+            } catch (e) {
+                // proceed to compile if stat fails
+            }
+
             // --- Step 1.2: Log tracer compile command ---
             console.log('[Compile] Tracer compile command:', tracerCompiler, tracerArgs.join(' '));
 
-            const p = spawn(tracerCompiler, tracerArgs);
-            this.registerProcess(p);
-            let err = '';
-            p.stderr.on('data', d => err += d.toString());
-            p.on('close', code => code === 0 ? resolve() : reject(new Error(`Tracer compile failed:\n${err}`)));
-            p.on('error', e => reject(e));
-        });
+            return new Promise((resolve, reject) => {
+                const p = spawn(tracerCompiler, tracerArgs);
+                this.registerProcess(p);
+                let err = '';
+                p.stderr.on('data', d => err += d.toString());
+                p.on('close', code => code === 0 ? resolve() : reject(new Error(`Tracer compile failed:\n${err}`)));
+                p.on('error', e => reject(e));
+            });
+        })();
 
         const timeoutMs = 30000; // 30s timeout for compile/link
         const withTimeout = (promise, name) => Promise.race([
@@ -1209,6 +1302,10 @@ class InstrumentationTracer {
             }
         };
 
+        // BATCH RESOLVE STEP: Collect all unique addresses from events and resolve them in one pass.
+        const allAddrs = Array.from(new Set(events.filter(e => e.addr).map(e => e.addr)));
+        const resolvedAddrs = await this.batchResolveLineInfo(executable, allAddrs);
+
         // Proactively start main frame so Windows builds (where addr2line / function
         // names may be missing) still produce a consistent step sequence.
         stepIndex = 0;
@@ -1270,6 +1367,12 @@ class InstrumentationTracer {
                     file: ev.file,
                     line: ev.line
                 };
+            } else if (ev.addr && resolvedAddrs.has(ev.addr)) {
+                info = { ...resolvedAddrs.get(ev.addr) };
+                // Prefer tracer-provided function name when addr2line cannot resolve.
+                if ((!info.function || info.function === 'unknown') && ev.func) {
+                    info.function = this.normalizeFunctionName(ev.func);
+                }
             } else {
                 info = await this.getLineInfo(executable, ev.addr);
                 info.function = this.normalizeFunctionName(info.function);

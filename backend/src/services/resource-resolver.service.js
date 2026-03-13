@@ -1,7 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import os from 'os';
+import { getBackendRoot, getRuntimeDir } from '../utils/project-paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,25 +17,11 @@ class ResourceResolver {
     }
     this.resourcesRoot = path.join(this.projectRoot, 'resources');
     this.toolchainRoot = path.join(this.resourcesRoot, 'toolchain');
-    // FIX: Use user-writable directory (Program Files is read-only)
-    this.runtimeRoot = this._resolveRuntimeRoot();
+    // FIX: Use user-writable directory (Program Files is read-only) via unified helper
+    this.runtimeRoot = getRuntimeDir(getBackendRoot(import.meta.url));
 
     // Ensure runtime/temp exists
     this.ensureDir(path.join(this.runtimeRoot, 'temp'));
-  }
-
-  _resolveRuntimeRoot() {
-    const appName = 'CodeViz';
-    // 1. Try LOCALAPPDATA (Windows standard for user data)
-    if (process.env.LOCALAPPDATA) {
-      return path.join(process.env.LOCALAPPDATA, appName, 'runtime');
-    }
-    // 2. Try APPDATA (Roaming)
-    if (process.env.APPDATA) {
-      return path.join(process.env.APPDATA, appName, 'runtime');
-    }
-    // 3. Fallback to OS temp dir
-    return path.join(os.tmpdir(), appName, 'runtime');
   }
 
   ensureDir(p) {

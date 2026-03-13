@@ -24,14 +24,39 @@ export async function initRuntimeLifecycle(): Promise<string> {
   // 2. Resolve paths
   const paths = await resolveAllPaths();
 
-  // 3. Clean stale port files if any (best effort)
+  // 3. Proactive cleanup: Check if a backend is already running and kill it
   try {
-    if ((globalThis as any).Neutralino) {
-      const portJson = paths.runtimeDir + '/port.json';
-      await (globalThis as any).Neutralino.filesystem.removeFile(portJson);
+    const N = (globalThis as any).Neutralino;
+    if (N) {
+      const portJsonPath = paths.runtimeDir + '/port.json';
+      const portDataRaw = await N.filesystem.readFile(portJsonPath).catch(() => null);
+      
+      if (portDataRaw) {
+        const portData = JSON.parse(portDataRaw);
+        const oldPid = portData.pid;
+        
+        if (oldPid && oldPid > 0) {
+          console.log(LOG_PREFIX, 'Found existing backend PID:', oldPid, 'Cleaning up...');
+          
+          const isWindows = (globalThis as any).NL_OS === 'Windows';
+          const killCmd = isWindows 
+            ? `taskkill /F /T /PID ${oldPid}`
+            : `kill -9 ${oldPid}`;
+          
+          try {
+            await N.os.execCommand(killCmd);
+            console.log(LOG_PREFIX, 'Existing backend killed.');
+          } catch (e) {
+            console.warn(LOG_PREFIX, 'Failed to kill existing backend (might already be dead):', e);
+          }
+        }
+      }
+      
+      // Always try to remove the stale port file
+      await N.filesystem.removeFile(portJsonPath).catch(() => null);
     }
-  } catch {
-    // ignore if doesn't exist
+  } catch (error) {
+    console.warn(LOG_PREFIX, 'Proactive cleanup failed (non-critical):', error);
   }
 
   // 4. Spawn backend

@@ -115,9 +115,11 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
   }
 }
 
+let isStopping = false;
+
 /**
  * Stops the backend process with graceful shutdown + forced kill fallback.
- * Adds extra resilience when `proc.pid` is missing by falling back to `proc.id`.
+ * Resilience: Handles PID validation and prevents concurrent stop races.
  */
 export async function stopBackend(): Promise<void> {
   if (!activeProcess) {
@@ -125,14 +127,29 @@ export async function stopBackend(): Promise<void> {
     return;
   }
 
-  // Prefer PID but fall back to the Neutralino process id if PID is not available
-  const targetPid = (activeProcess.pid || activeProcess.id);
-  console.log(LOG_PREFIX, 'Stopping backend PID/ID:', targetPid);
+  if (isStopping) {
+    console.log(LOG_PREFIX, 'Stop already in progress, skipping...');
+    return;
+  }
+
+  isStopping = true;
+  
+  // Prefer PID (must be a positive integer)
+  const targetPid = activeProcess.pid;
+  
+  if (!targetPid || targetPid <= 0) {
+    console.warn(LOG_PREFIX, 'Invalid PID for backend process, clearing state.');
+    activeProcess = null;
+    isStopping = false;
+    return;
+  }
+
+  console.log(LOG_PREFIX, 'Stopping backend PID:', targetPid);
   
   try {
     const isWindows = (globalThis as any).NL_OS === 'Windows';
     
-    // Try graceful SIGTERM first (gives server time to cleanup)
+    // Try graceful SIGTERM first
     const gracefulCmd = isWindows 
       ? `taskkill /PID ${targetPid} /T` 
       : `kill -TERM ${targetPid}`;
@@ -146,15 +163,14 @@ export async function stopBackend(): Promise<void> {
     let gracefulSucceeded = false;
 
     try {
-      // Race kill command against a timeout to avoid hangs
       await Promise.race([
         (globalThis as any).Neutralino.os.execCommand(gracefulCmd),
         new Promise((_, r) => setTimeout(() => r(null), 2500))
       ]);
       gracefulSucceeded = true;
-      console.log(LOG_PREFIX, 'Graceful kill attempted');
+      console.log(LOG_PREFIX, 'Graceful kill command sent');
     } catch (graceErr) {
-      console.warn(LOG_PREFIX, 'Graceful kill failed or timed out, will attempt force kill', graceErr);
+      console.warn(LOG_PREFIX, 'Graceful kill failed or timed out:', graceErr);
     }
 
     if (!gracefulSucceeded) {
@@ -164,18 +180,20 @@ export async function stopBackend(): Promise<void> {
           (globalThis as any).Neutralino.os.execCommand(forceCmd),
           new Promise((_, r) => setTimeout(() => r(null), 1500))
         ]);
-        console.log(LOG_PREFIX, 'Force kill attempted');
+        console.log(LOG_PREFIX, 'Force kill command sent');
       } catch (forceErr) {
         console.error(LOG_PREFIX, 'Force kill also failed:', forceErr);
       }
     }
 
     activeProcess = null;
-    console.log(LOG_PREFIX, 'Backend stop completed');
-    await new Promise(r => setTimeout(r, 200));
+    console.log(LOG_PREFIX, 'Backend stop cycle finished.');
+    await new Promise(r => setTimeout(r, 300));
   } catch (error) {
     console.error(LOG_PREFIX, 'Unexpected error stopping backend:', error);
     activeProcess = null;
+  } finally {
+    isStopping = false;
   }
 }
 
