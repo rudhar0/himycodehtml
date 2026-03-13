@@ -78,6 +78,16 @@ for (let i = 0; i < steps.length; i++) {
       bodyStartKeyByConditionId.set(String(conditionId), nextStep.stepKey);
     }
   }
+
+  // Handle loops similarly to track their body start
+  if (eventType === "loop_start" || eventType === "loop") {
+    const loopId = step.loopId || step.id; // Use id as fallback for loopId
+    const nextStep = steps[i + 1];
+
+    if (loopId && nextStep) {
+      bodyStartKeyByConditionId.set(`loop-${loopId}`, nextStep.stepKey);
+    }
+  }
 }
 
   // Second pass — assign placementParentKey via conditionId map
@@ -88,15 +98,26 @@ for (let i = 0; i < steps.length; i++) {
     const eventType = String(step.eventType || step.type || "")
       .toLowerCase()
       .trim();
+    const loopId = step.loopId;
 
     if (conditionId) {
       const parentKey = bodyStartKeyByConditionId.get(String(conditionId));
-
-      // 🔧 FIX: branch_taken steps should NOT parent themselves to their own body
+      // ... existing condition logic ...
       if (
         (eventType === "branch_taken" || eventType === "branch") &&
         parentKey === steps[i + 1]?.stepKey
       ) {
+        step.placementParentKey = null;
+      } else if (parentKey && parentKey !== step.stepKey) {
+        step.placementParentKey = parentKey;
+      } else {
+        step.placementParentKey = null;
+      }
+    } else if (loopId) {
+      const parentKey = bodyStartKeyByConditionId.get(`loop-${loopId}`);
+      
+      // loop_start steps should not parent themselves
+      if (eventType === "loop_start" && parentKey === steps[i + 1]?.stepKey) {
         step.placementParentKey = null;
       } else if (parentKey && parentKey !== step.stepKey) {
         step.placementParentKey = parentKey;

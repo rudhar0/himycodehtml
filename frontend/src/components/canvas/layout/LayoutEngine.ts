@@ -24,7 +24,8 @@ export interface LayoutElement {
     | "array_panel"
     | "array_reference"
     | "call_site"
-    | "condition_caller";
+    | "condition_caller"
+    | "loop_caller";
   subtype?: string;
   x: number;
   y: number;
@@ -883,7 +884,7 @@ export class LayoutEngine {
     }
 
     // Keep right-flow control subtree growth isolated from frame flow.
-    if (this.isRightFlowControlNode(placement.parent)) {
+    if (this.isRightFlowControlNode(placement.parent) || this.isRightFlowControlNode(element)) {
       return;
     }
 
@@ -901,7 +902,7 @@ export class LayoutEngine {
     toX: number,
     toY: number,
     options?: {
-      kind?: "caller_to_condition" | "condition_to_body" | "return_flow" | "case_fallthrough";
+      kind?: "caller_to_condition" | "condition_to_body" | "loop_to_body" | "return_flow" | "case_fallthrough";
       dashed?: boolean;
       opacity?: number;
       strokeWidth?: number;
@@ -973,8 +974,9 @@ export class LayoutEngine {
       a.y < b.y + b.height &&
       a.y + a.height > b.y;
 
+    // Change: Shift Y instead of X for vertical stacking of "outside" elements
     while (occupancy.some((entry) => overlaps(rect, entry))) {
-      rect.x += CONTROL_SUBTREE_SHIFT_X;
+      rect.y += (height + CONTROL_CHAIN_VERTICAL_GAP);
     }
 
     occupancy.push({ ...rect });
@@ -3230,11 +3232,10 @@ export class LayoutEngine {
       const ownerFrame = this.functionFrames.get(frameId);
       if (!ownerFrame) return;
 
-      const loopElementId = `loop-${frameId}-${loopId}-${stepIndex}`;
-      const scopeDepth = this.getScopeDepth(step, frameId);
-      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
+      const loopScopeDepth = this.getScopeDepth(step, frameId);
+      const placement = this.getPlacementContext(ownerFrame, frameId, loopScopeDepth, step);
       
-      // Look ahead to find end step for skip functionality
+      // Look ahead to find end step
       let endStep: number | undefined;
       for (let i = stepIndex + 1; i < executionTrace.steps.length; i++) {
         const s = executionTrace.steps[i] as any;
@@ -3243,6 +3244,63 @@ export class LayoutEngine {
           break;
         }
       }
+
+      // Step 1: Create the in-flow caller
+      const callerId = `loop-caller-${frameId}-${loopId}-${stepIndex}`;
+      const caller: LayoutElement = {
+        id: callerId,
+        type: 'loop_caller',
+        x: placement.x,
+        y: placement.y,
+        width: placement.width - 40,
+        height: 50,
+        parentId: placement.parent.id,
+        stepId: stepIndex,
+        data: {
+          loopId,
+          loopType,
+          isActive: true,
+          birthStep: stepIndex,
+        },
+        children: [],
+      };
+
+      this.appendElementToPlacement(ownerFrame, placement, caller);
+      layout.elements.push(caller);
+      this.elementHistory.set(callerId, caller);
+      this.createdInStep.set(callerId, stepIndex);
+
+      // Step 2: Create the right-flow loop container
+      const resolvePlacement = this.resolveControlContainerPlacement(
+        ownerFrame,
+        placement.parent,
+        frameId,
+      );
+
+      const loopElementId = `loop-${frameId}-${loopId}-${stepIndex}`;
+      const loopElement: LayoutElement = {
+        id: loopElementId,
+        type: 'loop',
+        subtype: loopType,
+        x: resolvePlacement.x,
+        y: resolvePlacement.y,
+        width: Math.max(300, resolvePlacement.width), // Ensure decent width for iterations
+        height: 150,
+        parentId: caller.id, // Parent to caller
+        stepId: stepIndex,
+        children: [],
+        data: {
+          loopId,
+          loopType,
+          currentIteration: 0,
+          isActive: true,
+          frameId: frameId,
+          explanation: explanation,
+          endStep: endStep,
+          callerId: callerId,
+          isControlNode: true, // Anchor for arrows if needed
+        },
+      };
 
       this.activeLoops.set(loopId, {
         loopId,
@@ -3255,33 +3313,29 @@ export class LayoutEngine {
         parentFrameId: frameId,
       });
 
-      const loopElement: LayoutElement = {
-        id: loopElementId,
-        type: 'loop',
-        subtype: loopType,
-        x: placement.x,
-        y: placement.y,
-        width: placement.width,
-        height: 150,
-        parentId: placement.parent.id,
-        stepId: stepIndex,
-        children: [],
-        data: {
-          loopId,
-          loopType,
-          currentIteration: 0,
-          isActive: true,
-          frameId: frameId,
-          explanation: explanation,
-          endStep: endStep,
-        },
-      };
-
-      this.appendElementToPlacement(ownerFrame, placement, loopElement);
-      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
+      this.appendElementToPlacement(ownerFrame, { ...placement, parent: ownerFrame }, loopElement);
+      this.markEphemeralControlUsed(frameId, loopScopeDepth, placement.parent.id, stepIndex, stepLine);
       layout.elements.push(loopElement);
       this.elementHistory.set(loopElementId, loopElement);
       this.createdInStep.set(loopElementId, stepIndex);
+
+      // Hierarchy link
+      caller.children!.push(loopElement);
+
+      // Step 3: Draw the arrow
+      this.pushControlArrow(
+        `arrow-loop-${loopId}-${stepIndex}`,
+        stepIndex,
+        caller.x + caller.width,
+        caller.y + caller.height / 2,
+        loopElement.x,
+        loopElement.y + 25, // Anchor tip to Loop header midpoint
+        {
+          kind: "loop_to_body",
+          sourceNodeId: caller.id,
+          targetNodeId: loopElement.id,
+        }
+      );
 
       return;
     }
@@ -3747,7 +3801,11 @@ export class LayoutEngine {
   }
 
   private static isRightFlowControlNode(element: LayoutElement): boolean {
-    return Boolean(element.type === "condition" && element.data?.controlKind);
+    if (element.type === "condition" && element.data?.controlKind) return true;
+    if (element.type === "loop" && element.subtype !== "iteration") return true;
+    if (element.type === "loop_caller") return true;
+    if (element.type === "condition" && element.data?.controlRole === "caller") return true;
+    return false;
   }
 
   private static shouldIgnoreChildForParentFlow(

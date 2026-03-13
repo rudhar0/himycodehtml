@@ -14,7 +14,8 @@ import { GlobalPanel } from '../elements/GlobalPanel';
 import { Variable } from '../elements/Variable';
 import { CanvasArray } from '../elements/CanvasArray';
 import { Pointer } from '../elements/Pointer';
-import { Loop } from '../elements/Loop';
+import { LoopCaller } from '../elements/LoopCaller';
+import { LoopBody } from '../elements/Loop';
 import { Condition } from '../elements/Condition';
 import { Output } from '../elements/Output';
 import { ExecutionStep } from '../../types';
@@ -24,7 +25,9 @@ const elementFactory: Record<string, any> = {
   variable_declaration: Variable,
   array_declaration: CanvasArray,
   pointer_declaration: Pointer,
-  loop_start: Loop,
+  loop_caller: LoopCaller,
+  loop_body: LoopBody,
+  loop_start: LoopCaller, // Default to caller for the flow
   conditional_start: Condition,
   output: Output,
 };
@@ -132,6 +135,30 @@ export class CanvasStateManager {
 
       // Skip if element already exists (for rebuild scenarios)
       if (this.state.elements.has(elementId)) {
+        return;
+      }
+
+      // Handle special dual-creation for loops
+      if (type === 'loop_start') {
+        const callerId = `loop-caller-${step.id}`;
+        const bodyId = `loop-body-${step.id}`;
+
+        if (!this.state.elements.has(callerId)) {
+          const caller = new LoopCaller(callerId, parentId, this.layer, payload);
+          await caller.create(payload);
+          parent.addChild(caller);
+          this.state.elements.set(callerId, caller);
+        }
+
+        if (!this.state.elements.has(bodyId)) {
+          const body = new LoopBody(bodyId, parentId, this.layer, payload);
+          await body.create(payload);
+          parent.addChild(body); 
+          this.state.elements.set(bodyId, body);
+        }
+        
+        // Final update to parent after both elements are added
+        parent.update({});
         return;
       }
 

@@ -18,6 +18,7 @@ import { HeapPointerElement } from "./elements/HeapPointerElement";
 import { FunctionElement } from "./elements/FunctionElement";
 import { CallElement } from "./elements/CallElement";
 import { ConditionCallerForParent } from "./elements/ConditionCallerForParent";
+import { LoopCallerForParent } from "./elements/LoopCallerForParent";
 import { FunctionCallArrow } from "./elements/FunctionCallArrow";
 import { ReturnElement } from "./elements/ReturnElement";
 import { LayoutEngine, LayoutElement } from "./layout/LayoutEngine";
@@ -704,8 +705,9 @@ export default function VisualizationCanvas() {
   const isControlNodeElement = (element: LayoutElement | undefined) =>
     Boolean(
       element &&
-        element.type === "condition" &&
-        element.data?.controlKind,
+        ((element.type === "condition" && element.data?.controlKind) ||
+         (element.type === "loop" && element.subtype !== "iteration") ||
+         element.type === "loop_caller")
     );
   const isControlGroupContainer = (element: LayoutElement | undefined) =>
     Boolean(
@@ -717,9 +719,8 @@ export default function VisualizationCanvas() {
   const isControlBodyElement = (element: LayoutElement | undefined) =>
     Boolean(
       element &&
-        element.type === "condition" &&
-        element.data?.controlKind &&
-        element.data?.controlRole === "body",
+        ((element.type === "condition" && element.data?.controlKind && element.data?.controlRole === "body") ||
+         (element.type === "loop" && element.subtype !== "iteration"))
     );
   const filterFlowChildren = (
     children: LayoutElement[] | undefined,
@@ -775,9 +776,10 @@ export default function VisualizationCanvas() {
       visibleLayout?.elements
         .filter(
           (el) =>
-            el.type === "condition" &&
-            el.data?.controlKind &&
-            el.data?.controlRole === "caller" &&
+            ((el.type === "condition" &&
+              el.data?.controlKind &&
+              el.data?.controlRole === "caller") ||
+            el.type === "loop_caller") &&
             !isNestedControlCaller(el),
         )
         .sort((a, b) => {
@@ -864,6 +866,29 @@ export default function VisualizationCanvas() {
               element.stepId !== undefined ? element.stepId + 1 : undefined
             }
           />
+        );
+
+      case "loop_caller":
+        const loopBody = filterChildren(children).find(
+          (child) => child.type === "loop" && child.subtype !== "iteration"
+        );
+        return (
+          <LoopCallerForParent
+            key={id}
+            id={id}
+            loopType={data?.loopType || "loop"}
+            loopId={data?.loopId || 0}
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            isNew={isNew}
+            stepNumber={
+              element.stepId !== undefined ? element.stepId + 1 : undefined
+            }
+          >
+            {loopBody && renderElement(loopBody)}
+          </LoopCallerForParent>
         );
 
       case "function_call": {

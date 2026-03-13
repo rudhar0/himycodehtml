@@ -12,7 +12,7 @@ export interface ControlLinkArrowProps {
   c1y?: number;
   c2x?: number;
   c2y?: number;
-  arrowKind?: "caller_to_condition" | "condition_to_body" | "return_flow" | "case_fallthrough";
+  arrowKind?: "caller_to_condition" | "condition_to_body" | "loop_to_body" | "return_flow" | "case_fallthrough";
   dashed?: boolean;
   strokeWidth?: number;
   opacity?: number;
@@ -35,7 +35,7 @@ const sampleBezierPoints = (
   c2y: number,
 ): number[] => {
   const points: number[] = [];
-  const steps = 28;
+  const steps = 30; // Increased resolution
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const mt = 1 - t;
@@ -78,27 +78,36 @@ export const ControlLinkArrow: React.FC<ControlLinkArrowProps> = memo(
   }) => {
     const arrowRef = useRef<Konva.Arrow>(null);
     const isReturnArrow = arrowKind === "return_flow";
+    const isLoopArrow = arrowKind === "loop_to_body";
     const highlightBoost = isHighlighted && !isReturnArrow ? 0.45 : 0;
     const baseStrokeWidth = strokeWidth ?? 2;
     const effectiveStrokeWidth = baseStrokeWidth + highlightBoost;
-    const baseOpacity = opacity ?? 0.9;
+    const baseOpacity = opacity ?? 0.85; // Slightly lower default opacity for complexity
     const effectiveOpacity =
       isHighlighted && !isReturnArrow ? Math.max(baseOpacity, 1) : baseOpacity;
+    
+    // Color Palette
+    const ARROW_COLOR = isLoopArrow ? "#a855f7" : "#ff9a3c";
+    
     const effectivePointerLength =
       pointerLength ??
-      (arrowKind === "condition_to_body" ? 8 : isReturnArrow ? 7 : 10);
+      (arrowKind === "condition_to_body" || isLoopArrow ? 8 : isReturnArrow ? 7 : 10);
     const effectivePointerWidth =
       pointerWidth ??
-      (arrowKind === "condition_to_body" ? 8 : isReturnArrow ? 7 : 10);
+      (arrowKind === "condition_to_body" || isLoopArrow ? 8 : isReturnArrow ? 7 : 10);
+      
     const shouldAnimateStroke = animated ?? !isReturnArrow;
     const isDashed = dashed ?? false;
 
     const points = useMemo(() => {
-      const isConditionToBody = arrowKind === "condition_to_body";
-      const cx1 = c1x ?? (isConditionToBody ? fromX - 30 : fromX + 60);
-      const cy1 = c1y ?? (isConditionToBody ? fromY + 16 : fromY);
-      const cx2 = c2x ?? (isConditionToBody ? toX - 30 : toX - 60);
-      const cy2 = c2y ?? (isConditionToBody ? toY - 16 : toY);
+      const isOutsideBody = arrowKind === "condition_to_body" || arrowKind === "loop_to_body";
+      
+      // Better automatic curving for outside elements
+      const cx1 = c1x ?? (isOutsideBody ? fromX + 40 : fromX + 60);
+      const cy1 = c1y ?? (isOutsideBody ? fromY : fromY);
+      const cx2 = c2x ?? (isOutsideBody ? toX - 40 : toX - 60);
+      const cy2 = c2y ?? (isOutsideBody ? toY : toY);
+      
       return sampleBezierPoints(fromX, fromY, toX, toY, cx1, cy1, cx2, cy2);
     }, [fromX, fromY, toX, toY, c1x, c1y, c2x, c2y, arrowKind]);
 
@@ -164,9 +173,9 @@ export const ControlLinkArrow: React.FC<ControlLinkArrowProps> = memo(
         <Arrow
           ref={arrowRef}
           points={points}
-          stroke="#ff9a3c"
+          stroke={ARROW_COLOR}
           strokeWidth={effectiveStrokeWidth}
-          fill="#ff9a3c"
+          fill={ARROW_COLOR}
           pointerLength={effectivePointerLength}
           pointerWidth={effectivePointerWidth}
           opacity={effectiveOpacity}

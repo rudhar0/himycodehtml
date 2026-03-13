@@ -42,7 +42,16 @@ export class VerticalFlowLayout {
 
     // Calculate position relative to parent
     const indent = (parent.layout.indent || 0) + 1;
-    const x = parent.layout.x + (indent * this.INDENT_SIZE);
+    let x = parent.layout.x + (indent * this.INDENT_SIZE);
+    
+    // Special case for LoopBody: Position it in the "Right Flow" column
+    // This makes it appear "outside" the main frame
+    if (element.elementType === 'LoopBody') {
+      // 540 is a good offset (Main width 500 + 40 gap)
+      // This is relative to the parent frame's position
+      x = 540; 
+    }
+
     const y = parent.layout.cursorY;
 
     // Position element
@@ -56,6 +65,11 @@ export class VerticalFlowLayout {
       indent,
       cursorY: y + (element.layout.height || 0) + this.ELEMENT_SPACING,
     };
+
+    // Special case for LoopBody: Mark it so it can be distinguished if needed
+    if (element.elementType === 'LoopBody') {
+      element.container.setAttr('isLoopBody', true);
+    }
 
     // Update parent's cursor for next child
     parent.layout.cursorY = y + (element.layout.height || 0) + this.ELEMENT_SPACING;
