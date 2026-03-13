@@ -9,6 +9,8 @@ import codeInstrumenter from './code-instrumenter.service.js';
 import controlFlowNormalizer from './control-flow-normalizer.service.js';
 import inputRequirementsService from './input-requirements.service.js';
 import { toolchainService } from './toolchain.service.js';
+import { analyzeService } from './analyze.service.js';
+
 import { tracePlatformAdapter } from './trace-platform-adapter.js';
 import resourceResolver from './resource-resolver.service.js';
 
@@ -68,6 +70,25 @@ class InstrumentationTracer {
         this._stdoutLineBuffer = '';
     }
 
+    /**
+     * Resets all internal session-related state.
+     * Essential for recovery after timeouts or errors to allow a fresh start ("reopen").
+     */
+    resetState() {
+        console.log('[TraceService] Resetting internal session state...');
+        this.arrayRegistry.clear();
+        this.pointerRegistry.clear();
+        this.functionRegistry.clear();
+        this.callStack = [];
+        this.frameStack = [];
+        this.globalCallIndex = 0;
+        this.frameCounts.clear();
+        this.addressToName.clear();
+        this.addressResolutionCache.clear();
+        this._stdoutLineBuffer = '';
+    }
+
+
     registerProcess(proc) {
         if (!proc) return;
         this.activeProcesses.add(proc);
@@ -76,7 +97,7 @@ class InstrumentationTracer {
     }
 
     stop() {
-        console.log(`[TraceService] Stopping ${this.activeProcesses.size} active processes...`);
+        console.log(`[TraceService] Stopping ${this.activeProcesses.size} active processes and resetting state...`);
         for (const proc of this.activeProcesses) {
             try {
                 proc.kill('SIGKILL');
@@ -85,7 +106,9 @@ class InstrumentationTracer {
             }
         }
         this.activeProcesses.clear();
+        this.resetState();
     }
+
 
     async ensureTempDir() {
         if (!existsSync(this.tempDir)) {
@@ -481,7 +504,17 @@ class InstrumentationTracer {
             p.on('error', e => reject(e));
         });
 
-        await Promise.all([compileUser, compileTracer]);
+        const timeoutMs = 30000; // 30s timeout for compile/link
+        const withTimeout = (promise, name) => Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => {
+                console.warn(`[Compile] ${name} timed out. Killing processes...`);
+                this.stop();
+                reject(new Error(`${name} timed out (30s)`));
+            }, timeoutMs))
+        ]);
+
+        await withTimeout(Promise.all([compileUser, compileTracer]), 'Compilation');
         await this.validateTracerObject(tracerObj);
 
         const linkArgs = [userObj, tracerObj, '-o', executable, ...linkerFlags];
@@ -490,7 +523,7 @@ class InstrumentationTracer {
         // --- Step 1.2: Log link command ---
         console.log('[Compile] Link command:', linkCompiler, linkArgs.join(' '));
 
-        const linked = await new Promise((resolve, reject) => {
+        const linked = await withTimeout(new Promise((resolve, reject) => {
             const link = spawn(linkCompiler, linkArgs);
             this.registerProcess(link);
             let err = '';
@@ -510,7 +543,8 @@ class InstrumentationTracer {
                 }
             });
             link.on('error', e => reject(e));
-        });
+        }), 'Linking');
+
 
         // --- Step 1.1: Verify instrumentation hook symbols ---
         await this._verifyInstrumentationHooks(executable);
@@ -621,9 +655,11 @@ class InstrumentationTracer {
             proc.stderr.on('data', d => stderr += d.toString());
 
             const timeout = setTimeout(() => {
-                try { proc.kill(); } catch (_) { }
+                console.warn('[Execute] Execution timeout (10 s). Killing all related processes...');
+                this.stop(); // Force kill everything and reset state
                 reject(new Error('Execution timeout (10 s)'));
             }, 10000);
+
             timeout.unref();
 
             proc.on('close', async (code) => {
@@ -2719,6 +2755,12 @@ if (currentFrame && currentFrame.conditionStack && currentFrame.conditionStack.l
         this.frameStack = [];
         this.globalCallIndex = 0;
         this.frameCounts = new Map();
+
+        const syntaxResult = await analyzeService.validateSyntax({ code, language });
+        if (!syntaxResult.valid) {
+            const errorMsg = syntaxResult.errors.map(e => `[Line ${e.line}] ${e.message}`).join('\n');
+            throw new Error(`Syntax Error:\n${errorMsg}`);
+        }
 
         const inputAnalysis = inputRequirementsService.analyzeInputRequirements(code, language);
         const normalizedInputs = inputRequirementsService.normalizeProvidedInputs(

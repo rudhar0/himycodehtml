@@ -11,6 +11,7 @@ import routes from './routes/index.js';
 import setupSocketHandlers from './sockets/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import workerPool from './services/worker-pool.service.js';
+import instrumentationTracer from './services/instrumentation-tracer.service.js';
 import runtimeCleaner from './services/runtime-cleaner.service.js';
 import { toolchainService } from './services/toolchain.service.js';
 import sessionManager from './services/session-manager.service.js';
@@ -29,6 +30,14 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, socketConfig);
+
+// Track active sockets for forceful destruction on shutdown
+const activeSockets = new Set();
+httpServer.on('connection', (socket) => {
+  activeSockets.add(socket);
+  socket.on('close', () => activeSockets.delete(socket));
+});
+
 
 // Middleware
 app.use(cors(corsConfig));
@@ -196,6 +205,12 @@ process.on('SIGTERM', async () => {
       await sessionManager.destroySession(s.id);
     }
     await cleanupRuntimeTemp();
+    
+    // Forcefully destroy any hanging network connections
+    for (const socket of activeSockets) {
+      socket.destroy();
+    }
+    activeSockets.clear();
   } catch (error) {
     logger.error('Error during shutdown cleanup:', error);
   }
@@ -206,6 +221,7 @@ process.on('SIGTERM', async () => {
     process.exit(0);
   });
 });
+
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully...');
@@ -223,9 +239,16 @@ process.on('SIGINT', async () => {
       await sessionManager.destroySession(s.id);
     }
     await cleanupRuntimeTemp();
+
+    // Forcefully destroy any hanging network connections
+    for (const socket of activeSockets) {
+      socket.destroy();
+    }
+    activeSockets.clear();
   } catch (error) {
     logger.error('Error during shutdown cleanup:', error);
   }
+
 
   httpServer.close(async () => {
     await portSelection?.release?.();
@@ -251,9 +274,16 @@ process.on('SIGUSR2', async () => {
       await sessionManager.destroySession(s.id);
     }
     await cleanupRuntimeTemp();
+
+    // Forcefully destroy any hanging network connections
+    for (const socket of activeSockets) {
+      socket.destroy();
+    }
+    activeSockets.clear();
   } catch (error) {
     logger.error('Error during shutdown cleanup:', error);
   }
+
 
   httpServer.close(async () => {
     await portSelection?.release?.();
@@ -264,10 +294,14 @@ process.on('SIGUSR2', async () => {
 
 startServer();
 
+
 // Auto-shutdown Watchdog
+
 // Prevents orphan processes when the frontend is closed abruptly.
 let idleTimer = null;
 const IDLE_TIMEOUT = 300000; // 5 minutes
+
+
 let lastCheck = Date.now();
 
 function startWatchdog() {
@@ -314,15 +348,15 @@ io.on('connection', (socket) => {
 startWatchdog();
 
 // Parent Process Watchdog (Failsafe)
-// If the parent process dies, we should exit to avoid becoming an orphan.
+// If the parent process dies, we should exit gracefully to avoid becoming an orphan.
 setInterval(() => {
   try {
     // process.kill(pid, 0) checks if the process exists. Throws if not.
     process.kill(process.ppid, 0);
   } catch (e) {
-    logger.warn(`[Watchdog] Parent process ${process.ppid} not found. Exiting.`);
-    process.exit(0);
+    logger.warn(`[Watchdog] Parent process ${process.ppid} not found. Triggering graceful shutdown.`);
+    process.emit('SIGTERM');
   }
-}, 5000).unref(); // Don't block exit
+}, 2000).unref(); // Don't block exit
 
 export { io };

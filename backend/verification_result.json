@@ -1,0 +1,11 @@
+{
+  "success": false,
+  "errors": [
+    {
+      "line": 1,
+      "column": 22,
+      "type": "error",
+      "message": "expected ';' after return statement"
+    }
+  ]
+}

@@ -2,13 +2,15 @@ import { exec } from 'child_process';
 import { writeFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import logger from '../utils/logger.js';
+import { toolchainService } from '../services/toolchain.service.js';
+import resourceResolver from '../services/resource-resolver.service.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const TEMP_DIR = join(__dirname, '..', '..', 'temp');
+const TEMP_DIR = resourceResolver.getTempRoot();
 
 class CodeValidatorService {
   /**
@@ -25,7 +27,10 @@ class CodeValidatorService {
     try {
       await writeFile(filePath, code);
 
-      const command = `clang -fsyntax-only ${filePath}`;
+      const compiler = toolchainService.getCompiler(language);
+      const includeFlags = toolchainService.getIncludeFlags(language);
+      const command = `"${compiler}" -fsyntax-only ${includeFlags.join(' ')} "${filePath}"`;
+
       const { stderr } = await new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
           // Clang exits with an error if there are syntax issues,
