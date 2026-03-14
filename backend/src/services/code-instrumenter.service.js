@@ -371,6 +371,32 @@ class CodeInstrumenter {
     return null;
   }
 
+  wrapStatementIfContinue(stmt, indent, lineNumber) {
+    const trimmed = stmt.trim();
+    const out = [];
+    if (trimmed.startsWith('continue')) {
+      if (this.loopStack.length > 0) {
+        const loopInfo = this.loopStack[this.loopStack.length - 1];
+        if (loopInfo.increment) {
+          out.push(`${indent}${loopInfo.increment};`);
+          if (loopInfo.varName) {
+            out.push(`${indent}__trace_assign(${loopInfo.varName}, ${loopInfo.varName}, ${lineNumber});`);
+          }
+        }
+        out.push(`${indent}__trace_loop_iteration_end(${loopInfo.loopId}, ${lineNumber});`);
+      }
+      out.push(`${indent}__trace_control_flow("continue", ${lineNumber});`);
+      out.push(`${indent}${trimmed}`);
+      return out;
+    }
+    if (trimmed.startsWith('break')) {
+      out.push(`${indent}__trace_control_flow("break", ${lineNumber});`);
+      out.push(`${indent}${trimmed}`);
+      return out;
+    }
+    return [`${indent}${trimmed}`];
+  }
+
   async injectBeginnerModeTracing(code, language) {
     const lines = code.split('\n');
     const out = [];
@@ -501,11 +527,12 @@ class CodeInstrumenter {
           this.blockDepth++;
         }
         if (!pendingFunctionDef) {
+          const isLoopLine = /^\s*(for|while|do)\b/.test(trimmed);
           for (let b = 0; b < openBraces; b++) {
             const depthAfterOpen = (this.blockDepth - openBraces + b + 1);
             if (isElseLine) {
               suppressedBlockEnters.push(`${indent}  __trace_block_enter(${depthAfterOpen}, ${i + 1});`);
-            } else {
+            } else if (!isLoopLine) {
               out.push(`${indent}__trace_block_enter(${depthAfterOpen}, ${i + 1});`);
             }
           }
@@ -559,6 +586,9 @@ class CodeInstrumenter {
       }
 
       if (closeBraces > 0) {
+        const isLoopEndLine = trimmed.startsWith('}') && 
+                             trimmed.replace(/\s*\/\/.*$/, '').trim() === '}' && 
+                             this.loopStack.length > 0;
         for (let b = 0; b < closeBraces; b++) {
           if (scopeStack.length > 1) {
             scopeStack.pop();
@@ -566,7 +596,7 @@ class CodeInstrumenter {
           if (this.blockDepth > 0) {
             if (isElseLine) {
               suppressedBlockExits.push(`${indent}  __trace_block_exit(${depthBeforeProcessing}, ${i + 1});`);
-            } else {
+            } else if (!isLoopEndLine) {
               out.push(`${indent}__trace_block_exit(${this.blockDepth}, ${i + 1});`);
             }
             this.blockDepth--;
@@ -618,9 +648,8 @@ class CodeInstrumenter {
       }
 
       if (this.isBreakOrContinue(trimmed)) {
-        const controlType = trimmed.match(/^\s*(break|continue)/)[1];
-        out.push(line);
-        out.push(`${indent}__trace_control_flow("${controlType}", ${i + 1});`);
+        const lines = this.wrapStatementIfContinue(trimmed, indent, i + 1);
+        lines.forEach(l => out.push(l));
         continue;
       }
 
@@ -813,14 +842,17 @@ class CodeInstrumenter {
         }
         out.push(`${indent}${varName} = ${initValue.trim()};`);
         out.push(`${indent}__trace_assign(${varName}, ${varName}, ${i + 1});`);
-        out.push(`${indent}__trace_loop_start(${loopId}, "for", ${i + 1});`);
+        const escapedInit = this.escapeString(`${type} ${varName} = ${initValue.trim()}`);
+        const escapedCond = this.escapeString(condition.trim());
+        const escapedUpdate = this.escapeString(increment.trim());
+        out.push(`${indent}__trace_loop_start(${loopId}, "for", "${escapedInit}", "${escapedCond}", "${escapedUpdate}", ${i + 1});`);
         // Move increment into loop body so it is traced AFTER execution, not before
         out.push(`${indent}for (; ${condition.trim()}; ) {`);
         out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition.trim()}) ? 1 : 0, ${i + 1});`);
-        out.push(`${indent}  if (!(${condition.trim()})) { break; }`);
+        out.push(`${indent}  if (!(${condition.trim()})) { __trace_loop_end(${loopId}, ${i + 1}); break; }`);
         out.push(`${indent}  __trace_loop_body_start(${loopId}, ${i + 1});`);
-        // Store increment so the closing brace handler can emit it and trace it
-        this.loopStack.push({ loopId, varName, increment: increment.trim(), lineNum: i + 1 });
+        // Store increment and braceDepth so the closing brace handler can emit it and trace it
+        this.loopStack.push({ loopId, varName, increment: increment.trim(), lineNum: i + 1, braceDepth: this.blockDepth });
         continue;
       }
 
@@ -832,13 +864,16 @@ class CodeInstrumenter {
 
         out.push(`${indent}${varName} = ${initValue.trim()};`);
         out.push(`${indent}__trace_assign(${varName}, ${varName}, ${i + 1});`);
-        out.push(`${indent}__trace_loop_start(${loopId}, "for", ${i + 1});`);
+        const escapedInit = this.escapeString(`${varName} = ${initValue.trim()}`);
+        const escapedCond = this.escapeString(condition.trim());
+        const escapedUpdate = this.escapeString(increment.trim());
+        out.push(`${indent}__trace_loop_start(${loopId}, "for", "${escapedInit}", "${escapedCond}", "${escapedUpdate}", ${i + 1});`);
         // Move increment into loop body so it is traced AFTER execution, not before
         out.push(`${indent}for (; ${condition.trim()}; ) {`);
         out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition.trim()}) ? 1 : 0, ${i + 1});`);
-        out.push(`${indent}  if (!(${condition.trim()})) { break; }`);
+        out.push(`${indent}  if (!(${condition.trim()})) { __trace_loop_end(${loopId}, ${i + 1}); break; }`);
         out.push(`${indent}  __trace_loop_body_start(${loopId}, ${i + 1});`);
-        this.loopStack.push({ loopId, varName, increment: increment.trim(), lineNum: i + 1 });
+        this.loopStack.push({ loopId, varName, increment: increment.trim(), lineNum: i + 1, braceDepth: this.blockDepth });
         continue;
       }
 
@@ -846,22 +881,37 @@ class CodeInstrumenter {
       if (whileLoop) {
         const [, condition] = whileLoop;
         const loopId = loopIdCounter++;
-        out.push(`${indent}__trace_loop_start(${loopId}, "while", ${i + 1});`);
+        const escapedCond = this.escapeString(condition.trim());
+        out.push(`${indent}__trace_loop_start(${loopId}, "while", "", "${escapedCond}", "", ${i + 1});`);
         out.push(`${indent}while (1) {`);
         out.push(`${indent}  __trace_loop_condition(${loopId}, (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}  if (!(${condition})) { __trace_loop_end(${loopId}, ${i + 1}); break; }`);
         out.push(`${indent}  __trace_loop_body_start(${loopId}, ${i + 1});`);
-        this.loopStack.push({ loopId, varName: null, increment: null, lineNum: i + 1 });
+        this.loopStack.push({ loopId, varName: null, increment: null, lineNum: i + 1, braceDepth: this.blockDepth });
         continue;
       }
 
       const doWhile = trimmed.match(/^\s*do\s*\{/);
       if (doWhile) {
         const loopId = loopIdCounter++;
-        out.push(`${indent}__trace_loop_start(${loopId}, "do-while", ${i + 1});`);
+        // Find the while condition to pass it to loop_start
+        let doWhileCond = "";
+        let braceDepth = 1;
+        for (let j = i + 1; j < lines.length; j++) {
+          const l = lines[j];
+          const { open, close } = this.countBraces(l);
+          braceDepth += open - close;
+          if (braceDepth <= 0) {
+            const m = l.match(/}\s*while\s*\(([^)]+)\)\s*;/);
+            if (m) doWhileCond = m[1].trim();
+            break;
+          }
+        }
+        const escapedCond = this.escapeString(doWhileCond);
+        out.push(`${indent}__trace_loop_start(${loopId}, "do-while", "", "${escapedCond}", "", ${i + 1});`);
         out.push(`${indent}do {`);
         out.push(`${indent}  __trace_loop_body_start(${loopId}, ${i + 1});`);
-        this.loopStack.push({ loopId, varName: null, increment: null, lineNum: i + 1 });
+        this.loopStack.push({ loopId, varName: null, increment: null, lineNum: i + 1, braceDepth: this.blockDepth });
         continue;
       }
 
@@ -882,21 +932,24 @@ class CodeInstrumenter {
       if (trimmed.startsWith('}') && trimmed.replace(/\s*\/\/.*$/, '').trim() === '}' && this.loopStack.length > 0) {
         const loopInfo = this.loopStack[this.loopStack.length - 1];
 
-        const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
-        if (!nextLine.match(/^\s*while\s*\(/)) {
-          this.loopStack.pop();
+        // CRITICAL: Only terminate the loop if this brace matching the loop's brace depth
+        if (this.blockDepth === loopInfo.braceDepth - 1) {
+          const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+          if (!nextLine.match(/^\s*while\s*\(/)) {
+            this.loopStack.pop();
 
-          // Emit the increment expression and trace it BEFORE loop_iteration_end
-          // This way the traced value reflects the post-increment state
-          if (loopInfo.varName && loopInfo.increment) {
-            out.push(`${indent}  ${loopInfo.increment};`);
-            out.push(`${indent}  __trace_assign(${loopInfo.varName}, ${loopInfo.varName}, ${loopInfo.lineNum});`);
+            // Emit the increment expression and trace it BEFORE loop_iteration_end
+            // This way the traced value reflects the post-increment state
+            if (loopInfo.varName && loopInfo.increment) {
+              out.push(`${indent}  ${loopInfo.increment};`);
+              out.push(`${indent}  __trace_assign(${loopInfo.varName}, ${loopInfo.varName}, ${loopInfo.lineNum});`);
+            }
+            out.push(`${indent}  __trace_loop_iteration_end(${loopInfo.loopId}, ${loopInfo.lineNum});`);
+            out.push(line); // the closing brace
+            // Only ONE loop_end here. The break-guard in the for-header no longer emits one.
+            out.push(`${indent}__trace_loop_end(${loopInfo.loopId}, ${i + 1});`);
+            continue;
           }
-          out.push(`${indent}  __trace_loop_iteration_end(${loopInfo.loopId}, ${loopInfo.lineNum});`);
-          out.push(line); // the closing brace
-          // Only ONE loop_end here. The break-guard in the for-header no longer emits one.
-          out.push(`${indent}__trace_loop_end(${loopInfo.loopId}, ${loopInfo.lineNum});`);
-          continue;
         }
       }
 
@@ -945,12 +998,17 @@ class CodeInstrumenter {
         ifConditionIdStack.push({ condId, braceDepthAtOpen: -1 });
         out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}if (${condition}) {`);
+        // FIX: Increment blockDepth and emit enter for synthetic block
+        this.blockDepth++;
+        out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
-        out.push(`${indent}  ${body}`);
-        // If the next source line is an else, do NOT close the synthetic if block.
-        // The plain-else handlers below will emit `} else {` to close it cleanly.
-        const nextTrimmed = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
-        if (/^else\b/.test(nextTrimmed)) {
+        this.wrapStatementIfContinue(body, indent + '  ', i + 1).forEach(l => out.push(l));
+        // FIX: Emit exit and decrement blockDepth
+        out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 1});`);
+        this.blockDepth--;
+
+        const nextTrimmedAfterBody = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+        if (/^else\b/.test(nextTrimmedAfterBody)) {
           // Leave block open — else handler will close it.
           // Do NOT pop the stack yet — else handler needs the condId.
         } else {
@@ -969,10 +1027,16 @@ class CodeInstrumenter {
         ifConditionIdStack.push({ condId, braceDepthAtOpen: -1 }); // sentinel -1
         out.push(`${indent}__trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}if (${condition}) {`);
+        // FIX: Increment blockDepth and emit enter for synthetic block
+        this.blockDepth++;
+        out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
         // Consume next line as body
         const bodyLine = i + 1 < lines.length ? lines[i + 1] : '';
-        out.push(`${indent}  ${bodyLine.trim()}`);
+        this.wrapStatementIfContinue(bodyLine, indent + '  ', i + 2).forEach(l => out.push(l));
+        // FIX: Emit exit and decrement blockDepth
+        out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 2});`);
+        this.blockDepth--;
         i++; // skip next line since we consumed it
         // If the line AFTER the body is an else, do NOT close the synthetic if block.
         // The plain-else handlers below will emit `} else {` to close it cleanly.
@@ -1040,8 +1104,14 @@ class CodeInstrumenter {
         out.push(isSynthetic ? `${indent}} else {` : `${indent}else {`);
         suppressedBlockExits.forEach(stmt => out.push(stmt));
         suppressedBlockEnters.forEach(stmt => out.push(stmt));
+        // FIX: Increment blockDepth and emit enter for synthetic block
+        this.blockDepth++;
+        out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
-        out.push(`${indent}  ${elseBodyLine.trim()}`);
+        this.wrapStatementIfContinue(elseBodyLine, indent + '  ', i + 2).forEach(l => out.push(l));
+        // FIX: Emit exit and decrement blockDepth
+        out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 2});`);
+        this.blockDepth--;
         out.push(`${indent}}`);
         i++; // consume the body line
         if (ifConditionIdStack.length > 0) ifConditionIdStack.pop();
@@ -1086,8 +1156,14 @@ class CodeInstrumenter {
         out.push(`${indent}} else {`);
         suppressedBlockExits.forEach(stmt => out.push(stmt));
         suppressedBlockEnters.forEach(stmt => out.push(stmt));
+        // FIX: Increment blockDepth and emit enter for synthetic block
+        this.blockDepth++;
+        out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
-        out.push(`${indent}  ${bodyLine.trim()}`);
+        this.wrapStatementIfContinue(bodyLine, indent + '  ', i + 2).forEach(l => out.push(l));
+        // FIX: Emit exit and decrement blockDepth
+        out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 2});`);
+        this.blockDepth--;
         out.push(`${indent}}`);
         i++; // skip consumed body line
         // pop the matching if from the stack since the else closes this if chain

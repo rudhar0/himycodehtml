@@ -49,7 +49,13 @@
  * - No overhead when guard is not triggered (just a thread-local bool check)
  */
 
-// ========== CROSS-PLATFORM COMPATIBILITY DEFINITIONS ==========
+#if defined(__clang__)
+#pragma clang attribute push(__attribute__((no_instrument_function)), apply_to = function)
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize ("-fno-instrument-functions")
+#endif
 
 // Macro for marking functions that must never be instrumented
 #if defined(__clang__) || defined(__GNUC__)
@@ -155,13 +161,26 @@ static unsigned long g_event_counter = 0;
 // Prevents infinite recursion when tracer functions are instrumented
 // Cross-platform thread-local reentrancy guard
 // CRITICAL: Must be checked FIRST in every entry point to prevent stack overflow
-#if defined(_MSC_VER)
-__declspec(thread) bool g_inside_tracer = false;
+#if defined(_MSC_VER) || defined(__clang__) || (__cplusplus >= 201103L)
+static thread_local bool g_inside_tracer = false;
 #else
 static __thread bool g_inside_tracer = false;
 #endif
 static volatile bool g_tracer_disabled = false;
 static volatile int g_tracer_depth_protect = 0;  // Additional depth protection layer
+
+// Safety limits to prevent massive trace files
+static const unsigned long MAX_TOTAL_EVENTS = 50000;
+static const int MAX_LOOP_ITERATIONS = 1000;
+
+// Robust guard that can be used in expressions or returns
+static inline NO_INSTRUMENT bool check_and_enter_tracer() {
+    if (g_tracer_disabled || g_inside_tracer) return false;
+    g_inside_tracer = true;
+    return true;
+}
+
+
 
 struct ArrayInfo {
     std::string name;
@@ -321,6 +340,14 @@ static void NO_INSTRUMENT write_json_event(const char* type, void* addr,
 
     {
         TraceGuard guard;
+
+        if (g_event_counter >= MAX_TOTAL_EVENTS) {
+            if (g_event_counter == MAX_TOTAL_EVENTS) {
+                fprintf(g_trace_file, ",\n  {\"id\":%lu,\"type\":\"limit_reached\",\"msg\":\"MAX_TOTAL_EVENTS reached\"}", g_event_counter++);
+            }
+            g_tracer_disabled = true;
+            return;
+        }
 
         if (g_event_counter > 0) fputs(",\n", g_trace_file);
 
@@ -724,8 +751,8 @@ extern "C" void __trace_control_flow_loc(const char* controlType, const char* fi
     TRACER_GUARD_EXIT();
 }
 
-extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const char* file, int line) __attribute__((no_instrument_function));
-extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const char* file, int line) {
+extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const char* init, const char* cond, const char* update, const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const char* init, const char* cond, const char* update, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
     
@@ -735,10 +762,10 @@ extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const c
     }
     
     const std::string f = json_safe_path(file);
-    char extra[256];
+    char extra[1024];
     snprintf(extra, sizeof(extra),
-             "\"loopId\":%d,\"loopType\":\"%s\",\"file\":\"%s\",\"line\":%d",
-             loopId, loopType, f.c_str(), line);
+             "\"loopId\":%d,\"loopType\":\"%s\",\"init\":\"%s\",\"cond\":\"%s\",\"update\":\"%s\",\"file\":\"%s\",\"line\":%d",
+             loopId, loopType, init ? init : "", cond ? cond : "", update ? update : "", f.c_str(), line);
     write_json_event("loop_start", nullptr, get_current_function().c_str(), g_depth, extra);
     TRACER_GUARD_EXIT();
 }
@@ -751,6 +778,15 @@ extern "C" void __trace_loop_body_start_loc(int loopId, const char* file, int li
     int iteration = 0;
     if (!get_call_stack().empty()) {
         iteration = ++get_call_stack().back().loopIterations[loopId];
+        
+        if (iteration > MAX_LOOP_ITERATIONS) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "\"loopId\":%d,\"msg\":\"MAX_LOOP_ITERATIONS reached (%d)\"", loopId, MAX_LOOP_ITERATIONS);
+            write_json_event("limit_reached", nullptr, get_current_function().c_str(), g_depth, msg);
+            g_tracer_disabled = true;
+            TRACER_GUARD_EXIT();
+            return;
+        }
     }
     
     const std::string f = json_safe_path(file);
@@ -1267,3 +1303,7 @@ void finish_tracer() {
 
     TRACER_GUARD_EXIT();
 }
+
+#if defined(__clang__)
+#pragma clang attribute pop
+#endif

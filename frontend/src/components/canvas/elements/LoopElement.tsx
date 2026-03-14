@@ -32,6 +32,7 @@ export interface LoopElementProps {
   condition?: string;
   update?: string;
   conditionResult?: boolean;
+  isConditionStep?: boolean;
   
   // Visual state
   isNew?: boolean;
@@ -113,6 +114,7 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
   condition,
   update,
   conditionResult,
+  isConditionStep,
   isNew = false,
   stepNumber,
   enterDelay = 0,
@@ -270,6 +272,7 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
     condition,
     update,
     conditionResult,
+    isConditionStep,
     currentIteration,
     totalIterations,
     isActive,
@@ -470,15 +473,31 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
               />
             )}
             {condition && (
-              <Text
-                text={`Cond: ${condition}`}
-                x={PADDING + 6}
-                y={14}
-                fontSize={9}
-                fill={conditionResult ? '#10B981' : '#EF4444'}
-                fontFamily="'SF Mono', monospace"
-                fontStyle="bold"
-              />
+              <Group>
+                {isConditionStep && (
+                  <Rect
+                    x={PADDING}
+                    y={10}
+                    width={200}
+                    height={20}
+                    fill={conditionResult ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}
+                    cornerRadius={10} // Higher radius for capsule
+                    stroke={conditionResult ? '#10B981' : '#EF4444'}
+                    strokeWidth={1.5}
+                    shadowBlur={15}
+                    shadowColor={conditionResult ? '#10B981' : '#EF4444'}
+                  />
+                )}
+                <Text
+                  text={`Cond: ${condition}`}
+                  x={PADDING + 6}
+                  y={14}
+                  fontSize={10}
+                  fill={isConditionStep ? (conditionResult ? '#10B981' : '#EF4444') : '#94A3B8'}
+                  fontFamily="'SF Mono', monospace"
+                  fontStyle="bold"
+                />
+              </Group>
             )}
             {update && (
               <Text
@@ -505,12 +524,26 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
               fontFamily="'SF Pro Display', system-ui"
               letterSpacing={1}
             />
+            {isConditionStep && (
+              <Rect
+                x={PADDING}
+                y={10}
+                width={200}
+                height={20}
+                fill={conditionResult ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}
+                cornerRadius={10}
+                stroke={conditionResult ? '#10B981' : '#EF4444'}
+                strokeWidth={1.5}
+                shadowBlur={15}
+                shadowColor={conditionResult ? '#10B981' : '#EF4444'}
+              />
+            )}
             <Text
               text={condition}
               x={PADDING + 6}
               y={14}
               fontSize={10}
-              fill={conditionResult ? '#10B981' : '#EF4444'}
+              fill={isConditionStep ? (conditionResult ? '#10B981' : '#EF4444') : '#94A3B8'}
               fontFamily="'SF Mono', monospace"
               fontStyle="bold"
             />
@@ -529,12 +562,26 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
               fontFamily="'SF Pro Display', system-ui"
               letterSpacing={1}
             />
+            {isConditionStep && (
+              <Rect
+                x={PADDING}
+                y={10}
+                width={200}
+                height={20}
+                fill={conditionResult ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}
+                cornerRadius={10}
+                stroke={conditionResult ? '#10B981' : '#EF4444'}
+                strokeWidth={1.5}
+                shadowBlur={15}
+                shadowColor={conditionResult ? '#10B981' : '#EF4444'}
+              />
+            )}
             <Text
               text={condition}
               x={PADDING + 6}
               y={14}
               fontSize={10}
-              fill={conditionResult ? '#10B981' : '#EF4444'}
+              fill={isConditionStep ? (conditionResult ? '#10B981' : '#EF4444') : '#94A3B8'}
               fontFamily="'SF Mono', monospace"
               fontStyle="bold"
             />

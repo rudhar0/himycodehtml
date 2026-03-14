@@ -657,9 +657,9 @@ export function processRawTrace(
         ) {
           stack.push({
             conditionId: String(step.conditionId),
-            bodyDepth: scopeDepth + 1,
+            bodyDepth: scopeDepth,
           });
-          console.log(`[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth + 1}`);
+          console.log(`[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth}`);
         }
 
         break;

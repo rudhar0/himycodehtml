@@ -150,10 +150,13 @@ class StepFilterService {
     }
 
     // ===================================================================
-    // STEP 7: Keep heap operations
+    // STEP 7: Keep heap operations (ONLY if user source)
     // ===================================================================
     if (processed.type === 'heap_alloc' || processed.type === 'heap_free') {
-      return processed;
+      if (this.isUserSourceFile(processed.file)) {
+        return processed;
+      }
+      return null;
     }
 
     // ===================================================================
@@ -174,6 +177,10 @@ class StepFilterService {
       'loop_end'
     ];
     if (loopEventTypes.includes(processed.type)) {
+      if (processed.type === 'loop_body_start' || processed.type === 'loop_iteration_end') {
+        // EXPLICITLY filter out these to reduce step count to 15
+        return null;
+      }
       console.log(`✅ Keeping loop event: ${processed.type}`);
       return processed;
     }

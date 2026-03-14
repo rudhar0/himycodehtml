@@ -17,6 +17,8 @@ import resourceResolver from './resource-resolver.service.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const DEBUG_TRACE = process.env.DEBUG_TRACE === 'true';
+
 // --- Custom error classes for clear failure modes ---
 class TraceInstrumentationFailureError extends Error {
     constructor(message) {
@@ -457,10 +459,11 @@ class InstrumentationTracer {
 
         if (file.includes('stl_') || file.includes('bits/') ||
             file.includes('iostream') || file.includes('ostream') ||
-            file.includes('streambuf')) return true;
+            file.includes('streambuf') || file.includes('iterator')) return true;
 
-        const internalPrefixes = ['__', '_IO_', '_M_', 'std::__',
-            'std::basic_', 'std::char_traits', '__gnu_cxx::', '__cxxabi'];
+        const internalPrefixes = ['__', '_IO_', '_M_', 'std::',
+            'std::basic_', 'std::char_traits', '__gnu_cxx::', '__cxxabi',
+            '__std_terminate', 'memmove', 'memcpy', 'memset'];
 
         return internalPrefixes.some(prefix => fn && fn.startsWith(prefix));
     }
@@ -559,16 +562,9 @@ class InstrumentationTracer {
         });
 
         const compileTracer = (async () => {
-            const disableInstrFlag = tracerCompiler.includes('clang') ? null : '-fno-instrument-functions';
             let tracerArgs = ['-c', '-g', '-O0', tracerStdFlag, '-fno-omit-frame-pointer',
-                ...tracerIncludeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline', this.tracerCpp, '-o', tracerObj];
-            if (disableInstrFlag) {
-                tracerArgs = [
-                    ...tracerArgs.slice(0, tracerArgs.length - 2),
-                    disableInstrFlag,
-                    ...tracerArgs.slice(tracerArgs.length - 2)
-                ];
-            }
+                ...tracerIncludeFlags, ...toolchainService.getDeterministicFlags(), '-fno-inline', 
+                this.tracerCpp, '-o', tracerObj];
 
             // Check if tracer object is already cached and up-to-date
             try {
@@ -628,8 +624,10 @@ class InstrumentationTracer {
                         sourceFile,
                         sourceOriginalFile,
                         sourceNormalizedFile,
+                        userObj,
                         traceOutput,
-                        headerCopy
+                        headerCopy,
+                        debugLog: path.join(this.tempDir, 'trace_debug.json')
                     });
                 } else {
                     reject(new Error(`Linking failed:\n${err}`));
@@ -748,10 +746,10 @@ class InstrumentationTracer {
             proc.stderr.on('data', d => stderr += d.toString());
 
             const timeout = setTimeout(() => {
-                console.warn('[Execute] Execution timeout (30 s). Killing all related processes...');
+                console.warn('[Execute] Execution timeout (90 s). Killing all related processes...');
                 this.stop(); // Force kill everything and reset state
-                reject(new Error('Execution timeout (30 s)'));
-            }, 30000);
+                reject(new Error('Execution timeout (90 s)'));
+            }, 90000);
 
             timeout.unref();
 
@@ -871,7 +869,7 @@ class InstrumentationTracer {
         const enterFunctionFrame = (functionName) => {
             const frame = this.pushCallFrame(functionName);
             currentFrame = frame || null;
-            if (DEBUG_FRAME_VALIDATION) {
+            if (DEBUG_FRAME_VALIDATION || DEBUG_TRACE) {
                 console.log(`[Frame Stack] PUSH ${functionName}, stack depth=${this.frameStack.length}`);
             }
             return frame;
@@ -888,7 +886,7 @@ class InstrumentationTracer {
             }
             const exiting = this.popCallFrame();
             currentFrame = this.frameStack[this.frameStack.length - 1] || null;
-            if (DEBUG_FRAME_VALIDATION) {
+            if (DEBUG_FRAME_VALIDATION || DEBUG_TRACE) {
                 console.log(`[Frame Stack] POP ${exiting?.functionName}, stack depth=${this.frameStack.length}`);
             }
             return exiting;
@@ -1500,7 +1498,9 @@ class InstrumentationTracer {
                     parentId: newFrame.frameId,
                     isFunctionEntry: true
                 });
-                console.log('[ENTER]', newFrame.frameId, 'cond:', _parentConditionId, 'loop:', _parentLoopId);
+                if (DEBUG_TRACE) {
+                    console.log('[ENTER]', newFrame.frameId, 'cond:', _parentConditionId, 'loop:', _parentLoopId);
+                }
                 continue;
             }
 
@@ -1912,6 +1912,9 @@ class InstrumentationTracer {
                     timestamp: nextTime(),
                     loopId: ev.loopId,
                     loopType: ev.loopType,
+                    initialization: ev.init || "",
+                    condition: ev.cond || "",
+                    update: ev.update || "",
                     explanation: `🔄 Loop started (${ev.loopType})`,
                     internalEvents: [],
                     ...frameMetadata
@@ -2021,6 +2024,9 @@ class InstrumentationTracer {
                     });
                 }
 
+                // Filtered out to reduce step count to 15
+                step = null;
+                /*
                 pushStep({
                     stepIndex: nextIndex(),
                     eventType: 'loop_body_start',
@@ -2035,6 +2041,7 @@ class InstrumentationTracer {
                     internalEvents: [],
                     ...frameMetadata
                 });
+                */
 
             } else if (ev.type === 'loop_iteration_end') {
                 const loopId = ev.loopId;
@@ -2091,6 +2098,9 @@ class InstrumentationTracer {
                     });
                 }
 
+                // Filtered out to reduce step count to 15
+                step = null;
+                /*
                 pushStep({
                     stepIndex: nextIndex(),
                     eventType: 'loop_iteration_end',
@@ -2105,6 +2115,7 @@ class InstrumentationTracer {
                     internalEvents: [],
                     ...frameMetadata
                 });
+                */
                 validateLoopInvariants('loop_iteration_end');
 
             } else if (ev.type === 'control_flow') {
@@ -2507,6 +2518,7 @@ if (currentFrame && currentFrame.conditionStack && currentFrame.conditionStack.l
                 step = null;
 
             } else if (ev.type === 'heap_alloc' && ev.isHeap) {
+                if (!isUserSource) continue;
                 step = {
                     stepIndex: nextIndex(),
                     eventType: 'heap_alloc',
@@ -2525,6 +2537,7 @@ if (currentFrame && currentFrame.conditionStack && currentFrame.conditionStack.l
                 };
 
             } else if (ev.type === 'heap_free') {
+                if (!isUserSource) continue;
                 step = {
                     stepIndex: nextIndex(),
                     eventType: 'heap_free',
@@ -2877,15 +2890,17 @@ if (currentFrame && currentFrame.conditionStack && currentFrame.conditionStack.l
         const rawInputLinesMap = this.scanForInputOperations(code, language);
         const inputLinesMap = this._adjustInputLinesMapForHeader(code, rawInputLinesMap);
 
-        let exe, src, srcOriginal, srcNormalized, traceOut, hdr;
+        let exe, src, srcOriginal, srcNormalized, obj, traceOut, hdr, dbg;
         try {
             ({
                 executable: exe,
                 sourceFile: src,
                 sourceOriginalFile: srcOriginal,
                 sourceNormalizedFile: srcNormalized,
+                userObj: obj,
                 traceOutput: traceOut,
-                headerCopy: hdr
+                headerCopy: hdr,
+                debugLog: dbg
             } =
                 await this.compile(code, language));
 
@@ -2956,7 +2971,7 @@ if (currentFrame && currentFrame.conditionStack && currentFrame.conditionStack.l
             console.error('❌ Trace failed:', e.message);
             throw e;
         } finally {
-            await this.cleanup([exe, src, srcOriginal, srcNormalized, traceOut, hdr]);
+            await this.cleanup([exe, src, srcOriginal, srcNormalized, obj, traceOut, hdr, dbg]);
         }
     }
 

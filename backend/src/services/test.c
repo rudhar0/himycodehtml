@@ -35,6 +35,7 @@ int main() {
 
     /* -------- POINTER -------- */
     int *px = &x;
+    
 
     /* -------- FUNCTION CALL (ARRAY + LOOP + CONDITION) -------- */
     y = sumEven(arr, 5);

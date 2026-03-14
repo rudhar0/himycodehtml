@@ -18,7 +18,7 @@ export const LIMITS = {
   MAX_ARRAY_SIZE_SHOWN: 100,
   
   // Time limits
-  EXECUTION_TIMEOUT: 30000, // 30 seconds
+  EXECUTION_TIMEOUT: 90000, // 90 seconds
   ANALYSIS_TIMEOUT: 60000, // 60 seconds
   
   // Rate limiting

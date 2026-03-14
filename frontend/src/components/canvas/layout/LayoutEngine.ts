@@ -370,6 +370,7 @@ export class LayoutEngine {
     elementId?: string;
     parentFrameId: string;
     conditionResult?: boolean;
+    isConditionStep?: boolean;
     branchTaken?: string;
     expression?: string;
     kind?: string;
@@ -875,23 +876,30 @@ export class LayoutEngine {
     }
 
     placement.parent.children.push(element);
-
+    
     if (!reserveSpace) return;
 
     if (placement.isFrameParent && placement.lane) {
       placement.lane.usedHeight += element.height + ELEMENT_SPACING;
+      // Also advance the shared ownerFrame cursor if this is an in-flow node
+      if (!this.isRightFlowControlNode(element)) {
+         this.bumpFrameLocalsCursorToInclude(ownerFrame, element.y + element.height);
+      }
       return;
     }
 
-    // Keep right-flow control subtree growth isolated from frame flow.
-    if (this.isRightFlowControlNode(placement.parent) || this.isRightFlowControlNode(element)) {
+    // Keep right-flow control subtree growth isolated from frame flow,
+    // UNLESS it is an in-flow node (like a caller).
+    if (this.isRightFlowControlNode(placement.parent) && this.isRightFlowControlNode(element)) {
       return;
     }
 
-    this.bumpFrameLocalsCursorToInclude(
-      ownerFrame,
-      element.y + element.height,
-    );
+    if (!this.isRightFlowControlNode(element)) {
+        this.bumpFrameLocalsCursorToInclude(
+          ownerFrame,
+          element.y + element.height,
+        );
+    }
   }
 
   private static pushControlArrow(
@@ -2313,6 +2321,25 @@ export class LayoutEngine {
         isActive: nextBranchState === "active",
       };
 
+      const loopId = (step as any).loopId;
+      if (loopId !== undefined) {
+        const loopElementId = Array.from(this.elementHistory.keys()).find(k => k.startsWith(`loop-${frameId}-${loopId}-`));
+        if (loopElementId) {
+          const loop = this.elementHistory.get(loopElementId);
+          if (loop) {
+            loop.data.isConditionStep = true;
+            loop.data.conditionResult = (step as any).result === 1;
+            loop.data.activeStepId = stepIndex;
+            // Record the current step as the active condition step for this loop
+            layout.elements.forEach(el => {
+              if (el.id === loopElementId) {
+                el.data.isConditionStep = true;
+                el.data.conditionResult = (step as any).result === 1;
+              }
+            });
+          }
+        }
+      }
       if (caseIndex !== undefined) {
         if (!groupState.switchCaseIds) groupState.switchCaseIds = [];
         groupState.switchCaseIds[caseIndex] = caseCaller.id;
@@ -3228,7 +3255,7 @@ export class LayoutEngine {
 
     // LOOP START
     if (stepType === "loop_start") {
-      const { loopId, loopType } = step as any;
+      const { loopId, loopType, initialization, condition, update, explanation } = step as any;
       const ownerFrame = this.functionFrames.get(frameId);
       if (!ownerFrame) return;
 
@@ -3250,9 +3277,9 @@ export class LayoutEngine {
       const caller: LayoutElement = {
         id: callerId,
         type: 'loop_caller',
-        x: placement.x,
+        x: placement.x, 
         y: placement.y,
-        width: placement.width - 40,
+        width: placement.width,
         height: 50,
         parentId: placement.parent.id,
         stepId: stepIndex,
@@ -3299,6 +3326,9 @@ export class LayoutEngine {
           endStep: endStep,
           callerId: callerId,
           isControlNode: true, // Anchor for arrows if needed
+          initialization: initialization || "",
+          condition: condition || "",
+          update: update || "",
         },
       };
 
@@ -3352,6 +3382,7 @@ export class LayoutEngine {
         if (loopElement && loopElement.data) {
           loopElement.data.currentIteration = iteration;
           loopElement.data.isActive = true;
+          loopElement.data.isConditionStep = false; // Reset condition highlight
         }
 
         // TOGGLE MODE CHECK
@@ -3404,10 +3435,13 @@ export class LayoutEngine {
       const { loopId, result } = step as any;
       const loopState = this.activeLoops.get(loopId);
       
+         // Loop condition handling moved to processStep directly for clarity.
       if (loopState) {
         const loopElement = this.elementHistory.get(loopState.elementId!);
         if (loopElement && loopElement.data) {
           loopElement.data.conditionResult = result === 1;
+          loopElement.data.isConditionStep = stepIndex === currentStep;
+          loopElement.stepId = stepIndex; // Crucial for camera focus
         }
       }
       return;
@@ -3743,10 +3777,22 @@ export class LayoutEngine {
       // If has lanes, calculate based on lanes (lane-aware elements)
       if (element.metadata && element.metadata.lanes) {
         const lanes = element.metadata.lanes;
-        const contentHeight = lanes.HEADER.usedHeight + 
+        const laneContentHeight = lanes.HEADER.usedHeight + 
                             lanes.PARAMS.usedHeight + 
                             lanes.LOCALS.usedHeight + 
                             lanes.RETURN.usedHeight;
+        
+        // Safety: Also check actual flow children bottoms in case some aren't in lanes
+        let maxChildBottom = element.y;
+        if (element.children) {
+          element.children.forEach(child => {
+            if (!this.shouldIgnoreChildForParentFlow(element, child)) {
+              maxChildBottom = Math.max(maxChildBottom, updateHeight(child));
+            }
+          });
+        }
+        
+        const contentHeight = Math.max(laneContentHeight, maxChildBottom - element.y);
         const newHeight = Math.max(element.height, contentHeight + 40);
         element.height = newHeight;
         return element.y + newHeight;
@@ -3801,10 +3847,16 @@ export class LayoutEngine {
   }
 
   private static isRightFlowControlNode(element: LayoutElement): boolean {
+    // Callers are never right-flow nodes; they stay in the vertical sequence.
+    if (element.type === "loop_caller" || element.type === "condition_caller" || element.type === "call_site") {
+      return false;
+    }
+    if (element.data?.controlRole === "caller") {
+      return false;
+    }
+
     if (element.type === "condition" && element.data?.controlKind) return true;
     if (element.type === "loop" && element.subtype !== "iteration") return true;
-    if (element.type === "loop_caller") return true;
-    if (element.type === "condition" && element.data?.controlRole === "caller") return true;
     return false;
   }
 

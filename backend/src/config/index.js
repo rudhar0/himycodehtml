@@ -29,7 +29,7 @@ export const config = {
   
   // Limits
   maxCodeSize: 1000000, // 1MB
-  maxExecutionTime: 30000, // 30s
+  maxExecutionTime: 90000, // 90s
   
   // Features
   enableGCCDownload: process.env.ENABLE_GCC_DOWNLOAD !== 'false',

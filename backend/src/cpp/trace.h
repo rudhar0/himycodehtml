@@ -48,7 +48,7 @@ void __trace_pointer_heap_init_loc(const char* ptrName, void* heapAddr,
                                     const char* file, int line);
 
 void __trace_control_flow_loc(const char* controlType, const char* file, int line);
-void __trace_loop_start_loc(int loopId, const char* loopType, const char* file, int line);
+void __trace_loop_start_loc(int loopId, const char* loopType, const char* init, const char* cond, const char* update, const char* file, int line);
 void __trace_loop_body_start_loc(int loopId, const char* file, int line);
 void __trace_loop_iteration_end_loc(int loopId, const char* file, int line);
 void __trace_loop_end_loc(int loopId, const char* file, int line);
@@ -98,8 +98,8 @@ void __trace_switch_case_loc(int switchId, const char* label, const char* file, 
     __trace_pointer_heap_init_loc(#ptrName, heapAddr, __FILE__, line)
 #define __trace_control_flow(controlType, line) \
     __trace_control_flow_loc(controlType, __FILE__, line)
-#define __trace_loop_start(loopId, loopType, line) \
-    __trace_loop_start_loc(loopId, loopType, __FILE__, line)
+#define __trace_loop_start(loopId, loopType, init, cond, update, line) \
+    __trace_loop_start_loc(loopId, loopType, init, cond, update, __FILE__, line)
 #define __trace_loop_body_start(loopId, line) \
     __trace_loop_body_start_loc(loopId, __FILE__, line)
 #define __trace_loop_iteration_end(loopId, line) \
@@ -166,7 +166,7 @@ void __trace_pointer_heap_init_loc(const char* ptrName, void* heapAddr,
                                     const char* file, int line);
 
 void __trace_control_flow_loc(const char* controlType, const char* file, int line);
-void __trace_loop_start_loc(int loopId, const char* loopType, const char* file, int line);
+void __trace_loop_start_loc(int loopId, const char* loopType, const char* init, const char* cond, const char* update, const char* file, int line);
 void __trace_loop_body_start_loc(int loopId, const char* file, int line);
 void __trace_loop_iteration_end_loc(int loopId, const char* file, int line);
 void __trace_loop_end_loc(int loopId, const char* file, int line);
@@ -216,8 +216,8 @@ void __trace_switch_case_loc(int switchId, const char* label, const char* file, 
     __trace_pointer_heap_init_loc(#ptrName, heapAddr, __FILE__, line)
 #define __trace_control_flow(controlType, line) \
     __trace_control_flow_loc(controlType, __FILE__, line)
-#define __trace_loop_start(loopId, loopType, line) \
-    __trace_loop_start_loc(loopId, loopType, __FILE__, line)
+#define __trace_loop_start(loopId, loopType, init, cond, update, line) \
+    __trace_loop_start_loc(loopId, loopType, init, cond, update, __FILE__, line)
 #define __trace_loop_body_start(loopId, line) \
     __trace_loop_body_start_loc(loopId, __FILE__, line)
 #define __trace_loop_iteration_end(loopId, line) \
