@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'node:url';
 import { getBackendRoot, getRuntimeDir } from '../utils/project-paths.js';
 
 const __filename = fileURLToPath(import.meta.url);

@@ -30,6 +30,7 @@
     "konva": "^9.3.22",
     "lucide-react": "^0.460.0",
     "monaco-editor": "^0.50.0",
+    "monaco-languageclient": "^10.7.0",
     "pako": "^2.1.0",
     "path": "^0.12.7",
     "react": "^18.3.1",
@@ -37,6 +38,8 @@
     "react-hot-toast": "^2.4.1",
     "react-konva": "^18.2.14",
     "socket.io-client": "^4.8.1",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "vscode-ws-jsonrpc": "^3.5.0",
     "web-tree-sitter": "0.20.8",
     "zod": "^3.24.1",
     "zustand": "^5.0.2"

@@ -7,12 +7,23 @@ import os from 'node:os';
 export function getBackendRoot(fromImportMetaUrl) {
   if (process.env.NEUTRALA_APP_ROOT) return path.resolve(process.env.NEUTRALA_APP_ROOT);
 
-  // When packaged with `pkg`, sources live in a virtual snapshot. Use the executable
-  // directory so `.runtime/` and `resources/` resolve next to the binary.
   if (process.pkg) return path.dirname(process.execPath);
 
+  let current = fileURLToPath(fromImportMetaUrl);
+  // Walk up until we find a directory containing 'package.json' and 'src'
+  while (current !== path.dirname(current)) {
+    const dir = path.dirname(current);
+    if (fs.existsSync(path.join(dir, 'package.json')) && fs.existsSync(path.join(dir, 'src'))) {
+      return dir;
+    }
+    current = dir;
+  }
+
+  // Fallback to previous logic if search fails
   const here = path.dirname(fileURLToPath(fromImportMetaUrl));
-  return path.resolve(here, '..'); // backend/src -> backend
+  if (here.endsWith('utils')) return path.resolve(here, '..', '..');
+  if (here.endsWith('services') || here.endsWith('routes') || here.endsWith('sockets')) return path.resolve(here, '..', '..');
+  return path.resolve(here, '..');
 }
 
 export function getRuntimeDir(backendRoot) {

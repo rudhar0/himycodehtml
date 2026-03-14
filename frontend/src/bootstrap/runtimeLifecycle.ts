@@ -24,7 +24,7 @@ export async function initRuntimeLifecycle(): Promise<string> {
   // 2. Resolve paths
   const paths = await resolveAllPaths();
 
-  // 3. Proactive cleanup: Check if a backend is already running and kill it
+  // 3. Proactive cleanup: Check if a backend is already running and kill it (or reuse if healthy)
   try {
     const N = (globalThis as any).Neutralino;
     if (N) {
@@ -34,9 +34,23 @@ export async function initRuntimeLifecycle(): Promise<string> {
       if (portDataRaw) {
         const portData = JSON.parse(portDataRaw);
         const oldPid = portData.pid;
+        const oldPort = portData.port;
         
-        if (oldPid && oldPid > 0) {
-          console.log(LOG_PREFIX, 'Found existing backend PID:', oldPid, 'Cleaning up...');
+        if (oldPid && oldPid > 0 && oldPort > 0) {
+          const baseUrl = `http://127.0.0.1:${oldPort}`;
+          console.log(LOG_PREFIX, 'Found existing backend info. Checking health at:', baseUrl);
+          
+          // Verify if it's already healthy
+          const isHealthy = await fetch(`${baseUrl}/api/health`)
+            .then(res => res.ok)
+            .catch(() => false);
+
+          if (isHealthy) {
+            console.log(LOG_PREFIX, 'Existing backend is already healthy. Reusing it.', baseUrl);
+            return baseUrl;
+          }
+
+          console.log(LOG_PREFIX, 'Existing backend PID:', oldPid, 'is not healthy or unreachable. Cleaning up...');
           
           const isWindows = (globalThis as any).NL_OS === 'Windows';
           const killCmd = isWindows 
@@ -52,8 +66,8 @@ export async function initRuntimeLifecycle(): Promise<string> {
         }
       }
       
-      // Always try to remove the stale port file
-      await N.filesystem.removeFile(portJsonPath).catch(() => null);
+      // Always try to remove the stale port file if we are about to start a new one
+      await N.filesystem.remove(portJsonPath).catch(() => null);
     }
   } catch (error) {
     console.warn(LOG_PREFIX, 'Proactive cleanup failed (non-critical):', error);

@@ -2,6 +2,7 @@ import instrumentationTracer from '../services/instrumentation-tracer.service.js
 import { SOCKET_EVENTS } from '../constants/events.js';
 import { sessionRegistry } from './session-registry.js';
 import inputRequirementsService from '../services/input-requirements.service.js';
+import { handleLSP } from './handlers/lsp.handler.js';
 
 /**
  * Setup Socket.io event handlers with GCC Instrumentation Tracer
@@ -10,6 +11,7 @@ import inputRequirementsService from '../services/input-requirements.service.js'
 export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     const session = sessionRegistry.register(socket);
+    handleLSP(socket, io);
     console.log(
       `Client connected: ${socket.id} (clientInstanceId=${session.clientInstanceId || 'n/a'})`,
     );

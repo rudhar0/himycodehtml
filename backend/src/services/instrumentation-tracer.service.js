@@ -597,7 +597,7 @@ class InstrumentationTracer {
             });
         })();
 
-        const timeoutMs = 30000; // 30s timeout for compile/link
+        const timeoutMs = 120000; // 120s timeout for compile/link
         const withTimeout = (promise, name) => Promise.race([
             promise,
             new Promise((_, reject) => setTimeout(() => {
@@ -748,10 +748,10 @@ class InstrumentationTracer {
             proc.stderr.on('data', d => stderr += d.toString());
 
             const timeout = setTimeout(() => {
-                console.warn('[Execute] Execution timeout (10 s). Killing all related processes...');
+                console.warn('[Execute] Execution timeout (30 s). Killing all related processes...');
                 this.stop(); // Force kill everything and reset state
-                reject(new Error('Execution timeout (10 s)'));
-            }, 10000);
+                reject(new Error('Execution timeout (30 s)'));
+            }, 30000);
 
             timeout.unref();
 

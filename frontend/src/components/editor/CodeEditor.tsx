@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { Editor, OnMount } from '@monaco-editor/react';
 import { useCodeEditor } from '../../hooks/useCodeEditor';
+import { useLSP } from '../../hooks/useLSP';
 import ExecutionHighlighter from './ExecutionHighlighter';
 import { useEditorStore } from '../../store/slices/editorSlice';
 import { useExecutionStore } from '../../store/slices/executionSlice';
@@ -9,6 +10,7 @@ import { useThemeStore } from '../../store/slices/themeSlice';
 
 const CodeEditor: React.FC = () => {
   const { editor, handleEditorDidMount: originalHandleEditorDidMount } = useCodeEditor();
+  useLSP(editor);
   
   const code = useEditorStore((state) => state.code);
   const language = useEditorStore((state) => state.language);

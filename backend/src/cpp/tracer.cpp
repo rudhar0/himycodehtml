@@ -198,36 +198,36 @@ struct CallFrame {
 };
 
 // Construct-On-First-Use accessors
-static std::map<std::string, long long>& get_variable_values() {
-    static NO_INSTRUMENT std::map<std::string, long long> s_variable_values;
+static NO_INSTRUMENT std::map<std::string, long long>& get_variable_values() {
+    static std::map<std::string, long long> s_variable_values;
     return s_variable_values;
 }
-static std::map<void*, ArrayInfo>& get_array_registry() {
-    static NO_INSTRUMENT std::map<void*, ArrayInfo> s_array_registry;
+static NO_INSTRUMENT std::map<void*, ArrayInfo>& get_array_registry() {
+    static std::map<void*, ArrayInfo> s_array_registry;
     return s_array_registry;
 }
-static std::map<void*, std::string>& get_address_to_name() {
-    static NO_INSTRUMENT std::map<void*, std::string> s_address_to_name;
+static NO_INSTRUMENT std::map<void*, std::string>& get_address_to_name() {
+    static std::map<void*, std::string> s_address_to_name;
     return s_address_to_name;
 }
-static std::map<ArrayElementKey, long long>& get_array_element_values() {
-    static NO_INSTRUMENT std::map<ArrayElementKey, long long> s_array_element_values;
+static NO_INSTRUMENT std::map<ArrayElementKey, long long>& get_array_element_values() {
+    static std::map<ArrayElementKey, long long> s_array_element_values;
     return s_array_element_values;
 }
-static std::set<std::string>& get_tracked_functions() {
-    static NO_INSTRUMENT std::set<std::string> s_tracked_functions;
+static NO_INSTRUMENT std::set<std::string>& get_tracked_functions() {
+    static std::set<std::string> s_tracked_functions;
     return s_tracked_functions;
 }
-static std::string& get_current_function() {
-    static NO_INSTRUMENT std::string s_current_function = "main";
+static NO_INSTRUMENT std::string& get_current_function() {
+    static std::string s_current_function = "main";
     return s_current_function;
 }
-static std::map<std::string, PointerInfo>& get_pointer_registry() {
-    static NO_INSTRUMENT std::map<std::string, PointerInfo> s_pointer_registry;
+static NO_INSTRUMENT std::map<std::string, PointerInfo>& get_pointer_registry() {
+    static std::map<std::string, PointerInfo> s_pointer_registry;
     return s_pointer_registry;
 }
-static std::vector<CallFrame>& get_call_stack() {
-    static NO_INSTRUMENT std::vector<CallFrame> s_call_stack;
+static NO_INSTRUMENT std::vector<CallFrame>& get_call_stack() {
+    static std::vector<CallFrame> s_call_stack;
     return s_call_stack;
 }
 
@@ -250,7 +250,7 @@ static inline unsigned long NO_INSTRUMENT get_timestamp_us() {
 
 // ========== OPTIONAL RAII LOCK GUARD (INSTRUMENTATION-SAFE) ==========
 
-struct NO_INSTRUMENT TraceGuard {
+struct TraceGuard {
     NO_INSTRUMENT TraceGuard() {
 #if defined(TRACER_USE_STD_MUTEX)
         g_trace_mutex.lock();
@@ -519,6 +519,8 @@ extern "C" void __trace_array_init_string_loc(const char* name, const char* str_
 }
 
 extern "C" void __trace_array_init_loc(const char* name, void* values, int count,
+                                       const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_array_init_loc(const char* name, void* values, int count,
                                        const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -544,6 +546,8 @@ extern "C" void __trace_array_init_loc(const char* name, void* values, int count
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_array_index_assign_loc(const char* name, int idx1, int idx2, int idx3,
+                                                long long value, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_array_index_assign_loc(const char* name, int idx1, int idx2, int idx3,
                                                 long long value, const char* file, int line) {
     TRACER_GUARD_ENTER();
@@ -578,6 +582,8 @@ extern "C" void __trace_array_index_assign_loc(const char* name, int idx1, int i
 }
 
 extern "C" void __trace_pointer_alias_loc(const char* name, void* aliasedAddress, bool decayedFromArray,
+                                          const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_pointer_alias_loc(const char* name, void* aliasedAddress, bool decayedFromArray,
                                           const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -609,6 +615,8 @@ extern "C" void __trace_pointer_alias_loc(const char* name, void* aliasedAddress
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_pointer_deref_write_loc(const char* ptrName, long long value,
+                                                const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_pointer_deref_write_loc(const char* ptrName, long long value,
                                                 const char* file, int line) {
     TRACER_GUARD_ENTER();
@@ -647,6 +655,8 @@ extern "C" void __trace_pointer_deref_write_loc(const char* ptrName, long long v
 }
 
 extern "C" void __trace_declare_loc(const char* name, const char* type, void* address,
+                                    const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_declare_loc(const char* name, const char* type, void* address,
                                     const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -663,6 +673,8 @@ extern "C" void __trace_declare_loc(const char* name, const char* type, void* ad
 }
 
 extern "C" void __trace_assign_loc(const char* name, long long value,
+                                   const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void __trace_assign_loc(const char* name, long long value,
                                    const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -678,6 +690,8 @@ extern "C" void __trace_assign_loc(const char* name, long long value,
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_pointer_heap_init_loc(const char* ptrName, void* heapAddr,
+                                               const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_pointer_heap_init_loc(const char* ptrName, void* heapAddr,
                                                const char* file, int line) {
     TRACER_GUARD_ENTER();
@@ -697,6 +711,7 @@ extern "C" void __trace_pointer_heap_init_loc(const char* ptrName, void* heapAdd
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_control_flow_loc(const char* controlType, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_control_flow_loc(const char* controlType, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -709,6 +724,7 @@ extern "C" void __trace_control_flow_loc(const char* controlType, const char* fi
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -727,6 +743,7 @@ extern "C" void __trace_loop_start_loc(int loopId, const char* loopType, const c
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_loop_body_start_loc(int loopId, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_loop_body_start_loc(int loopId, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -745,6 +762,7 @@ extern "C" void __trace_loop_body_start_loc(int loopId, const char* file, int li
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_loop_iteration_end_loc(int loopId, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_loop_iteration_end_loc(int loopId, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -763,6 +781,7 @@ extern "C" void __trace_loop_iteration_end_loc(int loopId, const char* file, int
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_loop_end_loc(int loopId, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_loop_end_loc(int loopId, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -785,6 +804,7 @@ extern "C" void __trace_loop_end_loc(int loopId, const char* file, int line) {
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_loop_condition_loc(int loopId, int result, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_loop_condition_loc(int loopId, int result, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -797,6 +817,8 @@ extern "C" void __trace_loop_condition_loc(int loopId, int result, const char* f
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_return_loc(long long value, const char* returnType, 
+                                    const char* destinationSymbol, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_return_loc(long long value, const char* returnType, 
                                     const char* destinationSymbol, const char* file, int line) {
     TRACER_GUARD_ENTER();
@@ -818,6 +840,7 @@ extern "C" void __trace_return_loc(long long value, const char* returnType,
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_block_enter_loc(int blockDepth, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_block_enter_loc(int blockDepth, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -830,6 +853,7 @@ extern "C" void __trace_block_enter_loc(int blockDepth, const char* file, int li
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void __trace_block_exit_loc(int blockDepth, const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void __trace_block_exit_loc(int blockDepth, const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -842,6 +866,8 @@ extern "C" void __trace_block_exit_loc(int blockDepth, const char* file, int lin
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void trace_var_int_loc(const char* name, int value,
+                                   const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void trace_var_int_loc(const char* name, int value,
                                    const char* file, int line) {
     TRACER_GUARD_ENTER();
@@ -856,6 +882,8 @@ extern "C" void trace_var_int_loc(const char* name, int value,
 }
 
 extern "C" void trace_var_long_loc(const char* name, long long value,
+                                    const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void trace_var_long_loc(const char* name, long long value,
                                     const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -868,6 +896,8 @@ extern "C" void trace_var_long_loc(const char* name, long long value,
     TRACER_GUARD_EXIT();
 }
 
+extern "C" void trace_var_double_loc(const char* name, double value,
+                                      const char* file, int line) __attribute__((no_instrument_function));
 extern "C" void trace_var_double_loc(const char* name, double value,
                                       const char* file, int line) {
     TRACER_GUARD_ENTER();
@@ -882,6 +912,8 @@ extern "C" void trace_var_double_loc(const char* name, double value,
 }
 
 extern "C" void trace_var_ptr_loc(const char* name, void* value,
+                                  const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void trace_var_ptr_loc(const char* name, void* value,
                                   const char* file, int line) {
     TRACER_GUARD_ENTER();
     if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
@@ -895,8 +927,11 @@ extern "C" void trace_var_ptr_loc(const char* name, void* value,
 }
 
 extern "C" void trace_var_str_loc(const char* name, const char* value,
+                                  const char* file, int line) __attribute__((no_instrument_function));
+extern "C" void trace_var_str_loc(const char* name, const char* value,
                                   const char* file, int line) {
-    if (!g_trace_file) return;
+    TRACER_GUARD_ENTER();
+    if (!g_trace_file) { TRACER_GUARD_EXIT(); return; }
     const std::string f = json_safe_path(file);
     char escaped[256];
     int j = 0;
@@ -910,20 +945,26 @@ extern "C" void trace_var_str_loc(const char* name, const char* value,
              "\"name\":\"%s\",\"value\":\"%s\",\"type\":\"string\",\"file\":\"%s\",\"line\":%d",
              name, escaped, f.c_str(), line);
     write_json_event("var", nullptr, name, g_depth, extra);
+    TRACER_GUARD_EXIT();
 }
 
+extern "C" void trace_var_int(const char* name, int value) __attribute__((no_instrument_function));
 extern "C" void trace_var_int(const char* name, int value) {
     trace_var_int_loc(name, value, "unknown", 0);
 }
+extern "C" void trace_var_long(const char* name, long long value) __attribute__((no_instrument_function));
 extern "C" void trace_var_long(const char* name, long long value) {
     trace_var_long_loc(name, value, "unknown", 0);
 }
+extern "C" void trace_var_double(const char* name, double value) __attribute__((no_instrument_function));
 extern "C" void trace_var_double(const char* name, double value) {
     trace_var_double_loc(name, value, "unknown", 0);
 }
+extern "C" void trace_var_ptr(const char* name, void* value) __attribute__((no_instrument_function));
 extern "C" void trace_var_ptr(const char* name, void* value) {
     trace_var_ptr_loc(name, value, "unknown", 0);
 }
+extern "C" void trace_var_str(const char* name, const char* value) __attribute__((no_instrument_function));
 extern "C" void trace_var_str(const char* name, const char* value) {
     trace_var_str_loc(name, value, "unknown", 0);
 }

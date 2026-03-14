@@ -299,7 +299,7 @@ startServer();
 
 // Prevents orphan processes when the frontend is closed abruptly.
 let idleTimer = null;
-const IDLE_TIMEOUT = 10000; // 10 seconds (reduced from 5 mins to prevent orphan processes)
+const IDLE_TIMEOUT = 600000; // 600 seconds (10 minutes) (increased to prevent premature shutdown during startup)
 
 
 let lastCheck = Date.now();
