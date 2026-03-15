@@ -817,7 +817,7 @@ export class LayoutEngine {
     }
 
     // Layer 2.5: Loop ID Resolution (Explicit loopId mapping)
-    const loopId = step && (step as any).loopId;
+    const loopId = step && (step as any).loopId !== undefined ? Number((step as any).loopId) : undefined;
     if (loopId !== undefined) {
       const loop = this.activeLoops.get(loopId);
       if (loop) {
@@ -2547,8 +2547,23 @@ export class LayoutEngine {
     currentStep: number,
     executionTrace: ExecutionTrace,
   ): void {
-    const stepType: string = (step as any).eventType || (step as any).type;
+    // RESET visual flags for all active loops at the start of every step
+    this.activeLoops.forEach(loop => {
+      if (loop.elementId) {
+        const el = this.elementHistory.get(loop.elementId);
+        if (el && el.data) {
+          el.data.isConditionStep = false;
+          el.data.isUpdateStep = false;
+        }
+      }
+    });
+
+    const stepType: string = String((step as any).eventType || (step as any).type || "").toLowerCase();
     const frameId = (step as any).frameId;
+    
+    // EXHAUSTIVE DIAGNOSTIC LOGGING
+    console.log(`[LAYOUT] processStep idx=${stepIndex} type=${stepType} line=${(step as any).line} frame=${frameId}`);
+
     const callDepth = (step as any).callDepth || 0;
     const parentFrameId = (step as any).parentFrameId;
     const isFunctionEntry = (step as any).isFunctionEntry;
@@ -2826,6 +2841,7 @@ export class LayoutEngine {
     );
 
     if (this.processControlStep(step, executionTrace, layout, stepIndex, ownerFrame, frameId)) {
+      console.log(`[LAYOUT] processControlStep RETURNED TRUE for idx=${stepIndex} type=${stepType}`);
       return;
     }
 
@@ -2892,10 +2908,14 @@ export class LayoutEngine {
       if (currentLoop && currentLoop.elementId) {
         const loopEl = this.elementHistory.get(currentLoop.elementId);
         const updateStr = String(loopEl?.data?.update || "");
-        if (updateStr.includes(varName)) {
+        if (new RegExp(`\\b${varName}\\b`).test(updateStr)) {
            if (loopEl) {
              loopEl.data.updateValues = loopEl.data.updateValues || {};
              loopEl.data.updateValues[varName] = ""; // Initial placeholder
+             loopEl.data.loopVarCurrentValues = {
+               ...(loopEl.data.loopVarCurrentValues || {}),
+               [varName]: "",
+             };
              loopEl.data.isActive = true;
              loopEl.data.isUpdateStep = true;
              loopEl.stepId = stepIndex;
@@ -2985,10 +3005,14 @@ export class LayoutEngine {
         const updateStr = String(loopEl?.data?.update || "");
         
         // REDIRECT loop control variable updates to header
-        if (updateStr.includes(varName)) {
+        if (new RegExp(`\\b${varName}\\b`).test(updateStr)) {
            if (loopEl) {
              loopEl.data.updateValues = loopEl.data.updateValues || {};
              loopEl.data.updateValues[varName] = value;
+             loopEl.data.loopVarCurrentValues = {
+               ...(loopEl.data.loopVarCurrentValues || {}),
+               [varName]: value,
+             };
              loopEl.data.isActive = true;
              loopEl.data.isUpdateStep = true;
              loopEl.stepId = stepIndex;
@@ -3407,7 +3431,8 @@ export class LayoutEngine {
 
     // LOOP START
     if (stepType === "loop_start") {
-      const { loopId, loopType, initialization, condition, update, explanation } = step as any;
+      const loopId = Number((step as any).loopId);
+      const { loopType, initialization, condition, update, explanation } = step as any;
       const ownerFrame = this.functionFrames.get(frameId);
       if (!ownerFrame) return;
 
@@ -3497,7 +3522,7 @@ export class LayoutEngine {
       };
 
       this.activeLoops.set(loopId, {
-        loopId,
+        loopId: loopId,
         loopType,
         startStep: stepIndex,
         endStep: endStep,
@@ -3607,11 +3632,15 @@ export class LayoutEngine {
 
     // LOOP CONDITION
     if (stepType === "loop_condition") {
-      const { loopId, result } = step as any;
+      const loopIdRaw = (step as any).loopId ?? (step as any).id;
+      const loopId = Number(loopIdRaw);
+      const result = (step as any).result ?? (step as any).value;
       const loopState = this.activeLoops.get(loopId);
       
+      console.log(`[LAYOUT] loop_condition loopId=${loopId} result=${result} loopStateFound=${!!loopState}`);
+      
       if (loopState) {
-        const loopScopeDepth = loopState.baseScopeDepth;
+        const loopScopeDepth = Number(loopState.baseScopeDepth || 0);
         this.setActiveControlForDepth(
           frameId,
           loopScopeDepth + 1,
@@ -3621,16 +3650,19 @@ export class LayoutEngine {
 
         const loopElement = this.elementHistory.get(loopState.elementId!);
         if (loopElement && loopElement.data) {
-          loopElement.data.conditionResult = result === 1;
+          const isTrue = result === 1 || result === true || String(result).toLowerCase() === "true";
+          loopElement.data.conditionResult = isTrue;
           loopElement.data.isConditionStep = true;
           loopElement.data.isUpdateStep = false; // Reset update highlight
           loopElement.stepId = stepIndex; // Crucial for camera focus
           
+          console.log(`[LAYOUT] loop_condition UPDATED loopElement ${loopElement.id} isConditionStep=true res=${isTrue}`);
+          
           // Update condition capsule
           if (loopElement.data.conditionCapsule) {
             loopElement.data.conditionCapsule.isActive = true;
-            loopElement.data.conditionCapsule.result = result === 1;
-            loopElement.data.conditionCapsule.status = result === 1 ? "true" : "false";
+            loopElement.data.conditionCapsule.result = isTrue;
+            loopElement.data.conditionCapsule.status = isTrue ? "true" : "false";
           }
         }
       }
@@ -3639,7 +3671,8 @@ export class LayoutEngine {
 
     // LOOP ITERATION END
     if (stepType === "loop_iteration_end") {
-      const { loopId, iteration } = step as any;
+      const loopId = Number((step as any).loopId);
+      const { iteration } = step as any;
       const loopState = this.activeLoops.get(loopId);
       
       if (loopState) {
@@ -3655,7 +3688,7 @@ export class LayoutEngine {
 
     // LOOP END
     if (stepType === "loop_end") {
-        const { loopId } = step as any;
+        const loopId = Number((step as any).loopId);
         const loopState = this.activeLoops.get(loopId);
         if (loopState) {
             loopState.endStep = stepIndex;
@@ -3692,7 +3725,7 @@ export class LayoutEngine {
       }
 
       if (stepType === 'loop_condition') {
-          const loopId = (step as any).loopId;
+          const loopId = Number((step as any).loopId);
           const loopState = this.activeLoops.get(loopId);
           if (loopState?.elementId) {
               const loopEl = this.elementHistory.get(loopState.elementId);

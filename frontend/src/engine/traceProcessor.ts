@@ -115,6 +115,7 @@ const STEP_TYPE_MAP: Record<string, string> = {
   branch_taken: "branch",
   pointer_alias: "pointer_alias",
   pointer_deref_write: "pointer_write",
+  loop_condition: "loop_condition",
 };
 
 // ---------------------------------------------------------------------------
@@ -465,7 +466,17 @@ export function processRawTrace(
     // Field normalisation: addr → address, eventType → type
     if (step.addr && !step.address) step.address = step.addr;
     if (step.eventType && !step.type) step.type = step.eventType;
-    if (step.eventType) step.originalEventType = step.eventType;
+    
+    // CRITICAL: Preserve original eventType for LayoutEngine semantic matching (in lowercase)
+    if (step.eventType) {
+      step.originalEventType = String(step.eventType).toLowerCase();
+      step.eventType = step.originalEventType;
+    } else if (step.type) {
+      const typeLower = String(step.type).toLowerCase();
+      step.eventType = typeLower; // Backfill eventType if missing
+      step.originalEventType = typeLower;
+    }
+    
     if (step.stdout && step.type === "output") step.value = step.stdout;
     
     // 🔧 LOOP-SPECIALIZED DEPTH NORMALIZATION

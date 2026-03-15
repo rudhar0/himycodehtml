@@ -132,22 +132,28 @@ const getElementSignature = (element: LayoutElement): string => {
         data.functionName ?? "",
         String(data.returnValue ?? ""),
       ].join("|");
-    case "loop":
-      return [
-        element.type,
-        element.subtype ?? "",
-        String(data.loopId ?? ""),
-        String(data.iteration ?? ""),
-        String(data.currentIteration ?? ""),
-        String(data.totalIterations ?? ""),
-        data.isActive    ? "1" : "0",
-        data.isComplete  ? "1" : "0",
-        data.isConditionStep ? "1" : "0",
-        data.conditionResult === true  ? "T"
-          : data.conditionResult === false ? "F" : "?",
-        data.isUpdateStep ? "1" : "0",
-        data.updateValues ? JSON.stringify(data.updateValues) : "{}",
-      ].join("|");
+  case "loop": {
+    const sig = [
+      element.type,
+      element.subtype ?? "",
+      String(data.loopId ?? ""),
+      String(data.iteration ?? ""),
+      String(data.currentIteration ?? ""),
+      String(data.totalIterations ?? ""),
+      data.isActive    ? "1" : "0",
+      data.isComplete  ? "1" : "0",
+      data.isConditionStep ? "1" : "0",
+      data.conditionResult === true  ? "T"
+        : data.conditionResult === false ? "F" : "?",
+      data.isUpdateStep ? "1" : "0",
+      data.updateValues         ? JSON.stringify(data.updateValues)         : "{}",
+      data.loopVarCurrentValues ? JSON.stringify(data.loopVarCurrentValues) : "{}",
+    ].join("|");
+    if (data.isConditionStep) {
+        console.log(`[SIG] Loop ${data.loopId} (Step ${element.stepId}) isConditionStep=true res=${data.conditionResult} type=${element.type} sig=${sig.substring(0, 50)}...`);
+    }
+    return sig;
+  }
     case "condition":
       return [
         element.type,
@@ -558,7 +564,12 @@ export default function VisualizationCanvas() {
       }
     }
 
-    const targetPos = getFocusPosition(focusTarget, dimensions, zoom);
+    // Ensure tall loops focus on header, not middle
+    const focusElement = (focusTarget.type === "loop" && focusTarget.subtype !== "iteration")
+      ? { ...focusTarget, height: 148 } // Header area only
+      : focusTarget;
+
+    const targetPos = getFocusPosition(focusElement, dimensions, zoom);
     const stage = stageRef.current;
 
     new Konva.Tween({
@@ -878,25 +889,23 @@ export default function VisualizationCanvas() {
           (child) => child.type === "loop" && child.subtype !== "iteration"
         );
         return (
-          <LoopCallerForParent
-            key={id}
-            id={id}
-            loopType={data?.loopType || "loop"}
-            loopId={data?.loopId || 0}
-            condition={loopBody?.data?.condition}
-            totalIterations={loopBody?.data?.totalIterations}
-            currentIteration={loopBody?.data?.currentIteration}
-            isActive={loopBody?.data?.isActive}
-            isComplete={loopBody?.data?.isComplete}
-            x={x}
-            y={y}
-            width={width}
-            height={height}
-            isNew={isNew}
-            stepNumber={
-              element.stepId !== undefined ? element.stepId + 1 : undefined
-            }
-          >
+  <LoopCallerForParent
+    key={id}
+    id={id}
+    loopType={data?.loopType || "loop"}
+    loopId={data?.loopId || 0}
+    condition={loopBody?.data?.condition}
+    totalIterations={loopBody?.data?.totalIterations}
+    currentIteration={loopBody?.data?.currentIteration}
+    isActive={loopBody?.data?.isActive}
+    isComplete={loopBody?.data?.isComplete}
+    x={x}
+    y={y}
+    width={width}
+    height={height}
+    isNew={isNew}
+    stepNumber={element.stepId !== undefined ? element.stepId + 1 : undefined}
+  >
             {loopBody && renderElement(loopBody)}
           </LoopCallerForParent>
         );
@@ -1263,6 +1272,9 @@ export default function VisualizationCanvas() {
             );
         }
 
+        if (element.data?.isConditionStep) {
+            console.log(`[RENDER] LoopElement ${element.id} isConditionStep: ${element.data.isConditionStep}, result: ${element.data.conditionResult}`);
+        }
         return (
           <LoopElement
             key={id}
@@ -1280,6 +1292,7 @@ export default function VisualizationCanvas() {
             isConditionStep={data?.isConditionStep}
             isUpdateStep={data?.isUpdateStep}
             updateValues={data?.updateValues}
+            loopVarCurrentValues={data?.loopVarCurrentValues ?? {}}
             x={x}
             y={y}
             width={width}
