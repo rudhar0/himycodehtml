@@ -27,6 +27,26 @@ export function getBackendRoot(fromImportMetaUrl) {
 }
 
 export function getRuntimeDir(backendRoot) {
+  const appName = 'CodeViz';
+  let fallbackBase = '';
+  
+  if (process.platform === 'win32') {
+    fallbackBase = process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir();
+  } else {
+    fallbackBase = process.env.HOME ? path.join(process.env.HOME, '.local', 'share') : os.tmpdir();
+  }
+  
+  const fallbackDir = path.join(fallbackBase, appName, 'runtime');
+
+  // Prefer fallback (AppData/Home) for system-level installations or packaged environments
+  const isSystemDir = backendRoot.includes('Program Files') || backendRoot.includes('WindowsApps') || backendRoot.includes('snap');
+  if (isSystemDir || process.pkg || process.env.NEUTRALA_APP_ROOT) {
+    if (!fs.existsSync(fallbackDir)) {
+      fs.mkdirSync(fallbackDir, { recursive: true });
+    }
+    return fallbackDir;
+  }
+
   const localDir = path.join(backendRoot, '.runtime');
   
   // Logic:
@@ -45,16 +65,6 @@ export function getRuntimeDir(backendRoot) {
     return localDir;
   } catch (e) {
     // Fallback required
-    const appName = 'CodeViz';
-    let fallbackBase = '';
-    
-    if (process.platform === 'win32') {
-      fallbackBase = process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir();
-    } else {
-      fallbackBase = process.env.HOME ? path.join(process.env.HOME, '.local', 'share') : os.tmpdir();
-    }
-    
-    const fallbackDir = path.join(fallbackBase, appName, 'runtime');
     if (!fs.existsSync(fallbackDir)) {
       fs.mkdirSync(fallbackDir, { recursive: true });
     }

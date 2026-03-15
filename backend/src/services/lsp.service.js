@@ -13,7 +13,7 @@ const backendRoot = getBackendRoot(import.meta.url);
 
 class LSPService {
   constructor() {
-    this.sessions = new Map(); // sessionId -> { process, tempDir }
+    this.sessions = new Map(); // sessionId -> { process, tempDir, buffer }
   }
 
   /**
@@ -47,7 +47,7 @@ class LSPService {
       '--all-scopes-completion',
       '--completion-style=detailed',
       '--header-insertion=never',
-      '--background-index=false' // Avoid heavy indexing in this context
+      '--background-index=false' 
     ], {
       cwd: lspDir,
       env: toolchainService.getRuntimeEnv()
@@ -55,7 +55,8 @@ class LSPService {
 
     const sessionData = {
       process: clangdProcess,
-      tempDir: lspDir
+      tempDir: lspDir,
+      buffer: Buffer.alloc(0)
     };
 
     this.sessions.set(sessionId, sessionData);
@@ -80,7 +81,10 @@ class LSPService {
   async sendMessage(sessionId, message) {
     const session = await this.initializeSession(sessionId);
     if (session && session.process.stdin.writable) {
-      session.process.stdin.write(message);
+      // Clangd expects the standard LSP header: Content-Length: <len>\r\n\r\n
+      const body = typeof message === 'string' ? message : JSON.stringify(message);
+      const header = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n`;
+      session.process.stdin.write(header + body);
     }
   }
 
@@ -92,12 +96,34 @@ class LSPService {
   async onMessage(sessionId, callback) {
     const session = await this.initializeSession(sessionId);
     if (session) {
-      session.process.stdout.on('data', (data) => {
-        callback(data.toString());
+      session.process.stdout.on('data', (chunk) => {
+        // LSP Framing: accumulate data in buffer and extract full messages
+        session.buffer = Buffer.concat([session.buffer, chunk]);
+        
+        while (true) {
+          const content = session.buffer.toString('utf8');
+          const headerMatch = content.match(/Content-Length: (\d+)\r\n\r\n/);
+          
+          if (!headerMatch) break;
+          
+          const contentLength = parseInt(headerMatch[1], 10);
+          const headerSize = headerMatch[0].length;
+          const totalSize = headerSize + contentLength;
+          
+          if (session.buffer.length < totalSize) break;
+          
+          // We have a full message
+          const messageBody = session.buffer.subarray(headerSize, totalSize).toString('utf8');
+          
+          // Remove from buffer
+          session.buffer = session.buffer.subarray(totalSize);
+          
+          // Send only the JSON body to the client
+          callback(messageBody);
+        }
       });
       
       session.process.stderr.on('data', (data) => {
-        // Log stderr for debugging but don't forward to client
         const msg = data.toString();
         if (msg.includes('error') || msg.includes('fail')) {
           logger.debug(`clangd [${sessionId}] stderr: ${msg}`);

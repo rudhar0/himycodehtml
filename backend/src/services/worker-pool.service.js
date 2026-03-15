@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { spawn as spawnProcess } from 'child_process';
 import logger from '../utils/logger.js';
 import sessionManager from './session-manager.service.js';
+import { killProcessTree } from '../utils/process-manager.js';
 
 class WorkerPoolManager {
   constructor() {
@@ -207,8 +208,8 @@ class WorkerPoolManager {
     for (const worker of this.pool) {
       if (worker.process) {
         try {
-          logger.info({ workerId: worker.id, pid: worker.process.pid }, 'Killing worker process...');
-          worker.process.kill('SIGKILL');
+          logger.info({ workerId: worker.id, pid: worker.process.pid }, 'Killing worker process tree...');
+          killProcessTree(worker.process.pid);
         } catch (error) {
           logger.warn({ workerId: worker.id }, 'Could not kill worker process on shutdown.');
         }

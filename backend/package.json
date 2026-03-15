@@ -40,6 +40,7 @@
     "pino": "^8.17.2",
     "socket.io": "^4.7.2",
     "tar": "^7.5.2",
+    "tree-kill": "^1.2.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

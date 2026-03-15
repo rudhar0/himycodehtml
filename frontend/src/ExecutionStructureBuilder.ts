@@ -13,6 +13,7 @@ export interface ConditionNode {
   conditionId: string;
   frameId: string;
   takenBranchStepKey: string;
+  parentConditionId?: string;
 }
 
 export interface ConditionTree {
@@ -149,27 +150,65 @@ for (let i = 0; i < steps.length; i++) {
  */
 export function buildConditionTree(steps: any[]): ConditionTree {
   const nodes = new Map<string, ConditionNode>();
+  const stacksByFrame = new Map<string, string[]>();
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const eventType = String(step.eventType || step.type || "")
       .toLowerCase()
       .trim();
-    if (eventType !== "branch_taken" && eventType !== "branch") continue;
+    const frameId = String(step.frameId || "default");
+    const scopeDepth = Number(step.scopeDepth || 0);
+
+    let conditionStack = stacksByFrame.get(frameId);
+    if (!conditionStack) {
+      conditionStack = [];
+      stacksByFrame.set(frameId, conditionStack);
+    }
+
+    // Trigger explicit stack reset on loop iteration boundaries
+    const isLoopReset = 
+      eventType === "loop_condition" || 
+      eventType === "loop_body_start" || 
+      eventType === "loop_iteration";
+
+    // Keep stack aligned with depth
+    // If it's a loop reset, we force-pop to the target scopeDepth (usually 0)
+    while (conditionStack.length > scopeDepth) {
+      conditionStack.pop();
+    }
+
+    if (isLoopReset && conditionStack.length > 0) {
+        // If we still have conditions on stack during a loop reset, 
+        // it means they were siblings/leaky from previous iteration.
+        // We pop them to ensure clean start.
+        while (conditionStack.length > 0) conditionStack.pop();
+    }
+
+    if (eventType !== "branch_taken" && eventType !== "branch") {
+       continue;
+    }
 
     const conditionId = step.conditionId;
     if (!conditionId) continue;
 
     const key = String(conditionId);
-    // Only record the first branch_taken per conditionId
-    if (nodes.has(key)) continue;
+    
+    // Parent is the condition at the current depth before we push this one
+    const parentId = conditionStack.length > 0 ? conditionStack[conditionStack.length - 1] : undefined;
 
-    nodes.set(key, {
-      conditionId: key,
-      frameId: String(step.frameId || ""),
-      takenBranchStepKey:
-        step.stepKey ?? `${String(step.frameId || "unknown")}-step-${i}`,
-    });
+    if (!nodes.has(key)) {
+      nodes.set(key, {
+        conditionId: key,
+        frameId: frameId,
+        takenBranchStepKey:
+          step.stepKey ?? `${frameId}-step-${i}`,
+        parentConditionId: parentId,
+      });
+    }
+
+    // Push to stack for nested children
+    conditionStack.push(key);
   }
 
   return { nodes };

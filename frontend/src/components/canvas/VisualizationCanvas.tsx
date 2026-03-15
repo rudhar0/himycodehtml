@@ -140,8 +140,13 @@ const getElementSignature = (element: LayoutElement): string => {
         String(data.iteration ?? ""),
         String(data.currentIteration ?? ""),
         String(data.totalIterations ?? ""),
-        data.isActive ? "1" : "0",
-        data.isComplete ? "1" : "0",
+        data.isActive    ? "1" : "0",
+        data.isComplete  ? "1" : "0",
+        data.isConditionStep ? "1" : "0",
+        data.conditionResult === true  ? "T"
+          : data.conditionResult === false ? "F" : "?",
+        data.isUpdateStep ? "1" : "0",
+        data.updateValues ? JSON.stringify(data.updateValues) : "{}",
       ].join("|");
     case "condition":
       return [
@@ -878,6 +883,11 @@ export default function VisualizationCanvas() {
             id={id}
             loopType={data?.loopType || "loop"}
             loopId={data?.loopId || 0}
+            condition={loopBody?.data?.condition}
+            totalIterations={loopBody?.data?.totalIterations}
+            currentIteration={loopBody?.data?.currentIteration}
+            isActive={loopBody?.data?.isActive}
+            isComplete={loopBody?.data?.isComplete}
             x={x}
             y={y}
             width={width}
@@ -1267,6 +1277,9 @@ export default function VisualizationCanvas() {
             condition={data?.condition}
             update={data?.update}
             conditionResult={data?.conditionResult}
+            isConditionStep={data?.isConditionStep}
+            isUpdateStep={data?.isUpdateStep}
+            updateValues={data?.updateValues}
             x={x}
             y={y}
             width={width}

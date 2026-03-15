@@ -76,6 +76,8 @@ const STEP_TYPE_MAP: Record<string, string> = {
   function_return: "function_return",
   loop_start: "loop_start",
   loop_iteration: "loop_iteration",
+  loop_body_start: "loop_body_start",
+  loop_iteration_end: "loop_iteration_end",
   loop_end: "loop_end",
   conditional_start: "conditional_start",
   conditional_branch: "conditional_branch",
@@ -373,12 +375,64 @@ export function processRawTrace(
   type ConditionCtx = { conditionId: string; bodyDepth: number };
   const conditionStacks: ConditionCtx[][] = [];
 
+  // 🔄 LOOP STABILIZATION: Track depth/stack at loop start to reset per-iteration.
+  type LoopCtx = { scopeDepth: number; conditionStackLen: number };
+  const loopStacksByFrame = new Map<string, LoopCtx[]>();
+
   for (let index = 0; index < limit; index++) {
     const raw = expandedSteps[index];
     const rawEventType = String(raw?.eventType || raw?.type || "")
       .toLowerCase()
       .trim();
     const frameId = String(raw.frameId || "main-0");
+    const activeStackIdx = currentMemoryState.callStack.length;
+
+    // --- 🔄 LOOP RESET LOGIC (Top of loop to prevent bypass) ---
+    // Trigger reset on ANY loop iteration marker (start, condition, or body_start)
+    const isIterationStartRaw = 
+      rawEventType === "loop_body_start" || 
+      rawEventType === "loop_iteration" || 
+      rawEventType === "loop_iteration_start" || 
+      rawEventType === "loop_condition"; // Reseting at condition is safer as it always happens
+    
+    if (rawEventType === "loop_start") {
+      let frameLoops = loopStacksByFrame.get(frameId);
+      if (!frameLoops) {
+        frameLoops = [];
+        loopStacksByFrame.set(frameId, frameLoops);
+      }
+      const activeStack = conditionStacks[activeStackIdx] || [];
+      frameLoops.push({
+        scopeDepth: inferredScopeDepthByFrame.get(frameId) ?? 0,
+        conditionStackLen: activeStack.length
+      });
+      console.log(`[TRACE] loop_start frame: ${frameId} -> base depth: ${inferredScopeDepthByFrame.get(frameId)}, stack len: ${activeStack.length}`);
+    } else if (isIterationStartRaw) {
+      const frameLoops = loopStacksByFrame.get(frameId);
+      const loopCtx = frameLoops && frameLoops.length > 0 ? frameLoops[frameLoops.length - 1] : null;
+      
+      if (loopCtx) {
+        // RESET DEPTH and POP CONDITIONS to loop-start state
+        if (inferredScopeDepthByFrame.get(frameId) !== loopCtx.scopeDepth) {
+            inferredScopeDepthByFrame.set(frameId, loopCtx.scopeDepth);
+        }
+        
+        while (conditionStacks.length <= activeStackIdx) conditionStacks.push([]);
+        const activeStack = conditionStacks[activeStackIdx];
+        if (activeStack) {
+          while (activeStack.length > loopCtx.conditionStackLen) {
+            const popped = activeStack.pop();
+            console.log(`[TRACE] loop iteration reset -> Popped leaky condition: ${popped?.conditionId} (Trigger: ${rawEventType})`);
+          }
+        }
+      }
+    } else if (rawEventType === "loop_end") {
+      const frameLoops = loopStacksByFrame.get(frameId);
+      if (frameLoops) {
+        const popped = frameLoops.pop();
+        console.log(`[TRACE] loop_end frame: ${frameId} -> popped loop context (base depth was ${popped?.scopeDepth})`);
+      }
+    }
 
     if (rawEventType === "block_enter") {
       const current = inferredScopeDepthByFrame.get(frameId) ?? 0;
@@ -414,19 +468,27 @@ export function processRawTrace(
     if (step.eventType) step.originalEventType = step.eventType;
     if (step.stdout && step.type === "output") step.value = step.stdout;
     
-    // 🔧 FORCE SYNC: Always use inferred depth for EVERY step to ensure nesting alignment
-    step.scopeDepth = inferredScopeDepthByFrame.get(frameId) ?? 0;
+    // 🔧 LOOP-SPECIALIZED DEPTH NORMALIZATION
+    // If inside a loop, we calculate normalizedDepth = currentDepth - (loopBaseDepth + 1)
+    // This ensures that pruneLogic and parent resolution see depths starting from 1 inside iterations.
+    const frameLoops = loopStacksByFrame.get(frameId);
+    let rawDepth = inferredScopeDepthByFrame.get(frameId) ?? 0;
+    
+    if (frameLoops && frameLoops.length > 0) {
+      const topLoop = frameLoops[frameLoops.length - 1];
+      // Formula: normalizedDepth = rawDepth - loopBaseDepth
+      // This ensures that steps inside the loop start at depth 1 relative to the loop's entry depth.
+      const normalizedDepth = Math.max(0, rawDepth - topLoop.scopeDepth);
+      step.scopeDepth = normalizedDepth;
+      step.rawScopeDepth = rawDepth; // Keep original for reference
+      step.loopBaseDepth = topLoop.scopeDepth;
+    } else {
+      step.scopeDepth = rawDepth;
+      step.rawScopeDepth = rawDepth;
+    }
 
     const originalType = step.type;
     step.type = normalizeStepType(step.type) as StepType;
-
-    // Keep conditionStacks aligned with the runtime call stack (defensive).
-    while (conditionStacks.length < currentMemoryState.callStack.length) {
-      conditionStacks.push([]);
-    }
-    while (conditionStacks.length > currentMemoryState.callStack.length) {
-      conditionStacks.pop();
-    }
 
     // Condition scope handling:
     // - push on taken branches (branch_taken → normalized 'branch')
@@ -468,9 +530,9 @@ export function processRawTrace(
       const condFrame = activeCondition.split("-").slice(1, 3).join("-");
       const stepFrame = String(step.frameId);
 
-      if (condFrame === stepFrame) {
+      const activeBodyDepth = activeCondStack[activeCondStack.length - 1].bodyDepth;
+      if (condFrame === stepFrame && scopeDepth > activeBodyDepth) {
         step.conditionId = activeCondition;
-        console.log(`[TRACE] Inheriting conditionId: ${activeCondition} for step: ${step.type} at line: ${step.line}`);
       }
     }
 

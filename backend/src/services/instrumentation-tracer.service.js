@@ -1,6 +1,6 @@
 // backend/src/services/instrumentation-tracer.service.js
 import { spawn, execFileSync } from 'child_process';
-import { writeFile, readFile, unlink, mkdir, copyFile } from 'fs/promises';
+import { writeFile, readFile, unlink, mkdir, copyFile, stat } from 'fs/promises';
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
@@ -13,6 +13,7 @@ import { analyzeService } from './analyze.service.js';
 
 import { tracePlatformAdapter } from './trace-platform-adapter.js';
 import resourceResolver from './resource-resolver.service.js';
+import { killProcessTree } from '../utils/process-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -105,7 +106,11 @@ class InstrumentationTracer {
         console.log(`[TraceService] Stopping ${this.activeProcesses.size} active processes and resetting state...`);
         for (const proc of this.activeProcesses) {
             try {
-                proc.kill('SIGKILL');
+                if (proc.pid) {
+                    killProcessTree(proc.pid);
+                } else {
+                    proc.kill('SIGKILL');
+                }
             } catch (e) {
                 // ignore
             }
@@ -569,8 +574,8 @@ class InstrumentationTracer {
             // Check if tracer object is already cached and up-to-date
             try {
                 const [srcStat, objStat] = await Promise.all([
-                    fs.stat(this.tracerCpp),
-                    fs.stat(tracerObj).catch(() => null)
+                    stat(this.tracerCpp),
+                    stat(tracerObj).catch(() => null)
                 ]);
                 if (objStat && objStat.mtime >= srcStat.mtime) {
                     console.log('[Compile] Using cached tracer object:', tracerObj);
@@ -594,14 +599,25 @@ class InstrumentationTracer {
         })();
 
         const timeoutMs = 120000; // 120s timeout for compile/link
-        const withTimeout = (promise, name) => Promise.race([
-            promise,
-            new Promise((_, reject) => setTimeout(() => {
-                console.warn(`[Compile] ${name} timed out. Killing processes...`);
-                this.stop();
-                reject(new Error(`${name} timed out (30s)`));
-            }, timeoutMs))
-        ]);
+        const withTimeout = (promise, name) => {
+            let timeoutId;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    console.warn(`[Compile] ${name} timed out. Killing processes...`);
+                    this.stop();
+                    reject(new Error(`${name} timed out (${timeoutMs/1000}s)`));
+                }, timeoutMs);
+            });
+
+            return Promise.race([
+                promise,
+                timeoutPromise
+            ]).finally(() => {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+            });
+        };
 
         await withTimeout(Promise.all([compileUser, compileTracer]), 'Compilation');
         await this.validateTracerObject(tracerObj);
@@ -700,7 +716,8 @@ class InstrumentationTracer {
             // --- Step 1.5: Merge runtime env (do not overwrite) ---
             const env = { ...toolchainService.getRuntimeEnv(), TRACE_OUTPUT: traceOutput };
 
-            const proc = spawn(cmd, [], {
+            const shellCmd = process.platform === 'win32' ? `"${cmd}"` : cmd;
+            const proc = spawn(shellCmd, [], {
                 cwd,
                 env,
                 stdio: ['pipe', 'pipe', 'pipe'],

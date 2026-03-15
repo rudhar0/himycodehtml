@@ -299,7 +299,7 @@ startServer();
 
 // Prevents orphan processes when the frontend is closed abruptly.
 let idleTimer = null;
-const IDLE_TIMEOUT = 600000; // 600 seconds (10 minutes) (increased to prevent premature shutdown during startup)
+const IDLE_TIMEOUT = 60000; // 60 seconds (reduced from 600s as failsafe)
 
 
 let lastCheck = Date.now();
@@ -358,5 +358,12 @@ setInterval(() => {
     process.emit('SIGTERM');
   }
 }, 2000).unref(); // Don't block exit
+
+// PIipe Detection: Instant shutdown when parent (Neutralino/Launcher) closes
+process.stdin.on('close', () => {
+  logger.info('[Shutdown] Parent process communication pipe closed. Triggering exit...');
+  process.emit('SIGTERM');
+});
+process.stdin.resume(); // Ensure the stream stays open to detect the close event
 
 export { io };
