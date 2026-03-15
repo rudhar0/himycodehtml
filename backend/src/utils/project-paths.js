@@ -37,39 +37,42 @@ export function getRuntimeDir(backendRoot) {
   }
   
   const fallbackDir = path.join(fallbackBase, appName, 'runtime');
-
-  // Prefer fallback (AppData/Home) for system-level installations or packaged environments
-  const isSystemDir = backendRoot.includes('Program Files') || backendRoot.includes('WindowsApps') || backendRoot.includes('snap');
-  if (isSystemDir || process.pkg || process.env.NEUTRALA_APP_ROOT) {
-    if (!fs.existsSync(fallbackDir)) {
-      fs.mkdirSync(fallbackDir, { recursive: true });
-    }
-    return fallbackDir;
-  }
-
   const localDir = path.join(backendRoot, '.runtime');
-  
-  // Logic:
-  // 1. If localDir exists, check if it's writable.
-  // 2. If it doesn't exist, try to create it. If create fails, use fallback.
-  // 3. Fallback to a user-writable directory if local is read-only.
-  
-  try {
-    if (!fs.existsSync(localDir)) {
-      fs.mkdirSync(localDir, { recursive: true });
+
+  // Logic for portable vs system installations:
+  // 1. If explicitly forced to use local (e.g. by frontend), try local first.
+  // 2. If NOT in a system directory (Program Files, etc.), try local first (Standard Portable behavior).
+  // 3. Otherwise (System install), go straight to AppData/Home.
+
+  const forceLocal = process.env.NEUTRALA_FORCE_LOCAL_RUNTIME === 'true';
+  const isSystemDir = backendRoot.includes('Program Files') || 
+                      backendRoot.includes('WindowsApps') || 
+                      backendRoot.includes('snap') ||
+                      backendRoot.startsWith('/usr/') ||
+                      backendRoot.startsWith('/opt/');
+
+  const shouldTryLocal = forceLocal || !isSystemDir;
+
+  if (shouldTryLocal) {
+    try {
+      if (!fs.existsSync(localDir)) {
+        fs.mkdirSync(localDir, { recursive: true });
+      }
+      // Check writability
+      const testFile = path.join(localDir, `.write_test_${process.pid}`);
+      fs.writeFileSync(testFile, '');
+      fs.unlinkSync(testFile);
+      return localDir;
+    } catch (e) {
+      // Local dir is read-only or inaccessible, proceed to fallback
     }
-    // Check writability by attempting to write a tiny temp file
-    const testFile = path.join(localDir, `.write_test_${process.pid}`);
-    fs.writeFileSync(testFile, '');
-    fs.unlinkSync(testFile);
-    return localDir;
-  } catch (e) {
-    // Fallback required
-    if (!fs.existsSync(fallbackDir)) {
-      fs.mkdirSync(fallbackDir, { recursive: true });
-    }
-    return fallbackDir;
   }
+
+  // Fallback to a user-writable directory (AppData/Home)
+  if (!fs.existsSync(fallbackDir)) {
+    fs.mkdirSync(fallbackDir, { recursive: true });
+  }
+  return fallbackDir;
 }
 
 export function getBuildDir(backendRoot) {

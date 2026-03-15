@@ -1,0 +1,22 @@
+{
+  "appName": "CodeViz",
+  "safeName": "codeviz",
+  "author": "",
+  "publisher": "CodeViz Team",
+  "license": "MIT",
+  "version": "1.0.0",
+  "targetOs": "windows",
+  "outputFormat": "exe",
+  "appIcon": null,
+  "appIconPng": null,
+  "appIconIco": "D:\\testvicneusof\\desktop\\resources\\app.ico",
+  "uninstallIcon": "D:\\testvicneusof\\desktop\\resources\\app.ico",
+  "buildDesktop": true,
+  "buildWindowsInstaller": true,
+  "buildId": "c5d2170a48e5",
+  "builtAt": "2026-03-15T17:14:35.667Z",
+  "nodeRuntime": {
+    "version": "18.20.8",
+    "distBase": "https://nodejs.org/download/release/"
+  }
+}

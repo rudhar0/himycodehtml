@@ -1,13 +1,15 @@
 export const socketConfig = {
   cors: {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost:5174',
-      'http://127.0.0.1:5174',
-    ],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('http://localhost:')
+      ) {
+        return callback(null, true);
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST']
   },

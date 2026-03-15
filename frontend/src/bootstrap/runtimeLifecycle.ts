@@ -91,6 +91,7 @@ export async function initRuntimeLifecycle(): Promise<string> {
       timeoutMs: 25000
     });
     
+    console.log(LOG_PREFIX, 'Readiness check complete. Base URL:', baseUrl);
     return baseUrl;
   } catch (error) {
     console.error(LOG_PREFIX, 'Lifecycle initialization failed during port wait:', error);

@@ -107,6 +107,21 @@ export async function spawnBackend(options: SpawnOptions): Promise<number> {
     
     (globalThis as any).Neutralino.events.on('spawnedProcessExited', onExit);
 
+    // 4. Capture and log backend output (stdout/stderr) for debugging
+    const onStdout = (event: any) => {
+      if (activeProcess && event.detail.id === activeProcess.id) {
+        console.log(`[backend:stdout] ${event.detail.data}`);
+      }
+    };
+    const onStderr = (event: any) => {
+      if (activeProcess && event.detail.id === activeProcess.id) {
+        console.warn(`[backend:stderr] ${event.detail.data}`);
+      }
+    };
+    
+    (globalThis as any).Neutralino.events.on('spawnedProcessStdout', onStdout);
+    (globalThis as any).Neutralino.events.on('spawnedProcessStderr', onStderr);
+
     return proc.pid;
   } catch (error) {
     console.error(LOG_PREFIX, 'Failed to spawn backend:', error);

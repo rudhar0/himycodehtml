@@ -27,7 +27,10 @@ class SocketService {
         return;
       }
 
-      console.log('🔌 Connecting to Socket.io server...');
+      console.log('🔌 Connecting to Socket.io server...', API_CONFIG.socketURL);
+      if (!API_CONFIG.socketURL) {
+        console.warn('⚠️ socketURL is empty! Connection will likely fail.');
+      }
 
       this.socket = io(API_CONFIG.socketURL, {
         transports: ['websocket', 'polling'],

@@ -1,0 +1,62 @@
+{
+  "name": "cpp-visualizer-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Backend for C/C++ Program Execution Visualizer",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "deps:audit": "node scripts/deps-audit.js",
+    "deps:fix": "node scripts/deps-audit.js --apply",
+    "build": "node scripts/build.js",
+    "neutrala:start": "node scripts/neutrala-start.js",
+    "neutrala:build": "node scripts/build.js",
+    "neutrala:doctor": "node scripts/neutrala-doctor.js",
+    "neutrala:verify": "node scripts/neutrala-verify.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand"
+  },
+  "keywords": [
+    "c",
+    "cpp",
+    "visualizer",
+    "compiler",
+    "clang",
+    "libtooling"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "extract-zip": "^2.0.1",
+    "fs-extra": "^11.2.0",
+    "ioredis": "^5.3.2",
+    "pino": "^8.17.2",
+    "socket.io": "^4.7.2",
+    "tar": "^7.5.2",
+    "tree-kill": "^1.2.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "clang-format": "^1.8.0",
+    "husky": "^9.1.7",
+    "jest": "^30.2.0",
+    "jimp": "^0.22.12",
+    "nodemon": "^3.1.0",
+    "pino-pretty": "^10.3.1",
+    "pkg": "^5.8.1",
+    "sharp": "^0.34.5",
+    "terser": "^5.39.0",
+    "to-ico": "^1.1.5"
+  },
+  "systemRequirements": {
+    "note": "Uses bundled LLVM/Clang toolchain located in resources/toolchain - no system compiler or Docker required",
+    "zeroDependency": true
+  }
+}

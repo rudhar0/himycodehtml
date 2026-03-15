@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import fssync from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -634,9 +634,8 @@ async function buildDesktopPortable({
   baseCfg.modes = baseCfg.modes || {};
   baseCfg.modes.window = baseCfg.modes.window || {};
   baseCfg.modes.window.title = appName || baseCfg.modes.window.title || 'CodeViz';
-  // Disable inspector in packaged desktop bundles (portable/installer) so devtools
-  // are not exposed to end users. Dev runs use `desktop/neutralino.config.json`.
-  baseCfg.modes.window.enableInspector = false;
+  // Enable inspector even in packaged desktop bundles to allow debugging connection issues
+  baseCfg.modes.window.enableInspector = true;
   // Best-effort: set window/taskbar icon (Neutralino may ignore unknown keys on some platforms).
   // We keep this non-fatal; OS-level icon embedding is handled by installers/.app/.desktop.
   if (targetOs === 'windows') {

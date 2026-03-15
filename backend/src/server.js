@@ -205,7 +205,7 @@ process.on('SIGTERM', async () => {
       await sessionManager.destroySession(s.id);
     }
     await cleanupRuntimeTemp();
-    
+
     // Forcefully destroy any hanging network connections
     for (const socket of activeSockets) {
       socket.destroy();
@@ -299,7 +299,7 @@ startServer();
 
 // Prevents orphan processes when the frontend is closed abruptly.
 let idleTimer = null;
-const IDLE_TIMEOUT = 60000; // 60 seconds (reduced from 600s as failsafe)
+const IDLE_TIMEOUT = 300000; // 5 minutes (increased from 60s for stability)
 
 
 let lastCheck = Date.now();
