@@ -600,18 +600,18 @@ export class LayoutEngine {
       if (!element) return;
       
       // 🚩 CRITICAL: Only bodies/iterations can be parents for in-flow elements
-      if (element.data?.controlRole && element.data.controlRole !== "body") {
-        return;
+      if (element.data?.controlRole === "body" || element.subtype === "iteration") {
+         if (depth >= selectedDepth) {
+            selected = element;
+            selectedDepth = depth;
+         }
+      } else if (!selected && !element.data?.headerOnly) {
+         // Fallback to caller only if no body is found at or below this depth
+         if (depth >= selectedDepth) {
+            selected = element;
+            selectedDepth = depth;
+         }
       }
-      if (element.data?.headerOnly) return;
-      
-      // Only active branches can be parents
-      if (element.data?.branchState && element.data.branchState !== "active") {
-        return;
-      }
-      
-      selected = element;
-      selectedDepth = depth;
     });
     
     return selected;
@@ -702,6 +702,7 @@ export class LayoutEngine {
       ephemeralMap?.delete(scopeDepth);
       return;
     }
+    console.log(`[PLACEMENT_DEBUG] setActiveControlForDepth frame: ${frameId} depth: ${scopeDepth} elementId: ${elementId}`);
     depthMap.set(scopeDepth, elementId);
   }
 
@@ -815,16 +816,8 @@ export class LayoutEngine {
       let Layer2Result: LayoutElement | null = null;
 
       if (node?.takenBranchStepKey) {
-        Layer2Result = this.bodyByStepKey.get(node.takenBranchStepKey) || null;
-      }
-
-      if (!Layer2Result && node?.parentConditionId) {
-        const parentContainer = this.containerByConditionId.get(String(node.parentConditionId));
-        if (parentContainer) {
-          console.log('[PLACEMENT] Layer2-Tree-Parent', debugType, debugKey, '→ parentId:', parentContainer.id);
-          return parentContainer;
-        }
-      }
+    Layer2Result = this.bodyByStepKey.get(node.takenBranchStepKey) || null;
+  }
 
       if (Layer2Result) {
         console.log(`[PLACEMENT] Frame: ${frameId} -> Layer2-Tree ${debugType} ${debugKey} conditionId: ${step.conditionId} → bodyId: ${Layer2Result.id}`);
@@ -849,20 +842,29 @@ export class LayoutEngine {
     }
 
     // Layer 3: Persistent Scope Mapping (Fallback)
-    // ADD THIS:
 const Layer3Result = this.getActiveControlParent(frameId, scopeDepth);
 if (Layer3Result) {
   const isConditionBody =
     Layer3Result.type === "condition" &&
     Layer3Result.data?.controlRole === "body";
-
   if (isConditionBody && !step?.conditionId) {
     // stale entry — backend missed block_exit, step is outside condition
+    console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3-Depth ${debugType} ${debugKey} IGNORED stale bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
+    // Fall back to frame parent
   } else {
     console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3-Depth ${debugType} ${debugKey} → bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
     return Layer3Result;
   }
 }
+
+    // Layer 3.5: Global ConditionId Fallback (Dangerous, moved after branch-aware Layer 3)
+    if (step?.conditionId) {
+      const fallback = this.containerByConditionId.get(String(step.conditionId));
+      if (fallback) {
+        console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3.5-GlobalFallback ${debugType} ${debugKey} → bodyId: ${fallback.id}`);
+        return fallback;
+      }
+    }
 
     const loopParent = this.getLoopContainerParent(frameId);
     if (loopParent) return loopParent;
@@ -2637,8 +2639,8 @@ this.bodyStepKeyById.clear();
             prevStep as ExecutionStep | null,
             callLine,
           );
-          const placement = this.getPlacementContext(parentFrame, parentFrameId, callScopeDepth);
-
+// ADD:
+const placement = this.getPlacementContext(parentFrame, parentFrameId, callScopeDepth, step);
           callElement = {
             id: `call-${parentFrameId}-to-${frameId}`,
             type: "call_site",

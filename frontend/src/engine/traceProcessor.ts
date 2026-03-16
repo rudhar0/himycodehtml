@@ -371,10 +371,9 @@ export function processRawTrace(
   const processedSteps: ExecutionStep[] = [];
   const inferredScopeDepthByFrame = new Map<string, number>();
   
-  // Local control-context stacks (do NOT store on MemoryState/callStack frames).
-  // Each entry corresponds 1:1 with currentMemoryState.callStack depth.
+  // Local control-context stacks mapped by frameId.
   type ConditionCtx = { conditionId: string; bodyDepth: number };
-  const conditionStacks: ConditionCtx[][] = [];
+  const conditionStacksByFrame = new Map<string, ConditionCtx[]>();
 
   // 🔄 LOOP STABILIZATION: Track depth/stack at loop start to reset per-iteration.
   type LoopCtx = { scopeDepth: number; conditionStackLen: number };
@@ -402,7 +401,11 @@ export function processRawTrace(
         frameLoops = [];
         loopStacksByFrame.set(frameId, frameLoops);
       }
-      const activeStack = conditionStacks[activeStackIdx] || [];
+      let activeStack = conditionStacksByFrame.get(frameId);
+      if (!activeStack) {
+          activeStack = [];
+          conditionStacksByFrame.set(frameId, activeStack);
+      }
       frameLoops.push({
         scopeDepth: inferredScopeDepthByFrame.get(frameId) ?? 0,
         conditionStackLen: activeStack.length
@@ -418,13 +421,14 @@ export function processRawTrace(
             inferredScopeDepthByFrame.set(frameId, loopCtx.scopeDepth);
         }
         
-        while (conditionStacks.length <= activeStackIdx) conditionStacks.push([]);
-        const activeStack = conditionStacks[activeStackIdx];
-        if (activeStack) {
-          while (activeStack.length > loopCtx.conditionStackLen) {
-            const popped = activeStack.pop();
-            console.log(`[TRACE] loop iteration reset -> Popped leaky condition: ${popped?.conditionId} (Trigger: ${rawEventType})`);
-          }
+        let activeStack = conditionStacksByFrame.get(frameId);
+        if (!activeStack) {
+            activeStack = [];
+            conditionStacksByFrame.set(frameId, activeStack);
+        }
+        while (activeStack.length > loopCtx.conditionStackLen) {
+          const popped = activeStack.pop();
+          console.log(`[TRACE] loop iteration reset -> Popped leaky condition: ${popped?.conditionId} (Trigger: ${rawEventType})`);
         }
       }
    } else if (rawEventType === "loop_end") {
@@ -438,13 +442,14 @@ export function processRawTrace(
         // gets a matching block_exit (backend gap), so it leaks onto
         // post-loop steps. conditionStackLen was saved at loop_start.
         if (popped !== undefined) {
-          while (conditionStacks.length <= activeStackIdx) conditionStacks.push([]);
-          const activeStack = conditionStacks[activeStackIdx];
-          if (activeStack) {
-            while (activeStack.length > popped.conditionStackLen) {
-              const poppedCond = activeStack.pop();
-              console.log(`[TRACE] loop_end frame: ${frameId} -> cleared leaky condition: ${poppedCond?.conditionId}`);
-            }
+          let activeStack = conditionStacksByFrame.get(frameId);
+          if (!activeStack) {
+              activeStack = [];
+              conditionStacksByFrame.set(frameId, activeStack);
+          }
+          while (activeStack.length > popped.conditionStackLen) {
+            const poppedCond = activeStack.pop();
+            console.log(`[TRACE] loop_end frame: ${frameId} -> cleared leaky condition: ${poppedCond?.conditionId}`);
           }
         }
       }
@@ -522,35 +527,30 @@ export function processRawTrace(
     // - pop when scopeDepth drops below the branch body depth
     // - fill missing step.conditionId from current active condition (top of stack)
     const scopeDepth = Number(step.scopeDepth ?? (inferredScopeDepthByFrame.get(frameId) ?? 0));
-    const activeCondStack =
-      conditionStacks.length > 0
-        ? conditionStacks[conditionStacks.length - 1]
-        : null;
+    let activeCondStack = conditionStacksByFrame.get(frameId);
+    if (!activeCondStack) {
+      activeCondStack = [];
+      conditionStacksByFrame.set(frameId, activeCondStack);
+    }
 
-// ADD — null out stale conditionId that backend emitted but is no longer active:
-// ADD:
-const _normalizedType = String(step.type || "").toLowerCase();
-const _isControlFlowStep =
-  _normalizedType === "condition" ||
-  _normalizedType === "branch" ||
-  _normalizedType === "else_eval" ||
-  _normalizedType === "conditional_start" ||
-  _normalizedType === "conditional_branch";
+    const _stepTypeNormalized = String(step.type || step.eventType || "").toLowerCase().trim();
+    const isReturnEvent = _stepTypeNormalized === "return" || _stepTypeNormalized === "function_return";
 
-if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
-  const isStillActive = activeCondStack.some(
-    (entry: any) => String(entry.conditionId) === String(step.conditionId)
-  );
-  if (!isStillActive) {
-    step.conditionId = null;
-  }
-}
     if (activeCondStack && activeCondStack.length > 0) {
       const closed: string[] = [];
       while (
         activeCondStack.length > 0 &&
-        scopeDepth < activeCondStack[activeCondStack.length - 1].bodyDepth
+        (scopeDepth < activeCondStack[activeCondStack.length - 1].bodyDepth ||
+         (scopeDepth === activeCondStack[activeCondStack.length - 1].bodyDepth && rawEventType === "block_exit"))
       ) {
+        const top = activeCondStack[activeCondStack.length - 1];
+        // ✅ FIX: Only pop if the current frame matches the frame that created the condition.
+        // This prevents entering a new function (depth 0) from popping the caller's stack.
+        const condFrameId = top.conditionId.split("-").slice(1, 3).join("-");
+        if (condFrameId !== frameId && top.bodyDepth !== -1) {
+           break;
+        }
+
         const popped = activeCondStack.pop();
         if (popped?.conditionId) {
           closed.push(String(popped.conditionId));
@@ -559,26 +559,54 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
       if (closed.length > 0) {
         // Log the final resulting depth of the stack or N/A
         const remainingDepth = activeCondStack.length > 0 ? activeCondStack[activeCondStack.length - 1].bodyDepth : 'N/A';
-        console.log(`[TRACE] scopeDepth: ${scopeDepth} < bodyDepth: ${remainingDepth} -> Closing conditions:`, closed);
+        console.log(`[TRACE] scopeDepth: ${scopeDepth} <= bodyDepth: ${remainingDepth} frame: ${frameId} -> Closing conditions:`, closed);
         step.closedConditionIds = closed;
       }
     }
 
-    if (
-      (step.conditionId === undefined || step.conditionId === null) &&
-      activeCondStack &&
-      activeCondStack.length > 0
-    ) {
-      const activeCondition =
-        activeCondStack[activeCondStack.length - 1].conditionId;
+    // Favor condition stack over backend conditionId for non-control steps.
+    const _isControlFlowStep =
+      _stepTypeNormalized === "condition" ||
+      _stepTypeNormalized === "branch" ||
+      _stepTypeNormalized === "else_eval" ||
+      _stepTypeNormalized === "conditional_start" ||
+      _stepTypeNormalized === "conditional_branch" ||
+      _stepTypeNormalized === "func_enter";
 
-      const condFrame = activeCondition.split("-").slice(1, 3).join("-");
-      const stepFrame = String(step.frameId);
+    if (!_isControlFlowStep) {
+      let matchedActiveCondition = false;
+      if (activeCondStack && activeCondStack.length > 0) {
+        const activeCondition =
+          activeCondStack[activeCondStack.length - 1].conditionId;
 
-      const activeBodyDepth = activeCondStack[activeCondStack.length - 1].bodyDepth;
-      if (condFrame === stepFrame && scopeDepth > activeBodyDepth) {
-        step.conditionId = activeCondition;
+        const condFrame = activeCondition.split("-").slice(1, 3).join("-");
+        const stepFrame = String(step.frameId);
+
+        const activeBodyDepth = activeCondStack[activeCondStack.length - 1].bodyDepth;
+        // ✅ FIX: Use >= instead of > to catch statements at the same depth as the branch.
+        // Also allow inheritance if frames don't match BUT it's a seeded condition (bodyDepth === -1)
+        // which means the callee is visually nested inside the caller's condition.
+        const frameMatch = condFrame === stepFrame || activeBodyDepth === -1;
+
+        if (frameMatch && scopeDepth >= activeBodyDepth) {
+          step.conditionId = activeCondition;
+          matchedActiveCondition = true;
+        }
       }
+      
+      // ✅ FIX: Clear ghost condition IDs from the backend if they don't match the current active stack
+      if (!matchedActiveCondition) {
+         delete step.conditionId;
+      }
+    }
+
+    // Force pop conditions when returning (the function is exiting, so drop to depth 0)
+    // NOTE: only pop if we actually have an activeCondStack reference
+    if (isReturnEvent) {
+       if (activeCondStack) {
+          while (activeCondStack.length > 0) activeCondStack.pop();
+       }
+       inferredScopeDepthByFrame.set(frameId, 0);
     }
 
     const nextMemoryState: MemoryState = structuredClone(currentMemoryState);
@@ -596,6 +624,7 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
 
         const newFrame: any = {
           function: functionName,
+          frameId: step.frameId || "main-0",
           line: step.line,
           locals: {},
         };
@@ -605,24 +634,21 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
 
         // Seed callee condition stack with caller's currently-active condition (if any),
         // using bodyDepth=-1 so it never auto-closes inside the callee.
-        const callerStack =
-          conditionStacks.length > 0
-            ? conditionStacks[conditionStacks.length - 1]
-            : null;
+        const callerFrameId = parentFrame ? parentFrame.frameId : "main-0";
+        const callerStack = conditionStacksByFrame.get(callerFrameId);
         const activeCaller =
           callerStack && callerStack.length > 0
             ? callerStack[callerStack.length - 1]
             : null;
+        
         const calleeStack: ConditionCtx[] = [];
         if (activeCaller?.conditionId) {
-          if (activeCaller?.conditionId) {
-            calleeStack.push({
-              conditionId: String(activeCaller.conditionId),
-              bodyDepth: -1,
-            });
-          }
+          calleeStack.push({
+            conditionId: String(activeCaller.conditionId),
+            bodyDepth: -1,
+          });
         }
-        conditionStacks.push(calleeStack);
+        conditionStacksByFrame.set(step.frameId || "main-0", calleeStack);
         break;
       }
 
@@ -630,16 +656,8 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
         if (nextMemoryState.callStack.length > 0) {
           nextMemoryState.callStack.pop();
         }
-
-        // clear condition stack when returning to caller
-        if (conditionStacks.length > 0) {
-          const stack = conditionStacks[conditionStacks.length - 1];
-          if (stack) stack.length = 0;
-        }
-
-        if (conditionStacks.length > 0) {
-          conditionStacks.pop();
-        }
+        // No longer pop conditionStacks since it's mapped robustly by frameId.
+        // It persists for tailing events like 'return' matching this frame's ID.
         break;
 
       // --- Arrays ---
@@ -753,10 +771,12 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
         // Push condition context for the taken branch body.
         // bodyDepth = scopeDepth + 1 because backend scopeDepth uses "start depth" for control
         // steps (branch_taken), while body statements are at the deeper "max depth".
-        const stack =
-          conditionStacks.length > 0
-            ? conditionStacks[conditionStacks.length - 1]
-            : null;
+        // push on taken branches (branch_taken → normalized 'branch')
+        let stack = conditionStacksByFrame.get(frameId);
+        if (!stack) {
+            stack = [];
+            conditionStacksByFrame.set(frameId, stack);
+        }
         if (
           stack &&
           step.conditionId !== undefined &&
@@ -766,9 +786,10 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
             conditionId: String(step.conditionId),
             bodyDepth: scopeDepth,
           });
-          console.log(`[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth}`);
+          console.log(
+            `[TRACE] branch -> Pushing condition: ${step.conditionId} with bodyDepth: ${scopeDepth}`
+          );
         }
-
         break;
       }
 
@@ -791,15 +812,13 @@ if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
       step.explanation = `Executing ${step.type} at line ${step.line}`;
     }
 
-    const stepEventType = String(step.type || step.eventType || "")
-      .toLowerCase()
-      .trim();
-    const isReturnEvent =
+    const stepEventType = _stepTypeNormalized;
+    const isReturnEventFinal =
       stepEventType === "return" || stepEventType === "function_return";
 
     if (
       !hasVisualChange(currentMemoryState, nextMemoryState, step) &&
-      !isReturnEvent
+      !isReturnEventFinal
     ) {
       currentMemoryState = nextMemoryState;
       continue;
