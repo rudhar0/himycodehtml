@@ -42962,6 +42962,16 @@ function getBackendRoot(fromImportMetaUrl) {
   return import_node_path.default.resolve(here, "..");
 }
 function getRuntimeDir(backendRoot3) {
+  if (process.env.RUNTIME_DIR) {
+    const explicitDir = import_node_path.default.resolve(process.env.RUNTIME_DIR);
+    try {
+      if (!import_node_fs.default.existsSync(explicitDir)) {
+        import_node_fs.default.mkdirSync(explicitDir, { recursive: true });
+      }
+      return explicitDir;
+    } catch (e) {
+    }
+  }
   const appName = "CodeViz";
   let fallbackBase = "";
   if (process.platform === "win32") {
@@ -42971,10 +42981,8 @@ function getRuntimeDir(backendRoot3) {
   }
   const fallbackDir = import_node_path.default.join(fallbackBase, appName, "runtime");
   const localDir = import_node_path.default.join(backendRoot3, ".runtime");
-  const forceLocal = process.env.NEUTRALA_FORCE_LOCAL_RUNTIME === "true";
   const isSystemDir = backendRoot3.includes("Program Files") || backendRoot3.includes("WindowsApps") || backendRoot3.includes("snap") || backendRoot3.startsWith("/usr/") || backendRoot3.startsWith("/opt/");
-  const shouldTryLocal = forceLocal || !isSystemDir;
-  if (shouldTryLocal) {
+  if (!isSystemDir) {
     try {
       if (!import_node_fs.default.existsSync(localDir)) {
         import_node_fs.default.mkdirSync(localDir, { recursive: true });

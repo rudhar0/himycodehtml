@@ -5,10 +5,10 @@ import VariableLifetime from '@components/sidebar/VariableLifetime';
 
 export default function Sidebar() {
   return (
-    <div className="flex h-full flex-col bg-[#f5f7f9] dark:bg-slate-900 border-r border-[#c8d0d8] dark:border-slate-800">
+    <div className="flex h-full flex-col bg-[#f5f7f9] dark:bg-[#0a0e1a] border-r border-[#c8d0d8] dark:border-[#1a2540]">
       <Tabs.Root defaultValue="symbols" className="flex h-full flex-col">
         {/* Tab List */}
-        <Tabs.List className="flex border-b border-[#c8d0d8] dark:border-slate-800 bg-[#dde3e8] dark:bg-slate-950">
+        <Tabs.List className="flex border-b border-[#c8d0d8] dark:border-[#1a2540] bg-[#dde3e8] dark:bg-[#0f1629]">
           <Tabs.Trigger
             value="symbols"
             className="flex flex-1 items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-[#5a6a7a] dark:text-slate-400 hover:text-[#1a2332] dark:hover:text-slate-200 data-[state=active]:border-b-2 data-[state=active]:border-blue-500 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 transition-colors"

@@ -13,8 +13,8 @@
   "uninstallIcon": "D:\\testvicneusof\\desktop\\resources\\app.ico",
   "buildDesktop": true,
   "buildWindowsInstaller": true,
-  "buildId": "3d46f193c343",
-  "builtAt": "2026-03-16T03:20:27.797Z",
+  "buildId": "ca51a13fd2cb",
+  "builtAt": "2026-03-16T12:27:47.279Z",
   "nodeRuntime": {
     "version": "18.20.8",
     "distBase": "https://nodejs.org/download/release/"

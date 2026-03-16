@@ -159,13 +159,59 @@ async function resolveBackendDir(appDir: string): Promise<string> {
 }
 
 /**
+ * Returns a writable runtime directory.
+ * - If the backend lives under a system-protected folder (Program Files, etc.),
+ *   we use %LOCALAPPDATA%\CodeViz\runtime so that port.json can actually be written.
+ * - Otherwise (portable layout) we use backendDir\.runtime as before.
+ * This MUST match the logic in backend/src/utils/project-paths.js so both sides
+ * agree on the exact path.
+ */
+export async function resolveRuntimeDir(backendDir: string): Promise<string> {
+  const isSystemDir = (
+    backendDir.includes('Program Files') ||
+    backendDir.includes('WindowsApps') ||
+    backendDir.includes('snap') ||
+    backendDir.startsWith('/usr/') ||
+    backendDir.startsWith('/opt/')
+  );
+
+  if (isSystemDir) {
+    // Must use a user-writable location
+    const N = (globalThis as any).Neutralino;
+    let localAppData = '';
+    if (N) {
+      try {
+        localAppData = await N.os.getEnv('LOCALAPPDATA');
+      } catch { /* ignore */ }
+      if (!localAppData) {
+        try {
+          localAppData = await N.os.getEnv('APPDATA');
+        } catch { /* ignore */ }
+      }
+    }
+    if (!localAppData) {
+      // Last resort: use temp
+      localAppData = joinPaths(getSeparator() === '\\' ? 'C:\\Users\\Public' : '/tmp');
+    }
+    const runtimeDir = joinPaths(localAppData, 'CodeViz', 'runtime');
+    console.log(LOG_PREFIX, 'System install detected. Using AppData runtime dir:', runtimeDir);
+    return runtimeDir;
+  }
+
+  // Portable: write next to the backend binary
+  const runtimeDir = joinPaths(backendDir, '.runtime');
+  console.log(LOG_PREFIX, 'Portable install. Using local runtime dir:', runtimeDir);
+  return runtimeDir;
+}
+
+/**
  * Resolves all critical runtime paths.
  */
 export async function resolveAllPaths(): Promise<RuntimePaths> {
   const appDir = await resolveAppDir();
   const backendDir = await resolveBackendDir(appDir);
   
-  const runtimeDir = joinPaths(backendDir, '.runtime');
+  const runtimeDir = await resolveRuntimeDir(backendDir);
   const resourcesDir = joinPaths(backendDir, 'resources');
   
   const executablePath = await findBackendBinary(backendDir);

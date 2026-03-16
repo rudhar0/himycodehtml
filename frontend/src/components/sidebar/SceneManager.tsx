@@ -51,7 +51,7 @@ export default function SceneManager() {
   return (
     <div className="flex flex-col h-full w-full bg-slate-950">
       {/* Controls Toolbar */}
-      <div className="flex items-center gap-4 p-2 border-b border-slate-800 bg-slate-900">
+      <div className="flex items-center gap-4 p-2 border-b border-[#1a2540] bg-[#0f1629]">
         <button onClick={prevStep} className="p-1 hover:bg-slate-800 rounded text-slate-300">
           <SkipBack size={20} />
         </button>

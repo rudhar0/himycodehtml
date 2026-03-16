@@ -10,6 +10,9 @@ coverage/
 dist/
 build/
 
+backend/build
+
+
 # Misc
 .DS_Store
 .env

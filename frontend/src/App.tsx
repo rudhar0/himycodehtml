@@ -59,9 +59,9 @@ function App() {
         toastOptions={{
           duration: 3000,
           style: {
-            background: '#1e293b',
+            background: '#0f1629',
             color: '#f1f5f9',
-            border: '1px solid #334155',
+            border: '1px solid #1a2540',
           },
           success: {
             iconTheme: {

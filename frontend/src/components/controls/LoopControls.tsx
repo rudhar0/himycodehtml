@@ -48,8 +48,8 @@ export default function LoopControls() {
             rounded-lg px-3 py-2 transition-all duration-200
             flex items-center gap-2
             ${toggleMode
-              ? 'bg-blue-600 hover:bg-blue-700 text-white'
-              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+              ? 'bg-[#3B82F6] hover:bg-blue-700 text-white'
+              : 'bg-[#1a2540] hover:bg-[#26355d] text-slate-300'
             }
             disabled:opacity-30 disabled:cursor-not-allowed
           `}
@@ -71,7 +71,7 @@ export default function LoopControls() {
           px-3 py-2 bg-slate-900 text-white text-xs rounded-lg
           opacity-0 group-hover:opacity-100 pointer-events-none
           transition-opacity duration-200 whitespace-nowrap
-          border border-slate-700
+          border border-[#1a2540]
           z-50
         ">
           <div className="font-semibold mb-1">
@@ -123,7 +123,7 @@ export default function LoopControls() {
             px-3 py-2 bg-slate-900 text-white text-xs rounded-lg
             opacity-0 group-hover:opacity-100 pointer-events-none
             transition-opacity duration-200 whitespace-nowrap
-            border border-slate-700
+            border border-[#1a2540]
             z-50
           ">
             <div className="font-semibold mb-1">
@@ -144,7 +144,7 @@ export default function LoopControls() {
 
       {/* Loop Info Display */}
       {isInLoop && loopInfo && (
-        <div className="ml-2 flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-1.5 border border-slate-700">
+        <div className="ml-2 flex items-center gap-2 rounded-lg bg-[#1a2540] px-3 py-1.5 border border-[#1a2540]">
           <div className="flex items-center gap-1">
             <RotateCcw className="h-3 w-3 text-blue-400" />
             <span className="text-xs font-medium text-slate-300">

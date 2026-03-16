@@ -95,25 +95,25 @@ export const COLORS = {
   // UI Colors (Dark Theme)
   dark: {
     background: {
-      primary: '#0F172A',    // Slate 950
-      secondary: '#1E293B',  // Slate 900
-      tertiary: '#334155',   // Slate 700
+      primary: '#0a0e1a',    // Deep Navy
+      secondary: '#0f1629',  // Slightly lighter Navy
+      tertiary: '#161e33',   // Navy surface
     },
     surface: {
-      primary: '#1E293B',
-      secondary: '#334155',
-      elevated: '#475569',
+      primary: '#0f1629',
+      secondary: '#161e33',
+      elevated: '#1a2540',
     },
     border: {
-      primary: '#334155',
-      secondary: '#475569',
-      focus: '#3B82F6',
+      primary: '#1a2540',
+      secondary: '#26355d',
+      focus: '#F59E0B',
     },
     text: {
-      primary: '#F1F5F9',    // Slate 100
-      secondary: '#94A3B8',  // Slate 400
-      tertiary: '#64748B',   // Slate 500
-      inverse: '#0F172A',
+      primary: '#f1f5f9',
+      secondary: '#94a3b8',
+      tertiary: '#64748b',
+      inverse: '#0a0e1a',
     }
   },
 

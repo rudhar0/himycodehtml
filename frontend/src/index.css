@@ -37,16 +37,19 @@
 }
 
 .dark {
-  /* Dark theme variables - Blue-themed */
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
-  --bg-elevated: #1e293b;
+  /* Dark theme variables - Deep Navy + Amber */
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #0f1629;
+  --bg-tertiary: #161e33;
+  --bg-elevated: #1a2540;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --border-color: #334155;
-  --border-light: #475569;
+  --border-color: #1a2540;
+  --border-light: #26355d;
+  
+  --color-accent: #F59E0B;
+  --color-secondary: #3B82F6;
 }
 
 * {
@@ -56,15 +59,16 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
-  background-color: var(--bg-primary);
+  background: radial-gradient(circle at top left, #0f1629, #0a0e1a);
   color: var(--text-primary);
   transition: background-color 0.2s ease, color 0.2s ease;
+  min-height: 100vh;
 }
 
 code {
@@ -99,15 +103,15 @@ code {
 
 /* Scrollbar styling - Dark mode */
 .dark ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: #0a0e1a;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #1a2540;
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: #26355d;
 }
 
 /* Allotment customization */
@@ -152,11 +156,11 @@ code {
 
 /* Monaco Editor theme override - Dark mode */
 .dark .monaco-editor {
-  background: #0f172a !important;
+  background: #0a0e1a !important;
 }
 
 .dark .monaco-editor .margin {
-  background: #1e293b !important;
+  background: #0f1629 !important;
 }
 
 /* Konva canvas container */

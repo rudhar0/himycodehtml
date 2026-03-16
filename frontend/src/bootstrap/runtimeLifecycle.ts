@@ -74,13 +74,16 @@ export async function initRuntimeLifecycle(): Promise<string> {
   }
 
   // 4. Spawn backend
+  // Pass RUNTIME_DIR so the backend writes port.json to the exact same
+  // path the frontend is polling. This is critical for EXE installs where
+  // the backend dir (C:\Program Files\...) is read-only.
   await spawnBackend({
     executablePath: paths.executablePath,
     cwd: paths.backendDir,
     env: {
       NODE_ENV: 'production',
       PORT_RANGE: '3000-3999',
-      NEUTRALA_FORCE_LOCAL_RUNTIME: 'true'
+      RUNTIME_DIR: paths.runtimeDir
     }
   });
 

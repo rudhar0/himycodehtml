@@ -113,7 +113,7 @@ export default function TopBar() {
   };
 
   return (
-    <div className="flex h-12 items-center justify-between border-b border-[#c8d0d8] dark:border-slate-800 bg-[#dde3e8] dark:bg-slate-900 px-4">
+    <div className="flex h-12 items-center justify-between border-b border-[#1a2540] bg-[#0f1629] px-4">
       {/* Left Section */}
       <div className="flex items-center gap-2">
         {/* Sidebar Toggle */}
@@ -162,7 +162,7 @@ export default function TopBar() {
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          className="rounded-lg p-2 hover:bg-[#c8d0d8] dark:hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-[#dde3e8] dark:focus:ring-offset-slate-900"
+          className="rounded-lg p-2 hover:bg-[#c8d0d8] dark:hover:bg-[#1a2540] transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-[#dde3e8] dark:focus:ring-offset-[#0f1629]"
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           aria-pressed={theme === 'dark'}

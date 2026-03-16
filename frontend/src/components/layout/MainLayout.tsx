@@ -10,7 +10,7 @@ export default function MainLayout() {
   const { isSidebarOpen } = useUIStore();
 
   return (
-    <div className="flex h-screen flex-col bg-[#e8ecef] dark:bg-slate-950">
+    <div className="flex h-screen flex-col bg-slate-100 dark:bg-[#0a0e1a]">
       {/* Top Menu Bar */}
       <TopBar />
 

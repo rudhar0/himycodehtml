@@ -51,21 +51,21 @@ export default function KonvaWrapper() {
   return (
     <div className="flex flex-col h-full w-full bg-slate-950">
       {/* Controls Toolbar */}
-      <div className="flex items-center gap-4 p-2 border-b border-slate-800 bg-slate-900 flex-shrink-0">
-        <button onClick={prevStep} className="p-1 hover:bg-slate-800 rounded text-slate-300">
+      <div className="flex items-center gap-4 p-2 border-b border-[#1a2540] bg-[#0f1629] flex-shrink-0">
+        <button onClick={prevStep} className="p-1 hover:bg-[#1a2540] rounded text-slate-300">
           <SkipBack size={20} />
         </button>
-        <button onClick={togglePlay} className="p-1 hover:bg-slate-800 rounded text-blue-400">
+        <button onClick={togglePlay} className="p-1 hover:bg-[#1a2540] rounded text-blue-400">
           {isPlaying ? <Pause size={20} /> : <Play size={20} />}
         </button>
-        <button onClick={nextStep} className="p-1 hover:bg-slate-800 rounded text-slate-300">
+        <button onClick={nextStep} className="p-1 hover:bg-[#1a2540] rounded text-slate-300">
           <SkipForward size={20} />
         </button>
         <span className="text-xs text-slate-500 font-mono">
           Step: {currentStep} / {Math.max(executionTrace.totalSteps - 1, 0)}
         </span>
         <select 
-          className="ml-auto bg-slate-800 text-xs text-slate-300 rounded p-1 border border-slate-700"
+          className="ml-auto bg-[#1a2540] text-xs text-slate-300 rounded p-1 border border-[#1a2540]"
           onChange={(e) => setSpeed(Number(e.target.value))}
           defaultValue={800}
         >
@@ -78,7 +78,7 @@ export default function KonvaWrapper() {
       {/* Canvas Container: This div will fill the available space. */}
       <div 
         ref={containerRef} 
-        className="flex-1 w-full border-r border-slate-800 bg-slate-900/50 relative overflow-hidden"
+        className="flex-1 w-full border-r border-[#1a2540] bg-[#0f1629]/50 relative overflow-hidden"
       >
         {width > 0 && height > 0 && (
           <Stage 

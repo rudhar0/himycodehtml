@@ -27,6 +27,21 @@ export function getBackendRoot(fromImportMetaUrl) {
 }
 
 export function getRuntimeDir(backendRoot) {
+  // Priority 1: Frontend explicitly told us where to write (EXE installer flow).
+  // When the desktop frontend spawns us, it computes a writable path and passes it
+  // via RUNTIME_DIR so both sides agree without guessing.
+  if (process.env.RUNTIME_DIR) {
+    const explicitDir = path.resolve(process.env.RUNTIME_DIR);
+    try {
+      if (!fs.existsSync(explicitDir)) {
+        fs.mkdirSync(explicitDir, { recursive: true });
+      }
+      return explicitDir;
+    } catch (e) {
+      // Fall through to auto-detection if mkdir fails
+    }
+  }
+
   const appName = 'CodeViz';
   let fallbackBase = '';
   
@@ -39,21 +54,15 @@ export function getRuntimeDir(backendRoot) {
   const fallbackDir = path.join(fallbackBase, appName, 'runtime');
   const localDir = path.join(backendRoot, '.runtime');
 
-  // Logic for portable vs system installations:
-  // 1. If explicitly forced to use local (e.g. by frontend), try local first.
-  // 2. If NOT in a system directory (Program Files, etc.), try local first (Standard Portable behavior).
-  // 3. Otherwise (System install), go straight to AppData/Home.
-
-  const forceLocal = process.env.NEUTRALA_FORCE_LOCAL_RUNTIME === 'true';
+  // Priority 2: Non-system path (portable layout) — try local first.
+  // Priority 3: System install — skip directly to AppData/Home.
   const isSystemDir = backendRoot.includes('Program Files') || 
                       backendRoot.includes('WindowsApps') || 
                       backendRoot.includes('snap') ||
                       backendRoot.startsWith('/usr/') ||
                       backendRoot.startsWith('/opt/');
 
-  const shouldTryLocal = forceLocal || !isSystemDir;
-
-  if (shouldTryLocal) {
+  if (!isSystemDir) {
     try {
       if (!fs.existsSync(localDir)) {
         fs.mkdirSync(localDir, { recursive: true });
