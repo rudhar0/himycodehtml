@@ -353,6 +353,8 @@ export async function listenWithAutoPort(httpServer, options) {
         );
       }
       if (err?.code !== 'EADDRINUSE') throw err;
+      // eslint-disable-next-line no-console
+      console.log(`[port-manager] Port ${port} is in use, trying next...`);
     }
   }
 

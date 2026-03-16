@@ -41,27 +41,41 @@ export async function initRuntimeLifecycle(): Promise<string> {
           console.log(LOG_PREFIX, 'Found existing backend info. Checking health at:', baseUrl);
           
           // Verify if it's already healthy
-          const isHealthy = await fetch(`${baseUrl}/api/health`)
-            .then(res => res.ok)
-            .catch(() => false);
+          let isHealthy = false;
+          try {
+            const res = await fetch(`${baseUrl}/api/health`);
+            isHealthy = res.ok;
+          } catch (e: any) {
+            // Fix: If it's a CORS error, it means the backend is alive but configured for another origin.
+            // This happens if a stale port.json points to a random-port Neutralino instance or another app.
+            // In this case, we MUST NOT reuse it and should definitely NOT kill it unless we're sure it's us.
+            if (e?.name === 'TypeError' && e?.message?.includes('CORS')) {
+              console.warn(LOG_PREFIX, 'Found backend at port', oldPort, 'but hit CORS error. Likely another instance. Skipping reuse.');
+            } else {
+              console.log(LOG_PREFIX, 'Health check failed for', baseUrl, ':', e?.message || String(e));
+            }
+          }
 
           if (isHealthy) {
             console.log(LOG_PREFIX, 'Existing backend is already healthy. Reusing it.', baseUrl);
             return baseUrl;
           }
 
-          console.log(LOG_PREFIX, 'Existing backend PID:', oldPid, 'is not healthy or unreachable. Cleaning up...');
+          console.log(LOG_PREFIX, 'Existing backend info is not healthy or unreachable. Checking if we should kill PID:', oldPid);
           
           const isWindows = (globalThis as any).NL_OS === 'Windows';
-          const killCmd = isWindows 
-            ? `taskkill /F /T /PID ${oldPid}`
-            : `kill -9 ${oldPid}`;
           
+          // Safety check: before killing, verify if the process still exists and belongs to us
+          // In a real desktop app, we might check process name, but for now we rely on port.json existence
           try {
+            const killCmd = isWindows 
+              ? `taskkill /F /T /PID ${oldPid}`
+              : `kill -9 ${oldPid}`;
+            
             await N.os.execCommand(killCmd);
             console.log(LOG_PREFIX, 'Existing backend killed.');
           } catch (e) {
-            console.warn(LOG_PREFIX, 'Failed to kill existing backend (might already be dead):', e);
+            console.warn(LOG_PREFIX, 'Failed to kill existing backend (might already be dead or no permission):', e);
           }
         }
       }

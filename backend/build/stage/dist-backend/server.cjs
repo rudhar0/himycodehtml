@@ -43049,7 +43049,7 @@ var logger_default = logger;
 var corsConfig = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (origin.startsWith("http://127.0.0.1:") || origin.startsWith("http://localhost:")) {
+    if (/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
       return callback(null, true);
     }
     callback(new Error("Not allowed by CORS"));
@@ -43065,7 +43065,7 @@ var socketConfig = {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (origin.startsWith("http://127.0.0.1:") || origin.startsWith("http://localhost:")) {
+      if (/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
       callback(new Error("Not allowed by CORS"));
@@ -49817,6 +49817,7 @@ async function listenWithAutoPort(httpServer2, options) {
         );
       }
       if (err?.code !== "EADDRINUSE") throw err;
+      console.log(`[port-manager] Port ${port} is in use, trying next...`);
     }
   }
   throw new Error(

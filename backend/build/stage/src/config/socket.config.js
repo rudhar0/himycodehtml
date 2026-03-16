@@ -3,8 +3,7 @@ export const socketConfig = {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (
-        origin.startsWith('http://127.0.0.1:') ||
-        origin.startsWith('http://localhost:')
+        /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)
       ) {
         return callback(null, true);
       }

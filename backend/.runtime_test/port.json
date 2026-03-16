@@ -1,0 +1,10 @@
+{
+  "pid": 16192,
+  "port": 3001,
+  "host": "0.0.0.0",
+  "instanceId": "7899783f-50fc-4a9b-babc-d40b81c1cab3",
+  "timestamp": "2026-03-16T14:27:22.866Z",
+  "url": "http://localhost:3001",
+  "platform": "win32",
+  "node": "22.18.0"
+}
