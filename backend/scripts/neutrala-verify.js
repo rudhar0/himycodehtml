@@ -2,10 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { getBackendRoot, getRuntimeDir } from '../src/utils/project-paths.js';
+
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const BACKEND_ROOT = path.resolve(SCRIPT_DIR, '..');
+const BACKEND_ROOT = getBackendRoot(import.meta.url);
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
-const RUNTIME_DIR = path.join(BACKEND_ROOT, '.runtime');
+const RUNTIME_DIR = getRuntimeDir(BACKEND_ROOT);
 
 function nowIso() {
   return new Date().toISOString();

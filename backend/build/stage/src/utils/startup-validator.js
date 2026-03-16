@@ -2,6 +2,8 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import fssync from 'node:fs';
+import { getBackendRoot, getRuntimeDir } from './project-paths.js';
+import resourceResolver from '../services/resource-resolver.service.js';
 import { detectRuntime } from './runtime-manager.js';
 
 function parseMajor(version) {
@@ -156,7 +158,7 @@ export async function validateStartupEnvironment({ backendRoot, runtimeDir }) {
   const runtimeRequired = process.env.NEUTRALA_RUNTIME_REQUIRED === 'true' || !!process.pkg;
   const runtimeAuto = process.env.NEUTRALA_RUNTIME_AUTO === 'true';
   if (runtimeRequired || runtimeAuto) {
-    const resourcesDir = path.join(backendRoot, 'resources');
+    const resourcesDir = resourceResolver.getResourcesRoot();
     const runtimeStatus = await detectRuntime({
       resourcesDir,
       supportedRange: process.env.NEUTRALA_RUNTIME_RANGE || undefined,

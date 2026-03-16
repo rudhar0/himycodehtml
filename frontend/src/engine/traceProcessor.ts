@@ -427,11 +427,26 @@ export function processRawTrace(
           }
         }
       }
-    } else if (rawEventType === "loop_end") {
+   } else if (rawEventType === "loop_end") {
       const frameLoops = loopStacksByFrame.get(frameId);
       if (frameLoops) {
         const popped = frameLoops.pop();
         console.log(`[TRACE] loop_end frame: ${frameId} -> popped loop context (base depth was ${popped?.scopeDepth})`);
+
+        // ✅ FIX: Restore condition stack to what it was at loop entry.
+        // The last iteration's branch_taken pushes a condition that never
+        // gets a matching block_exit (backend gap), so it leaks onto
+        // post-loop steps. conditionStackLen was saved at loop_start.
+        if (popped !== undefined) {
+          while (conditionStacks.length <= activeStackIdx) conditionStacks.push([]);
+          const activeStack = conditionStacks[activeStackIdx];
+          if (activeStack) {
+            while (activeStack.length > popped.conditionStackLen) {
+              const poppedCond = activeStack.pop();
+              console.log(`[TRACE] loop_end frame: ${frameId} -> cleared leaky condition: ${poppedCond?.conditionId}`);
+            }
+          }
+        }
       }
     }
 
@@ -500,6 +515,7 @@ export function processRawTrace(
 
     const originalType = step.type;
     step.type = normalizeStepType(step.type) as StepType;
+    
 
     // Condition scope handling:
     // - push on taken branches (branch_taken → normalized 'branch')
@@ -511,6 +527,24 @@ export function processRawTrace(
         ? conditionStacks[conditionStacks.length - 1]
         : null;
 
+// ADD — null out stale conditionId that backend emitted but is no longer active:
+// ADD:
+const _normalizedType = String(step.type || "").toLowerCase();
+const _isControlFlowStep =
+  _normalizedType === "condition" ||
+  _normalizedType === "branch" ||
+  _normalizedType === "else_eval" ||
+  _normalizedType === "conditional_start" ||
+  _normalizedType === "conditional_branch";
+
+if (!_isControlFlowStep && step.conditionId != null && activeCondStack) {
+  const isStillActive = activeCondStack.some(
+    (entry: any) => String(entry.conditionId) === String(step.conditionId)
+  );
+  if (!isStillActive) {
+    step.conditionId = null;
+  }
+}
     if (activeCondStack && activeCondStack.length > 0) {
       const closed: string[] = [];
       while (

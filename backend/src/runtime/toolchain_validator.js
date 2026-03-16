@@ -11,8 +11,12 @@ function detectPlatform() {
 }
 
 function toolchainRoot() {
-  // workspace-relative path used by backend
-  return path.resolve(__dirname, '../../..', 'resources', 'toolchain');
+  const backendRoot = path.resolve(__dirname, '../../..');
+  const childResources = path.join(backendRoot, 'resources', 'toolchain');
+  const siblingResources = path.join(backendRoot, '..', 'resources', 'toolchain');
+  
+  if (fs.existsSync(childResources)) return childResources;
+  return siblingResources;
 }
 
 function validateToolchain() {

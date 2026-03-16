@@ -19,12 +19,14 @@ import {
 } from './_lib/process-utils.js';
 import { setupSupervisor, registerProcess, waitForProcess } from './_lib/process-supervisor.js';
 
+import { getBackendRoot, getRuntimeDir } from '../src/utils/project-paths.js';
+
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const BACKEND_ROOT = path.resolve(SCRIPT_DIR, '..');
+const BACKEND_ROOT = getBackendRoot(import.meta.url);
 const REPO_ROOT = path.resolve(BACKEND_ROOT, '..');
 const FRONTEND_ROOT = path.join(REPO_ROOT, 'frontend');
 const DESKTOP_ROOT = path.join(REPO_ROOT, 'desktop');
-const RUNTIME_DIR = path.join(BACKEND_ROOT, '.runtime');
+const RUNTIME_DIR = getRuntimeDir(BACKEND_ROOT);
 
 const DEBUG = process.env.NEUTRALA_DEBUG === 'true';
 const REQUIRED_TOOLS = ['node'];

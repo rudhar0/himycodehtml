@@ -15,6 +15,7 @@ import instrumentationTracer from './services/instrumentation-tracer.service.js'
 import runtimeCleaner from './services/runtime-cleaner.service.js';
 import { toolchainService } from './services/toolchain.service.js';
 import sessionManager from './services/session-manager.service.js';
+import resourceResolver from './services/resource-resolver.service.js';
 import { getBackendRoot, getRuntimeDir } from './utils/project-paths.js';
 import { validateStartupEnvironment } from './utils/startup-validator.js';
 import {
@@ -54,7 +55,7 @@ app.use((req, res, next) => {
 app.use('/api', routes);
 
 // Serve static frontend files (fallback for desktop app)
-const resourcesDir = path.join(getBackendRoot(import.meta.url), 'resources');
+const resourcesDir = resourceResolver.getResourcesRoot();
 if (fssync.existsSync(resourcesDir)) {
   logger.info(`Serving static resources from: ${resourcesDir}`);
   app.use(express.static(resourcesDir));
@@ -112,13 +113,20 @@ async function startServer() {
       process.env.NEUTRALA_RUNTIME_REQUIRED === 'true' || !!process.pkg;
     const runtimeAuto = process.env.NEUTRALA_RUNTIME_AUTO === 'true';
     if (runtimeRequired || runtimeAuto) {
-      logger.info('Registering Neutralino runtime...');
+      logger.info('Registering Neutrala runtime...');
       try {
-        const resourcesDir = path.join(backendRoot, 'resources');
-        const runtimeInfo = await registerRuntimeEnv({ resourcesDir });
-        logger.info(
-          `Neutrala runtime ready: ${runtimeInfo.binaryPath} (v${runtimeInfo.version})`,
-        );
+        const resourcesDir = resourceResolver.getResourcesRoot();
+        const runtimeStatus = await detectRuntime({
+          resourcesDir,
+          supportedRange: process.env.NEUTRALA_RUNTIME_RANGE || undefined,
+        });
+        if (runtimeStatus.binaryPath) {
+          logger.info(
+            `Neutrala runtime ready: ${runtimeStatus.binaryPath} (v${runtimeStatus.version})`,
+          );
+        } else {
+          logger.warn(`Neutrala runtime not found or not valid: ${runtimeStatus.error || 'Unknown error'}`);
+        }
       } catch (err) {
         // Fix: Make backend startup resilient to runtime registration failures.
         // Even if the desktop runtime isn't found/valid, the backend should still serve the API.

@@ -323,6 +323,8 @@ export class LayoutEngine {
   > = new Map();
   private static currentScopeDepth: Map<string, number> = new Map();
   private static bodyByStepKey: Map<string, LayoutElement> = new Map();
+  private static bodyStepKeyById: Map<string, string> = new Map();  // ← ADD
+
   private static containerByConditionId: Map<string, LayoutElement> = new Map();
   private static conditionTree: { nodes: Map<string, any> } | null = null;
   private static rightFlowOccupancy: Map<
@@ -588,20 +590,31 @@ export class LayoutEngine {
 
   private static getActiveControlParent(frameId: string, scopeDepth: number): LayoutElement | null {
     const depthMap = this.getFrameControlDepthMap(frameId);
-    
-    // Find the nearest living container at or above current depth
-    let bestDepth = -1;
-    for (const d of depthMap.keys()) {
-      if (d <= scopeDepth && d > bestDepth) {
-        bestDepth = d;
+    let selected: LayoutElement | null = null;
+    let selectedDepth = -1;
+
+    depthMap.forEach((elementId, depth) => {
+      if (depth > scopeDepth) return;
+      if (depth < selectedDepth) return;
+      const element = this.elementHistory.get(elementId);
+      if (!element) return;
+      
+      // 🚩 CRITICAL: Only bodies/iterations can be parents for in-flow elements
+      if (element.data?.controlRole && element.data.controlRole !== "body") {
+        return;
       }
-    }
+      if (element.data?.headerOnly) return;
+      
+      // Only active branches can be parents
+      if (element.data?.branchState && element.data.branchState !== "active") {
+        return;
+      }
+      
+      selected = element;
+      selectedDepth = depth;
+    });
     
-    if (bestDepth !== -1) {
-      const elementId = depthMap.get(bestDepth);
-      if (elementId) return this.elementHistory.get(elementId) || null;
-    }
-    return null;
+    return selected;
   }
 
   private static getLoopContainerParent(frameId: string): LayoutElement | null {
@@ -635,13 +648,20 @@ export class LayoutEngine {
     // Meaning the currentScopeDepth is now LESS than the depth of the control.
     const depthsToRemove = Array.from(depthMap.keys()).filter(d => d > scopeDepth);
     
-    depthsToRemove.forEach((depth) => {
-      const elementId = depthMap.get(depth);
-      if (elementId) {
-        removed.push(elementId);
-        depthMap.delete(depth);
-      }
-    });
+ depthsToRemove.forEach((depth) => {
+  const elementId = depthMap.get(depth);
+  if (elementId) {
+    removed.push(elementId);
+    depthMap.delete(depth);
+    // ✅ FIX: also evict from bodyByStepKey so Layer2 cannot
+    // place steps into a body that is no longer active
+    const stepKey = this.bodyStepKeyById.get(elementId);
+    if (stepKey) {
+      this.bodyByStepKey.delete(stepKey);
+      this.bodyStepKeyById.delete(elementId);
+    }
+  }
+});
 
     const ephemeralMap = this.ephemeralControlByDepth.get(frameId);
     if (ephemeralMap) {
@@ -788,25 +808,16 @@ export class LayoutEngine {
       }
     }
 
-    // Layer 1.1 — ConditionId: lookup via conditionId
-    if (step?.conditionId) {
-      const conditionContainer = this.containerByConditionId.get(String(step.conditionId));
-      if (conditionContainer) {
-        console.log('[PLACEMENT] Layer1.1-ConditionId', debugType, debugKey, '→ parentId:', conditionContainer.id);
-        return conditionContainer;
-      }
-    }
-
+// ADD THIS:
     // Layer 2 — ConditionTree: lookup via conditionId
-    let Layer2Result: LayoutElement | null = null;
     if (step?.conditionId && this.conditionTree) {
       const node = this.conditionTree.nodes.get(String(step.conditionId));
+      let Layer2Result: LayoutElement | null = null;
+
       if (node?.takenBranchStepKey) {
         Layer2Result = this.bodyByStepKey.get(node.takenBranchStepKey) || null;
       }
 
-      // If we didn't find a direct container for THIS condition, check if its parent in the tree has a container.
-      // This is crucial for condition_eval steps which are siblings of the condition body.
       if (!Layer2Result && node?.parentConditionId) {
         const parentContainer = this.containerByConditionId.get(String(node.parentConditionId));
         if (parentContainer) {
@@ -814,9 +825,14 @@ export class LayoutEngine {
           return parentContainer;
         }
       }
+
+      if (Layer2Result) {
+        console.log(`[PLACEMENT] Frame: ${frameId} -> Layer2-Tree ${debugType} ${debugKey} conditionId: ${step.conditionId} → bodyId: ${Layer2Result.id}`);
+        return Layer2Result;
+      }
     }
 
-    // Layer 2.5: Loop ID Resolution (Explicit loopId mapping)
+    // Layer 2.5: Loop ID Resolution — only reached when no condition context applies
     const loopId = step && (step as any).loopId !== undefined ? Number((step as any).loopId) : undefined;
     if (loopId !== undefined) {
       const loop = this.activeLoops.get(loopId);
@@ -832,17 +848,21 @@ export class LayoutEngine {
       }
     }
 
-    if (Layer2Result) {
-      console.log(`[PLACEMENT] Frame: ${frameId} -> Layer2-Tree ${debugType} ${debugKey} conditionId: ${step.conditionId} → bodyId: ${Layer2Result.id}`);
-      return Layer2Result;
-    }
-
     // Layer 3: Persistent Scope Mapping (Fallback)
-    const Layer3Result = this.getActiveControlParent(frameId, scopeDepth);
-    if (Layer3Result) {
-      console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3-Depth ${debugType} ${debugKey} → bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
-      return Layer3Result;
-    }
+    // ADD THIS:
+const Layer3Result = this.getActiveControlParent(frameId, scopeDepth);
+if (Layer3Result) {
+  const isConditionBody =
+    Layer3Result.type === "condition" &&
+    Layer3Result.data?.controlRole === "body";
+
+  if (isConditionBody && !step?.conditionId) {
+    // stale entry — backend missed block_exit, step is outside condition
+  } else {
+    console.log(`[PLACEMENT] Frame: ${frameId} -> Layer3-Depth ${debugType} ${debugKey} → bodyId: ${Layer3Result.id} (scopeDepth: ${scopeDepth})`);
+    return Layer3Result;
+  }
+}
 
     const loopParent = this.getLoopContainerParent(frameId);
     if (loopParent) return loopParent;
@@ -908,13 +928,12 @@ export class LayoutEngine {
     if (!reserveSpace) return;
 
     if (placement.isFrameParent && placement.lane) {
-      placement.lane.usedHeight += element.height + ELEMENT_SPACING;
-      // Also advance the shared ownerFrame cursor if this is an in-flow node
-      if (!this.isRightFlowControlNode(element)) {
-         this.bumpFrameLocalsCursorToInclude(ownerFrame, element.y + element.height);
-      }
-      return;
-    }
+  if (!this.isRightFlowControlNode(element)) {
+    placement.lane.usedHeight += element.height + ELEMENT_SPACING;
+    this.bumpFrameLocalsCursorToInclude(ownerFrame, element.y + element.height);
+  }
+  return;
+}
 
     // Keep right-flow control subtree growth isolated from frame flow.
     // If the parent is a right-flow node, its children (and sub-children)
@@ -2151,9 +2170,10 @@ export class LayoutEngine {
           stepIndex,
         );
         // Layer 1: Register else body by stepKey for downstream placement
-        if ((step as any).stepKey) {
-          this.bodyByStepKey.set((step as any).stepKey, elseBody);
-        }
+       if ((step as any).stepKey) {
+  this.bodyByStepKey.set((step as any).stepKey, elseBody);
+  this.bodyStepKeyById.set(elseBody.id, (step as any).stepKey);  // ← ADD
+}
         const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, elseBody.id);
         this.currentScopeDepth.set(frameId, activation.activationDepth);
@@ -2220,7 +2240,8 @@ export class LayoutEngine {
         this.createdInStep.set(target.id, stepIndex);
       }
       
-      if (shouldExpand) {
+    
+        if (shouldExpand) {
         const targetBody = this.createControlBodyForCaller(
           layout,
           groupState,
@@ -2231,6 +2252,7 @@ export class LayoutEngine {
         // Layer 1: Register if/else-if body by stepKey for downstream placement
         if ((step as any).stepKey) {
           this.bodyByStepKey.set((step as any).stepKey, targetBody);
+          this.bodyStepKeyById.set(targetBody.id, (step as any).stepKey);
         }
         const activation = this.resolveControlBodyActivation(step, scopeDepth);
         this.setActiveControlForDepth(frameId, activation.activationDepth, targetBody.id);
@@ -2496,7 +2518,8 @@ export class LayoutEngine {
     this.recentIfGroupByFrame.clear();
     this.currentScopeDepth.clear();
     this.rightFlowOccupancy.clear();
-    this.bodyByStepKey.clear();
+this.bodyByStepKey.clear();
+this.bodyStepKeyById.clear();
     this.containerByConditionId.clear();
     this.conditionTree = (executionTrace as any).conditionTree ?? null;
 
