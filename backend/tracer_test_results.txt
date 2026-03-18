@@ -1,0 +1,11 @@
+🧪 Testing I/O synchronization...
+--- Generated Steps ---
+[0] type=program_start, line=0, text=, var=, val=
+[1] type=func_enter, line=0, text=, var=, val=
+[2] type=output, line=10, text=Prompt: , var=, val=
+[3] type=output, line=10, text=Result: , var=, val=
+[4] type=input, line=12, text=, var=x, val=42
+[5] type=func_exit, line=16, text=, var=, val=
+[6] type=input, line=12, text=, var=x, val=
+[7] type=program_end, line=0, text=, var=, val=
+❌ FAIL: Missing expected steps! (out1:true, in:true, out2:false)

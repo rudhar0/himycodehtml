@@ -1,0 +1,518 @@
+﻿[ToolchainService] Initialized for platform: win32, arch: x64
+[ToolchainService] Toolchain Root: D:\testvicneusof\resources\toolchain
+[ToolchainService] Internal Headers: D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include
+[ToolchainService] Warming up toolchain binaries...
+{"level":30,"time":1773755155501,"pid":20112,"hostname":"coderbhai","msg":"--- Log initialized at 2026-03-17T13:45:55.500Z (PID: 20112) ---"}
+{"level":30,"time":1773755155501,"pid":20112,"hostname":"coderbhai","msg":"ExecPath: C:\\Program Files\\nodejs\\node.exe"}
+{"level":30,"time":1773755155501,"pid":20112,"hostname":"coderbhai","msg":"CWD: D:\\testvicneusof\\backend"}
+[TraceService] Trace service active: instrumentation-tracer
+[TraceService] Temp directory: D:\testvicneusof\backend\.runtime\temp
+[TraceService] Tracer source: D:\testvicneusof\backend\src\cpp\tracer.cpp
+--- Starting Trace Generation ---
+≡ƒÜÇ Starting trace generation...
+[ToolchainService] Toolchain warm-up complete.
+Γ£à Found 1 input operations in source code
+[InputLinesFix] Keeping 1 scanf entries with original lines
+≡ƒöº Instrumenting code (beginner-correct mode)...
+Γ£ô Function definition at line 5: int main() {
+Γ£à Code instrumentation complete
+[Compile] User compile command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe -g -O0 -fno-omit-frame-pointer -finstrument-functions -c -g -O0 -std=c++17 -fno-omit-frame-pointer -finstrument-functions -nostdinc -nostdinc++ -isystem D:\testvicneusof\resources\toolchain\headers\c++\v1 -isystem D:\testvicneusof\resources\toolchain\headers -isystem D:\testvicneusof\resources\toolchain\windows\lib\clang\18\include -isystem D:\testvicneusof\resources\toolchain\headers -Wdate-time -ffile-prefix-map=D:\testvicneusof\backend=. -fmacro-prefix-map=D:\testvicneusof\backend=. -fno-ident -fno-inline D:\testvicneusof\backend\.runtime\temp\src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp -o D:\testvicneusof\backend\.runtime\temp\src_c3e0bb40-8e67-497d-a437-213c2a9a687d.o
+[Compile] Working directory: D:\testvicneusof\backend\.runtime\temp
+[Compile] Using cached tracer object: D:\testvicneusof\backend\.runtime\temp\tracer_cached.o
+[Compile] Link command: D:\testvicneusof\resources\toolchain\windows\bin\clang++.exe D:\testvicneusof\backend\.runtime\temp\src_c3e0bb40-8e67-497d-a437-213c2a9a687d.o D:\testvicneusof\backend\.runtime\temp\tracer_cached.o -o D:\testvicneusof\backend\.runtime\temp\exec_c3e0bb40-8e67-497d-a437-213c2a9a687d.exe -stdlib=libc++ -rtlib=compiler-rt -unwindlib=libunwind -fuse-ld=lld -Wl,--no-dynamicbase -LD:\testvicneusof\resources\toolchain\windows\x86_64-w64-mingw32\lib -LD:\testvicneusof\resources\toolchain\windows\lib -LD:\testvicneusof\resources\toolchain\windows\lib\clang\18\lib\windows
+[HookVerify] __cyg_profile_func_enter: Γ£à
+[HookVerify] __cyg_profile_func_exit: Γ£à
+[Execute] Executing binary: D:\testvicneusof\backend\.runtime\temp\exec_c3e0bb40-8e67-497d-a437-213c2a9a687d.exe
+[Execute] Working directory: D:\testvicneusof\backend\.runtime\temp
+[Execute] TRACE_OUTPUT: D:\testvicneusof\backend\.runtime\temp\trace_c3e0bb40-8e67-497d-a437-213c2a9a687d.json
+[TraceFile] File: D:\testvicneusof\backend\.runtime\temp\trace_c3e0bb40-8e67-497d-a437-213c2a9a687d.json
+[TraceFile] Events: 195, Functions: 1
+≡ƒôï Captured 195 raw events, 1 functions
+≡ƒôè Converting 195 events to beginner-correct steps...
+≡ƒöì User source file: src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp
+[LineInfo] Batch resolving 34 addresses using D:\testvicneusof\resources\toolchain\windows\bin\llvm-addr2line.exe
+[FRAME PUSH] main-0 cond: null loop: null
+[Frame Stack] PUSH main, stack depth=1
+[Event 0] type=func_enter, func="main", file=src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp, line=5
+[Event 1] type=declare, func="x", file=src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp, line=6
+[Event 2] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)", file=ostream, line=786
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)-5 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*), stack depth=2
+[Event 3] type=func_enter, func="std::__1::char_traits<char>::length[abi:ne180100](char const*)", file=char_traits.h, line=226
+[FRAME PUSH] std::__1::char_traits<char>::length[abi:ne180100](char const*)-7 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::length[abi:ne180100](char const*), stack depth=3
+[Event 4] type=func_enter, func="std::__1::__constexpr_strlen[abi:ne180100](char const*)", file=constexpr_c_functions.h, line=38
+[FRAME PUSH] std::__1::__constexpr_strlen[abi:ne180100](char const*)-9 cond: null loop: null
+[Frame Stack] PUSH std::__1::__constexpr_strlen[abi:ne180100](char const*), stack depth=4
+[Event 5] type=func_exit, func="std::__1::__constexpr_strlen[abi:ne180100](char const*)", file=constexpr_c_functions.h, line=38
+[Frame Stack] POP std::__1::__constexpr_strlen[abi:ne180100](char const*), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::__constexpr_strlen[abi:ne180100](char const*)-9 cond: null loop: null
+[Event 6] type=func_exit, func="std::__1::char_traits<char>::length[abi:ne180100](char const*)", file=char_traits.h, line=226
+[Frame Stack] POP std::__1::char_traits<char>::length[abi:ne180100](char const*), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::length[abi:ne180100](char const*)-7 cond: null loop: null
+[Event 7] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)", file=ostream, line=667
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)-11 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long), stack depth=3
+[Event 8] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostream, line=313
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-13 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=4
+[Event 9] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const", file=ios, line=545
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-15 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=5
+[Event 10] type=func_enter, func="std::__1::ios_base::good[abi:ne180100]() const", file=ios, line=504
+[FRAME PUSH] std::__1::ios_base::good[abi:ne180100]() const-17 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::good[abi:ne180100]() const, stack depth=6
+[Event 11] type=func_exit, func="std::__1::ios_base::good[abi:ne180100]() const", file=ios, line=504
+[Frame Stack] POP std::__1::ios_base::good[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::good[abi:ne180100]() const-17 cond: null loop: null
+[Event 12] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const", file=ios, line=545
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-15 cond: null loop: null
+[Event 13] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const", file=ios, line=605
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const-19 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const, stack depth=5
+[Event 14] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const", file=ios, line=605
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const-19 cond: null loop: null
+[Event 15] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostream, line=313
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-13 cond: null loop: null
+[Event 16] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const", file=ostream, line=309
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const-21 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const, stack depth=4
+[Event 17] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const", file=ostream, line=309
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const-21 cond: null loop: null
+[Event 18] type=func_enter, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostreambuf_iterator.h, line=53
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-23 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=4
+[Event 19] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const", file=ios, line=618
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-25 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=5
+[Event 20] type=func_enter, func="std::__1::ios_base::rdbuf[abi:ne180100]() const", file=ios, line=367
+[FRAME PUSH] std::__1::ios_base::rdbuf[abi:ne180100]() const-27 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=6
+[Event 21] type=func_exit, func="std::__1::ios_base::rdbuf[abi:ne180100]() const", file=ios, line=367
+[Frame Stack] POP std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::rdbuf[abi:ne180100]() const-27 cond: null loop: null
+[Event 22] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const", file=ios, line=618
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-25 cond: null loop: null
+[Event 23] type=func_exit, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostreambuf_iterator.h, line=53
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-23 cond: null loop: null
+[Event 24] type=func_enter, func="std::__1::ios_base::flags[abi:ne180100]() const", file=ios, line=455
+[FRAME PUSH] std::__1::ios_base::flags[abi:ne180100]() const-29 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::flags[abi:ne180100]() const, stack depth=4
+[Event 25] type=func_exit, func="std::__1::ios_base::flags[abi:ne180100]() const", file=ios, line=455
+[Frame Stack] POP std::__1::ios_base::flags[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ios_base::flags[abi:ne180100]() const-29 cond: null loop: null
+[Event 26] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const", file=ios, line=650
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const-31 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const, stack depth=4
+[Event 27] type=func_enter, func="std::__1::char_traits<char>::eof[abi:ne180100]()", file=char_traits.h, line=268
+[FRAME PUSH] std::__1::char_traits<char>::eof[abi:ne180100]()-33 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::eof[abi:ne180100](), stack depth=5
+[Event 28] type=func_exit, func="std::__1::char_traits<char>::eof[abi:ne180100]()", file=char_traits.h, line=268
+[Frame Stack] POP std::__1::char_traits<char>::eof[abi:ne180100](), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::eof[abi:ne180100]()-33 cond: null loop: null
+[Event 29] type=func_enter, func="std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)", file=char_traits.h, line=265
+[FRAME PUSH] std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)-35 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int), stack depth=5
+[Event 30] type=func_exit, func="std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)", file=char_traits.h, line=265
+[Frame Stack] POP std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)-35 cond: null loop: null
+[Event 31] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const", file=ios, line=645
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const-37 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const, stack depth=5
+[Event 32] type=func_enter, func="std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&)", file=__locale, line=185
+[FRAME PUSH] std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&)-39 cond: null loop: null
+[Frame Stack] PUSH std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&), stack depth=6
+[Event 33] type=func_exit, func="std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&)", file=__locale, line=185
+[Frame Stack] POP std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&), stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&)-39 cond: null loop: null
+[Event 34] type=func_enter, func="std::__1::ctype<char>::widen[abi:ne180100](char) const", file=__locale, line=583
+[FRAME PUSH] std::__1::ctype<char>::widen[abi:ne180100](char) const-41 cond: null loop: null
+[Frame Stack] PUSH std::__1::ctype<char>::widen[abi:ne180100](char) const, stack depth=6
+[Event 35] type=func_exit, func="std::__1::ctype<char>::widen[abi:ne180100](char) const", file=__locale, line=583
+[Frame Stack] POP std::__1::ctype<char>::widen[abi:ne180100](char) const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ctype<char>::widen[abi:ne180100](char) const-41 cond: null loop: null
+[Event 36] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const", file=ios, line=645
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const-37 cond: null loop: null
+[Event 37] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const", file=ios, line=650
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const-31 cond: null loop: null
+[Event 38] type=func_enter, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)", file=locale, line=1246
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)-43 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char), stack depth=4
+[Event 39] type=func_enter, func="std::__1::ios_base::width[abi:ne180100]() const", file=ios, line=490
+[FRAME PUSH] std::__1::ios_base::width[abi:ne180100]() const-45 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::width[abi:ne180100]() const, stack depth=5
+[Event 40] type=func_exit, func="std::__1::ios_base::width[abi:ne180100]() const", file=ios, line=490
+[Frame Stack] POP std::__1::ios_base::width[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::width[abi:ne180100]() const-45 cond: null loop: null
+[Event 41] type=func_enter, func="std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)", file=streambuf, line=218
+[FRAME PUSH] std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)-47 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long), stack depth=5
+[Event 42] type=func_exit, func="std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)", file=streambuf, line=218
+[Frame Stack] POP std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)-47 cond: null loop: null
+[Event 43] type=func_enter, func="std::__1::ios_base::width[abi:ne180100](long long)", file=ios, line=492
+[FRAME PUSH] std::__1::ios_base::width[abi:ne180100](long long)-49 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::width[abi:ne180100](long long), stack depth=5
+[Event 44] type=func_exit, func="std::__1::ios_base::width[abi:ne180100](long long)", file=ios, line=492
+[Frame Stack] POP std::__1::ios_base::width[abi:ne180100](long long), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::width[abi:ne180100](long long)-49 cond: null loop: null
+[Event 45] type=func_exit, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)", file=locale, line=1246
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)-43 cond: null loop: null
+[Event 46] type=func_enter, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const", file=ostreambuf_iterator.h, line=63
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const-51 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const, stack depth=4
+[Event 47] type=func_exit, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const", file=ostreambuf_iterator.h, line=63
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const-51 cond: null loop: null
+[Event 48] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()", file=ostream, line=322
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()-53 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry(), stack depth=4
+[Event 49] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const", file=ios, line=618
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-55 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=5
+[Event 50] type=func_enter, func="std::__1::ios_base::rdbuf[abi:ne180100]() const", file=ios, line=367
+[FRAME PUSH] std::__1::ios_base::rdbuf[abi:ne180100]() const-57 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=6
+[Event 51] type=func_exit, func="std::__1::ios_base::rdbuf[abi:ne180100]() const", file=ios, line=367
+[Frame Stack] POP std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::rdbuf[abi:ne180100]() const-57 cond: null loop: null
+[Event 52] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const", file=ios, line=618
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-55 cond: null loop: null
+[Event 53] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const", file=ios, line=545
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-59 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=5
+[Event 54] type=func_enter, func="std::__1::ios_base::good[abi:ne180100]() const", file=ios, line=504
+[FRAME PUSH] std::__1::ios_base::good[abi:ne180100]() const-61 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::good[abi:ne180100]() const, stack depth=6
+[Event 55] type=func_exit, func="std::__1::ios_base::good[abi:ne180100]() const", file=ios, line=504
+[Frame Stack] POP std::__1::ios_base::good[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::good[abi:ne180100]() const-61 cond: null loop: null
+[Event 56] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const", file=ios, line=545
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-59 cond: null loop: null
+[Event 57] type=func_enter, func="std::__1::ios_base::flags[abi:ne180100]() const", file=ios, line=455
+[FRAME PUSH] std::__1::ios_base::flags[abi:ne180100]() const-63 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::flags[abi:ne180100]() const, stack depth=5
+[Event 58] type=func_exit, func="std::__1::ios_base::flags[abi:ne180100]() const", file=ios, line=455
+[Frame Stack] POP std::__1::ios_base::flags[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::flags[abi:ne180100]() const-63 cond: null loop: null
+[Event 59] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()", file=ostream, line=322
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry(), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()-53 cond: null loop: null
+[Event 60] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)", file=ostream, line=667
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)-11 cond: null loop: null
+[Event 61] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)", file=ostream, line=786
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*), stack depth=1
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)-5 cond: null loop: null
+[Event 62] type=control_flow, func="main", file=src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp, line=7
+[Event 63] type=input_marker, func="main", file=src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp, line=8
+[Event 64] type=control_flow, func="main", file=src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp, line=10
+[Event 65] type=control_flow, func="main", file=src_c3e0bb40-8e67-497d-a437-213c2a9a687d.instrumented.cpp, line=11
+[Event 66] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)", file=ostream, line=786
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)-69 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*), stack depth=2
+[Event 67] type=func_enter, func="std::__1::char_traits<char>::length[abi:ne180100](char const*)", file=char_traits.h, line=226
+[FRAME PUSH] std::__1::char_traits<char>::length[abi:ne180100](char const*)-71 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::length[abi:ne180100](char const*), stack depth=3
+[Event 68] type=func_enter, func="std::__1::__constexpr_strlen[abi:ne180100](char const*)", file=constexpr_c_functions.h, line=38
+[FRAME PUSH] std::__1::__constexpr_strlen[abi:ne180100](char const*)-73 cond: null loop: null
+[Frame Stack] PUSH std::__1::__constexpr_strlen[abi:ne180100](char const*), stack depth=4
+[Event 69] type=func_exit, func="std::__1::__constexpr_strlen[abi:ne180100](char const*)", file=constexpr_c_functions.h, line=38
+[Frame Stack] POP std::__1::__constexpr_strlen[abi:ne180100](char const*), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::__constexpr_strlen[abi:ne180100](char const*)-73 cond: null loop: null
+[Event 70] type=func_exit, func="std::__1::char_traits<char>::length[abi:ne180100](char const*)", file=char_traits.h, line=226
+[Frame Stack] POP std::__1::char_traits<char>::length[abi:ne180100](char const*), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::length[abi:ne180100](char const*)-71 cond: null loop: null
+[Event 71] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)", file=ostream, line=667
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)-75 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long), stack depth=3
+[Event 72] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostream, line=313
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-77 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=4
+[Event 73] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const", file=ios, line=545
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-79 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=5
+[Event 74] type=func_enter, func="std::__1::ios_base::good[abi:ne180100]() const", file=ios, line=504
+[FRAME PUSH] std::__1::ios_base::good[abi:ne180100]() const-81 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::good[abi:ne180100]() const, stack depth=6
+[Event 75] type=func_exit, func="std::__1::ios_base::good[abi:ne180100]() const", file=ios, line=504
+[Frame Stack] POP std::__1::ios_base::good[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::good[abi:ne180100]() const-81 cond: null loop: null
+[Event 76] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const", file=ios, line=545
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-79 cond: null loop: null
+[Event 77] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const", file=ios, line=605
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const-83 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const, stack depth=5
+[Event 78] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const", file=ios, line=605
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const-83 cond: null loop: null
+[Event 79] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostream, line=313
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-77 cond: null loop: null
+[Event 80] type=func_enter, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const", file=ostream, line=309
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const-85 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const, stack depth=4
+[Event 81] type=func_exit, func="std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const", file=ostream, line=309
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const-85 cond: null loop: null
+[Event 82] type=func_enter, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostreambuf_iterator.h, line=53
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-87 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=4
+[Event 83] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const", file=ios, line=618
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-89 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=5
+[Event 84] type=func_enter, func="std::__1::ios_base::rdbuf[abi:ne180100]() const", file=ios, line=367
+[FRAME PUSH] std::__1::ios_base::rdbuf[abi:ne180100]() const-91 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=6
+[Event 85] type=func_exit, func="std::__1::ios_base::rdbuf[abi:ne180100]() const", file=ios, line=367
+[Frame Stack] POP std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::rdbuf[abi:ne180100]() const-91 cond: null loop: null
+[Event 86] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const", file=ios, line=618
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-89 cond: null loop: null
+[Event 87] type=func_exit, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)", file=ostreambuf_iterator.h, line=53
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-87 cond: null loop: null
+[Event 88] type=func_enter, func="std::__1::ios_base::flags[abi:ne180100]() const", file=ios, line=455
+[FRAME PUSH] std::__1::ios_base::flags[abi:ne180100]() const-93 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::flags[abi:ne180100]() const, stack depth=4
+[Event 89] type=func_exit, func="std::__1::ios_base::flags[abi:ne180100]() const", file=ios, line=455
+[Frame Stack] POP std::__1::ios_base::flags[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ios_base::flags[abi:ne180100]() const-93 cond: null loop: null
+[Event 90] type=func_enter, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const", file=ios, line=650
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const-95 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const, stack depth=4
+[Event 91] type=func_enter, func="std::__1::char_traits<char>::eof[abi:ne180100]()", file=char_traits.h, line=268
+[FRAME PUSH] std::__1::char_traits<char>::eof[abi:ne180100]()-97 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::eof[abi:ne180100](), stack depth=5
+[Event 92] type=func_exit, func="std::__1::char_traits<char>::eof[abi:ne180100]()", file=char_traits.h, line=268
+[Frame Stack] POP std::__1::char_traits<char>::eof[abi:ne180100](), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::eof[abi:ne180100]()-97 cond: null loop: null
+[Event 93] type=func_enter, func="std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)", file=char_traits.h, line=265
+[FRAME PUSH] std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)-99 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int), stack depth=5
+[Event 94] type=func_exit, func="std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)", file=char_traits.h, line=265
+[Frame Stack] POP std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)-99 cond: null loop: null
+[Event 95] type=func_exit, func="std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const", file=ios, line=650
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const-95 cond: null loop: null
+[Event 96] type=func_enter, func="std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)", file=locale, line=1246
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)-101 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char), stack depth=4
+[Event 97] type=func_enter, func="std::__1::ios_base::width[abi:ne180100]() const", file=ios, line=490
+[FRAME PUSH] std::__1::ios_base::width[abi:ne180100]() const-103 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::width[abi:ne180100]() const, stack depth=5
+[Event 98] type=func_exit, func="std::__1::ios_base::width[abi:ne180100]() const", file=ios, line=490
+[Frame Stack] POP std::__1::ios_base::width[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::width[abi:ne180100]() const-103 cond: null loop: null
+[Event 99] type=func_enter, func="std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)", file=streambuf, line=218
+[FRAME PUSH] std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)-105 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long), stack depth=5
+[Frame Stack] POP std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)-105 cond: null loop: null
+[FRAME PUSH] std::__1::ios_base::width[abi:ne180100](long long)-107 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::width[abi:ne180100](long long), stack depth=5
+[Frame Stack] POP std::__1::ios_base::width[abi:ne180100](long long), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::width[abi:ne180100](long long)-107 cond: null loop: null
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)-101 cond: null loop: null
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const-109 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const, stack depth=4
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const-109 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()-111 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry(), stack depth=4
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-113 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=5
+[FRAME PUSH] std::__1::ios_base::rdbuf[abi:ne180100]() const-115 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=6
+[Frame Stack] POP std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::rdbuf[abi:ne180100]() const-115 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-113 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-117 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=5
+[FRAME PUSH] std::__1::ios_base::good[abi:ne180100]() const-119 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::good[abi:ne180100]() const, stack depth=6
+[Frame Stack] POP std::__1::ios_base::good[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::good[abi:ne180100]() const-119 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-117 cond: null loop: null
+[FRAME PUSH] std::__1::ios_base::flags[abi:ne180100]() const-121 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::flags[abi:ne180100]() const, stack depth=5
+[Frame Stack] POP std::__1::ios_base::flags[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::flags[abi:ne180100]() const-121 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry(), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()-111 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)-75 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*), stack depth=1
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)-69 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::operator<<[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>& (*)(std::__1::basic_ostream<char, std::__1::char_traits<char>>&))-123 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::operator<<[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>& (*)(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)), stack depth=2
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::endl[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-125 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::endl[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const-127 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const, stack depth=4
+[FRAME PUSH] std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&)-129 cond: null loop: null
+[Frame Stack] PUSH std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&), stack depth=5
+[Frame Stack] POP std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ctype<char> const& std::__1::use_facet[abi:ne180100]<std::__1::ctype<char>>(std::__1::locale const&)-129 cond: null loop: null
+[FRAME PUSH] std::__1::ctype<char>::widen[abi:ne180100](char) const-131 cond: null loop: null
+[Frame Stack] PUSH std::__1::ctype<char>::widen[abi:ne180100](char) const, stack depth=5
+[Frame Stack] POP std::__1::ctype<char>::widen[abi:ne180100](char) const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ctype<char>::widen[abi:ne180100](char) const-131 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::widen[abi:ne180100](char) const-127 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::endl[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::endl[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-125 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::operator<<[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>& (*)(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)), stack depth=1
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::operator<<[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>& (*)(std::__1::basic_ostream<char, std::__1::char_traits<char>>&))-123 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)-136 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*), stack depth=2
+[FRAME PUSH] std::__1::char_traits<char>::length[abi:ne180100](char const*)-138 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::length[abi:ne180100](char const*), stack depth=3
+[FRAME PUSH] std::__1::__constexpr_strlen[abi:ne180100](char const*)-140 cond: null loop: null
+[Frame Stack] PUSH std::__1::__constexpr_strlen[abi:ne180100](char const*), stack depth=4
+[Frame Stack] POP std::__1::__constexpr_strlen[abi:ne180100](char const*), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::__constexpr_strlen[abi:ne180100](char const*)-140 cond: null loop: null
+[Frame Stack] POP std::__1::char_traits<char>::length[abi:ne180100](char const*), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::length[abi:ne180100](char const*)-138 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)-142 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long), stack depth=3
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-144 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=4
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-146 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=5
+[FRAME PUSH] std::__1::ios_base::good[abi:ne180100]() const-148 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::good[abi:ne180100]() const, stack depth=6
+[Frame Stack] POP std::__1::ios_base::good[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::good[abi:ne180100]() const-148 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-146 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const-150 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const, stack depth=5
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::tie[abi:ne180100]() const-150 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::sentry(std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-144 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const-152 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const, stack depth=4
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::operator bool[abi:ne180100]() const-152 cond: null loop: null
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-154 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=4
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-156 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=5
+[FRAME PUSH] std::__1::ios_base::rdbuf[abi:ne180100]() const-158 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=6
+[Frame Stack] POP std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::rdbuf[abi:ne180100]() const-158 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-156 cond: null loop: null
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::ostreambuf_iterator[abi:ne180100](std::__1::basic_ostream<char, std::__1::char_traits<char>>&)-154 cond: null loop: null
+[FRAME PUSH] std::__1::ios_base::flags[abi:ne180100]() const-160 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::flags[abi:ne180100]() const, stack depth=4
+[Frame Stack] POP std::__1::ios_base::flags[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ios_base::flags[abi:ne180100]() const-160 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const-162 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const, stack depth=4
+[FRAME PUSH] std::__1::char_traits<char>::eof[abi:ne180100]()-164 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::eof[abi:ne180100](), stack depth=5
+[Frame Stack] POP std::__1::char_traits<char>::eof[abi:ne180100](), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::eof[abi:ne180100]()-164 cond: null loop: null
+[FRAME PUSH] std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)-166 cond: null loop: null
+[Frame Stack] PUSH std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int), stack depth=5
+[Frame Stack] POP std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::char_traits<char>::eq_int_type[abi:ne180100](int, int)-166 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::fill[abi:ne180100]() const-162 cond: null loop: null
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)-168 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char), stack depth=4
+[FRAME PUSH] std::__1::ios_base::width[abi:ne180100]() const-170 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::width[abi:ne180100]() const, stack depth=5
+[Frame Stack] POP std::__1::ios_base::width[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::width[abi:ne180100]() const-170 cond: null loop: null
+[FRAME PUSH] std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)-172 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long), stack depth=5
+[Frame Stack] POP std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_streambuf<char, std::__1::char_traits<char>>::sputn[abi:ne180100](char const*, long long)-172 cond: null loop: null
+[FRAME PUSH] std::__1::ios_base::width[abi:ne180100](long long)-174 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::width[abi:ne180100](long long), stack depth=5
+[Frame Stack] POP std::__1::ios_base::width[abi:ne180100](long long), stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::width[abi:ne180100](long long)-174 cond: null loop: null
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>> std::__1::__pad_and_output[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>, char const*, char const*, char const*, std::__1::ios_base&, char)-168 cond: null loop: null
+[FRAME PUSH] std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const-176 cond: null loop: null
+[Frame Stack] PUSH std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const, stack depth=4
+[Frame Stack] POP std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const, stack depth=3
+[TRACE STEP] func_exit frame: std::__1::ostreambuf_iterator<char, std::__1::char_traits<char>>::failed[abi:ne180100]() const-176 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()-178 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry(), stack depth=4
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-180 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=5
+[FRAME PUSH] std::__1::ios_base::rdbuf[abi:ne180100]() const-182 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=6
+[Frame Stack] POP std::__1::ios_base::rdbuf[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::rdbuf[abi:ne180100]() const-182 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::rdbuf[abi:ne180100]() const-180 cond: null loop: null
+[FRAME PUSH] std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-184 cond: null loop: null
+[Frame Stack] PUSH std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=5
+[FRAME PUSH] std::__1::ios_base::good[abi:ne180100]() const-186 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::good[abi:ne180100]() const, stack depth=6
+[Frame Stack] POP std::__1::ios_base::good[abi:ne180100]() const, stack depth=5
+[TRACE STEP] func_exit frame: std::__1::ios_base::good[abi:ne180100]() const-186 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::basic_ios<char, std::__1::char_traits<char>>::good[abi:ne180100]() const-184 cond: null loop: null
+[FRAME PUSH] std::__1::ios_base::flags[abi:ne180100]() const-188 cond: null loop: null
+[Frame Stack] PUSH std::__1::ios_base::flags[abi:ne180100]() const, stack depth=5
+[Frame Stack] POP std::__1::ios_base::flags[abi:ne180100]() const, stack depth=4
+[TRACE STEP] func_exit frame: std::__1::ios_base::flags[abi:ne180100]() const-188 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry(), stack depth=3
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>::sentry::~sentry()-178 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long), stack depth=2
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::__put_character_sequence[abi:ne180100]<char, std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*, unsigned long long)-142 cond: null loop: null
+[Frame Stack] POP std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*), stack depth=1
+[TRACE STEP] func_exit frame: std::__1::basic_ostream<char, std::__1::char_traits<char>>& std::__1::operator<<[abi:ne180100]<std::__1::char_traits<char>>(std::__1::basic_ostream<char, std::__1::char_traits<char>>&, char const*)-136 cond: null loop: null
+[Frame Stack] POP main, stack depth=0
+[TRACE STEP] func_exit frame: main-0 cond: null loop: null
+[TRACE STEP] return frame: main-0 cond: null loop: null
+Γ£à Generated 18 steps
+Γ£à Trace complete { steps: 18, functions: 28, arrays: 0, pointers: 0, maxCallDepth: 0 }
+
+Generated 18 steps
+
+--- I/O Steps Analysis ---
+[Step 3] Type: input, Line: 7, Text: "INPUT RECEIVED: x = 42"
+[Step 4] Type: output, Line: 7, Text: "Enter x (cout no newline): "
+[Step 5] Type: output, Line: 10, Text: "You entered (printf no newline): 42"
+[Step 6] Type: output, Line: 11, Text: " ...and more (printf with n"
+[Step 7] Type: output, Line: 13, Text: "ewline)
+"
+[Step 8] Type: output, Line: 15, Text: "Testing cout with newline: "
+[Step 9] Type: output, Line: 16, Text: "42"
+[Step 10] Type: output, Line: 18, Text: "
+"
+[Step 13] Type: output, Line: 0, Text: "One more printf "
+[Step 14] Type: output, Line: 0, Text: "on the same line
+"
+[Step 15] Type: output, Line: 0, Text: "Cout before return (no newline): "
+[Step 16] Type: output, Line: 0, Text: "42"
+
+Γ¥î FAILURE: Expected 7 output steps, but found 11.
+Γ£à SUCCESS: scanf anchored correctly to line 7.

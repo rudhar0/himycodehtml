@@ -1,0 +1,23 @@
+
+#include <stdio.h>
+#include <iostream>
+#include "trace.h"
+using namespace std;
+int main() {
+    int x;
+    __trace_declare(x, int, 7);
+    x = 42;
+    __trace_assign(x, x, 7);
+        cout << "A";
+    __trace_output_flush(8);
+     printf("B");
+    __trace_output_flush(8);
+     printf("C\n");
+    __trace_output_flush(8);
+    {
+      __auto_type __rv_8 = (0);
+      __trace_assign(__rv_8, __rv_8, 9);
+      __trace_return(__rv_8, "auto", "0", 9);
+      return __rv_8;
+    }
+}
