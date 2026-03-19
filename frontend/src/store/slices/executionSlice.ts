@@ -22,9 +22,13 @@ export interface ExecutionState {
   // Analysis progress
   analysisProgress: number;
   analysisStage: string;
+  analysisError: string | null;
+  analysisStartTime: number | null;
+  analysisStageDurations: Record<string, number>;
+  totalGeneratedSteps: number | null;
   
   // Playback interval
-  playbackInterval: NodeJS.Timeout | null;
+  playbackInterval: any | null;
   
   // Canvas rebuild flag (set to true when jumping to a step)
   needsCanvasRebuild: boolean;
@@ -42,6 +46,8 @@ export interface ExecutionState {
   setSpeed: (speed: number) => void;
   setAnalyzing: (isAnalyzing: boolean) => void;
   setAnalysisProgress: (progress: number, stage: string) => void;
+  setAnalysisError: (error: string | null) => void;
+  dismissAnalysisResult: () => void;
   startAnalysis: () => void;
   markCanvasRebuildComplete: () => void;
   
@@ -90,6 +96,10 @@ export const useExecutionStore = create<ExecutionState>()(
     currentState: null,
     analysisProgress: 0,
     analysisStage: 'idle',
+    analysisError: null,
+    analysisStartTime: null,
+    analysisStageDurations: {},
+    totalGeneratedSteps: null,
     playbackInterval: null,
     needsCanvasRebuild: false,
 
@@ -111,6 +121,8 @@ export const useExecutionStore = create<ExecutionState>()(
         state.isAnalyzing = false;
         state.analysisProgress = 100;
         state.analysisStage = 'complete';
+        state.analysisError = null;
+        state.totalGeneratedSteps = expandedTrace.totalSteps;
         state.needsCanvasRebuild = true;
         
         if (state.playbackInterval) {
@@ -133,6 +145,10 @@ export const useExecutionStore = create<ExecutionState>()(
       state.isAnalyzing = false;
       state.isPlaying = false;
       state.isPaused = false;
+      state.analysisError = null;
+      state.analysisStartTime = null;
+      state.analysisStageDurations = {};
+      state.totalGeneratedSteps = null;
     }),
 
     setCurrentStep: (step: number) =>
@@ -287,13 +303,46 @@ export const useExecutionStore = create<ExecutionState>()(
         if (isAnalyzing) {
           state.analysisProgress = 0;
           state.analysisStage = 'starting';
+          state.analysisError = null;
+          state.analysisStartTime = Date.now();
+          state.analysisStageDurations = {};
+          state.totalGeneratedSteps = null;
         }
       }),
 
     setAnalysisProgress: (progress: number, stage: string) =>
       set((state) => {
+        const prevStage = state.analysisStage;
+        if (prevStage !== stage && state.analysisStartTime) {
+          // Calculate duration for the previous stage
+          const now = Date.now();
+          // We'll track the start time of the CURRENT stage to calculate duration later
+          // For simplicity, we just store the absolute time when each stage was reached
+          state.analysisStageDurations[prevStage] = (now - (state.analysisStartTime + Object.values(state.analysisStageDurations).reduce((a, b) => a + b, 0) * 1000)) / 1000;
+          
+          // Actually, a simpler way: just store the timestamp when each stage started
+          (state as any)._stageStartTimes = (state as any)._stageStartTimes || {};
+          const lastStageStart = (state as any)._stageStartTimes[prevStage] || state.analysisStartTime;
+          state.analysisStageDurations[prevStage] = (now - lastStageStart) / 1000;
+          (state as any)._stageStartTimes[stage] = now;
+        }
+        
         state.analysisProgress = progress;
         state.analysisStage = stage;
+      }),
+
+    setAnalysisError: (error: string | null) =>
+      set((state) => {
+        state.analysisError = error;
+        state.isAnalyzing = false;
+      }),
+
+    dismissAnalysisResult: () =>
+      set((state) => {
+        state.isAnalyzing = false;
+        state.analysisStage = 'idle';
+        state.analysisError = null;
+        state.analysisProgress = 0;
       }),
 
     startAnalysis: () =>

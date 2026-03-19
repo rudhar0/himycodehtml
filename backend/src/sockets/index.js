@@ -61,25 +61,25 @@ export function setupSocketHandlers(io) {
 
         console.log(`📝 Trace request: ${language.toUpperCase()}, ${code.length} bytes`);
 
+        // Progress: Starting
+        socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
+          stage: 'starting',
+          progress: 10,
+          message: 'Receiving source code...'
+        });
+
         // Progress: Compiling
         socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
           stage: 'compiling',
-          progress: 20,
-          message: 'Compiling with GCC instrumentation...'
+          progress: 30,
+          message: 'Compiling with Clang + tracer injection...'
         });
 
         // Progress: Executing
         socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
           stage: 'executing',
           progress: 50,
-          message: 'Executing instrumented binary...'
-        });
-
-        // Progress: Analyzing
-        socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
-          stage: 'analyzing',
-          progress: 70,
-          message: 'Analyzing execution trace...'
+          message: 'Running instrumented binary...'
         });
 
         const inputAnalysis = inputRequirementsService.analyzeInputRequirements(code, language);
@@ -90,6 +90,13 @@ export function setupSocketHandlers(io) {
         if (normalizedInputs.warnings.length > 0) {
           console.warn(`[Input] ${normalizedInputs.warnings.join(' | ')}`);
         }
+
+        // Progress: Tracing
+        socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
+          stage: 'tracing',
+          progress: 70,
+          message: 'Collecting trace events (FRAME PUSH / POP)...'
+        });
 
         // Generate trace
         const traceResult = await instrumentationTracer.generateTrace(
@@ -104,11 +111,18 @@ export function setupSocketHandlers(io) {
 
         console.log(`✅ Generated ${traceResult.totalSteps} steps for ${socket.id}`);
 
-        // Progress: Formatting
+        // Progress: Parsing
         socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
-          stage: 'formatting',
-          progress: 90,
-          message: 'Formatting trace data...'
+          stage: 'parsing',
+          progress: 85,
+          message: 'Parsing trace → JSON step objects...'
+        });
+
+        // Progress: Sending
+        socket.emit(SOCKET_EVENTS.CODE_TRACE_PROGRESS, {
+          stage: 'sending',
+          progress: 95,
+          message: 'Sending steps to frontend canvas...'
         });
 
         // Send trace in single chunk (can be split if needed)

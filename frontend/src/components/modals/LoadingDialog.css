@@ -1,0 +1,209 @@
+/* ── LOADING DIALOG CSS ── */
+
+.cv-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+  padding: 20px;
+}
+
+.cv-dialog {
+  background: var(--bg1);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 620px;
+  animation: dlgIn .55s cubic-bezier(.22,1,.36,1) both;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ERROR STATE OVERRIDE */
+.cv-dialog.has-error {
+  border-color: #EF4444;
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.2);
+}
+
+/* TITLEBAR */
+.dlg-tbar {
+  height: 44px; background: var(--bg0);
+  border-bottom: 1px solid var(--bd);
+  display: flex; align-items: center; padding: 0 16px; gap: 10px;
+}
+.dlg-tbar-title { font-size: 13px; font-weight: 600; color: var(--t1); flex:1; }
+
+.lang-badge {
+  background: var(--bg2); color: var(--acc3);
+  border: 1px solid var(--bd2); border-radius: 4px;
+  padding: 2px 8px; font-size: 10px; font-weight: 600;
+  font-family: var(--fn-code, 'JetBrains Mono', monospace);
+}
+
+/* ── PIPELINE FIGURE ── */
+.dlg-figure {
+  padding: 24px 20px 10px;
+  display: flex; flex-direction: column; align-items: center; 
+}
+
+.fig-label {
+  font-size: 9px; font-family: var(--fn-ui, 'Inter', sans-serif); fill: var(--t3);
+  letter-spacing: .04em; text-transform: uppercase;
+}
+
+/* pipe dots (data flow) */
+.pipe { stroke-dasharray:6 4; animation:dash .7s linear infinite; }
+.pipe2{ stroke-dasharray:6 4; animation:dash .7s linear infinite .23s; }
+.pipe3{ stroke-dasharray:6 4; animation:dash .7s linear infinite .46s; }
+
+/* gear groups inside compiler block */
+.g1 { transform-origin:84px 55px;  animation:gSpin  2.8s linear infinite; }
+.g2 { transform-origin:104px 55px; animation:gSpinR 2.8s linear infinite; }
+
+/* trace tokens (tiny coloured pills moving right across arrow) */
+.tok1 { animation:tokenFlow 1.4s ease-in-out infinite;          }
+.tok2 { animation:tokenFlow 1.4s ease-in-out infinite .46s;     }
+.tok3 { animation:tokenFlow 1.4s ease-in-out infinite .92s;     }
+
+/* JSON lines inside output block */
+.jl1 { animation:jsonPop .3s .2s both; }
+.jl2 { animation:jsonPop .3s .5s both; }
+.jl3 { animation:jsonPop .3s .8s both; }
+.jl4 { animation:jsonPop .3s 1.1s both; }
+
+/* cpu ring pulses */
+.rp1 { animation:ringPulse 1.8s ease-in-out infinite; }
+.rp2 { animation:ringPulse 1.8s ease-in-out infinite .6s; }
+
+/* ── STEPS ── */
+.dlg-steps { padding: 4px 18px 8px; display: flex; flex-direction: column; gap: 2px; }
+
+.step-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px; border-radius: 8px; transition: all .2s;
+}
+.step-item.s-active { background: rgba(124,58,237,.09); }
+.step-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink:0; transition:background .3s; }
+
+.s-done    .step-dot { background:var(--acc2); }
+.s-active  .step-dot { background:var(--acc); animation:stepBlink 1.2s infinite; }
+.s-pending .step-dot { background:var(--bd2); }
+.s-error   .step-dot { background:#EF4444; }
+
+.step-label { font-size:11.5px; font-family:var(--fn-code, monospace); flex:1; }
+.s-done    .step-label { color:var(--t2); }
+.s-active  .step-label { color:var(--t1); font-weight:500; }
+.s-pending .step-label { color:var(--t3); }
+.s-error   .step-label { color:#EF4444; font-weight: 500; }
+
+.step-meta { font-size:10px; font-family:var(--fn-code, monospace); color:var(--t3); }
+.s-done .step-meta { color:var(--acc2); }
+
+.step-tag {
+  font-size:10px; font-family:var(--fn-code, monospace);
+  background:rgba(124,58,237,.15); color:var(--accL);
+  border-radius:4px; padding:1px 6px;
+}
+
+/* ── PROGRESS BAR ── */
+.dlg-progress { padding:10px 22px 6px; }
+.prog-head {
+  display:flex; justify-content:space-between;
+  font-size:10px; color:var(--t3); font-family:var(--fn-code, monospace);
+  margin-bottom:6px;
+}
+.prog-track { height:5px; background:var(--bd); border-radius:3px; overflow:hidden; }
+.prog-fill {
+  height:100%;
+  background:linear-gradient(90deg,var(--acc),var(--accL));
+  border-radius:3px; transition:width .5s ease;
+  position:relative;
+}
+.prog-fill.is-error {
+  background: #EF4444;
+}
+
+.prog-fill::after {
+  content:''; position:absolute; right:-1px; top:-2px;
+  width:9px; height:9px; border-radius:50%;
+  background:var(--accL);
+  animation:progGlow 1.5s infinite;
+}
+.prog-fill.is-error::after {
+  background: #FCA5A5;
+  animation: errorGlow 1.5s infinite;
+}
+
+/* ── NOTE ── */
+.dlg-note {
+  margin:12px 22px 16px;
+  background:rgba(59,130,246,.07);
+  border:1px solid rgba(59,130,246,.18);
+  border-left:3px solid var(--acc3);
+  border-radius:0 8px 8px 0;
+  padding:12px 14px; display:flex; gap:10px; align-items:flex-start;
+  animation:noteIn .6s .4s cubic-bezier(.22,1,.36,1) both;
+}
+.dlg-note.is-error {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.15);
+  border-left-color: #EF4444;
+}
+.note-body { font-size:11px; color:var(--t2); line-height:1.65; }
+.note-body strong { color:var(--t1); font-weight:600; }
+.note-body code   { color:var(--acc3); font-family:var(--fn-code, monospace); font-size:10.5px; }
+
+/* ── FOOTER ── */
+.dlg-footer {
+  border-top:1px solid var(--bd); padding:10px 22px;
+  display:flex; align-items:center; gap:10px;
+}
+.dlg-cmd {
+  flex:1; font-size:10px; font-family:var(--fn-code, monospace);
+  color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.dlg-cancel {
+  background:transparent; border:1px solid var(--bd2); color:var(--t2);
+  border-radius:6px; padding:5px 14px; font-size:11px;
+  font-family: var(--fn-ui, sans-serif); cursor:not-allowed; opacity: 0.5;
+}
+
+/* ── KEYFRAMES ── */
+@keyframes dlgIn {
+  from { opacity:0; transform:scale(.96) translateY(20px); }
+  to   { opacity:1; transform:scale(1) translateY(0); }
+}
+@keyframes noteIn {
+  from { opacity:0; transform:translateY(5px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes progGlow {
+  0%,100% { box-shadow:0 0 5px var(--acc); }
+  50%      { box-shadow:0 0 12px var(--accL); }
+}
+@keyframes errorGlow {
+  0%,100% { box-shadow:0 0 5px #EF4444; }
+  50%      { box-shadow:0 0 12px #FCA5A5; }
+}
+@keyframes stepBlink { 0%,100%{opacity:.45} 50%{opacity:1} }
+@keyframes dash { from{stroke-dashoffset:60} to{stroke-dashoffset:0} }
+@keyframes tokenFlow {
+  0%   { transform:translateX(0);  opacity:0; }
+  15%  { opacity:1; }
+  85%  { opacity:1; }
+  100% { transform:translateX(52px); opacity:0; }
+}
+@keyframes jsonPop {
+  from { opacity:0; transform:translateX(-4px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+@keyframes gSpin  { to{transform:rotate(360deg)}  }
+@keyframes gSpinR { to{transform:rotate(-360deg)} }
+@keyframes ringPulse { 0%,100%{r:18;opacity:.5} 50%{r:26;opacity:0} }

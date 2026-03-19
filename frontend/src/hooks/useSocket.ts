@@ -23,7 +23,7 @@ export function useSocket() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const { setTrace, setAnalysisProgress, setAnalyzing } = useExecutionStore();
+  const { setTrace, setAnalysisProgress, setAnalyzing, setAnalysisError } = useExecutionStore();
   const { setGCCStatus } = useGCCStore();
 
   const connect = useCallback(async () => {
@@ -61,7 +61,7 @@ export function useSocket() {
         ? data.errors.map((e: any) => (typeof e === 'string' ? e : e.message)).join('; ')
         : data.message || 'Syntax error';
       toast.error(`Error: ${errorMessage}`);
-      setAnalyzing(false);
+      setAnalysisError(errorMessage);
     };
 
     const handleTraceProgress: SocketEventCallback = (data) => {
@@ -112,8 +112,9 @@ export function useSocket() {
 
     const handleTraceError: SocketEventCallback = (data) => {
       console.error('Trace error:', data);
-      toast.error(`Execution failed: ${data.message || 'Unknown error'}`);
-      setAnalyzing(false);
+      const errorMessage = data.message || 'Unknown error';
+      toast.error(`Execution failed: ${errorMessage}`);
+      setAnalysisError(errorMessage);
     };
 
     const handleInputRequired: SocketEventCallback = (_data) => {

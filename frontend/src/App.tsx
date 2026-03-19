@@ -4,6 +4,7 @@ import { useSocket } from '@hooks/useSocket';
 import { useEffect } from 'react';
 import { APP_CONFIG } from '@config/app.config';
 import { InputPromptModal } from '@components/modals/InputPromptModal';
+import LoadingDialog from '@components/modals/LoadingDialog';
 import { useEditorStore } from '@store/slices/editorSlice';
 import { astService } from '@services/ast.service';
 
@@ -52,6 +53,7 @@ function App() {
       
       {/* Modals */}
       <InputPromptModal />
+      <LoadingDialog />
 
       {/* Toast notifications */}
       <Toaster

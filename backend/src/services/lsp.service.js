@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import os from 'os';
 import { toolchainService } from './toolchain.service.js';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import logger from '../utils/logger.js';
 import { getBackendRoot, getRuntimeDir } from '../utils/project-paths.js';
 
@@ -76,16 +76,25 @@ class LSPService {
   /**
    * Send a message to the clangd process
    * @param {string} sessionId 
-   * @param {string} message JSON-RPC message
+   * @param {string|object} message JSON-RPC message
    */
   async sendMessage(sessionId, message) {
     const session = await this.initializeSession(sessionId);
-    if (session && session.process.stdin.writable) {
-      // Clangd expects the standard LSP header: Content-Length: <len>\r\n\r\n
-      const body = typeof message === 'string' ? message : JSON.stringify(message);
-      const header = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n`;
-      session.process.stdin.write(header + body);
-    }
+    if (!session || !session.process.stdin.writable) return;
+
+    let body = typeof message === 'string' ? message : JSON.stringify(message);
+
+    // URI Mapping: Convert file:///main.cpp|c to the actual temp path URI
+    // Use pathToFileURL for a robust cross-platform file URI (e.g., file:///D:/... or file:///tmp/...)
+    const absoluteUriPrefix = new URL('.', pathToFileURL(session.tempDir)).href;
+    const virtualUriPattern = /file:\/\/\/?main\.(cpp|c)/g;
+    
+    body = body.replace(virtualUriPattern, (match, ext) => {
+      return `${absoluteUriPrefix}main.${ext}`;
+    });
+
+    const header = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n`;
+    session.process.stdin.write(header + body);
   }
 
   /**
@@ -95,41 +104,50 @@ class LSPService {
    */
   async onMessage(sessionId, callback) {
     const session = await this.initializeSession(sessionId);
-    if (session) {
-      session.process.stdout.on('data', (chunk) => {
-        // LSP Framing: accumulate data in buffer and extract full messages
-        session.buffer = Buffer.concat([session.buffer, chunk]);
-        
-        while (true) {
-          const content = session.buffer.toString('utf8');
-          const headerMatch = content.match(/Content-Length: (\d+)\r\n\r\n/);
-          
-          if (!headerMatch) break;
-          
-          const contentLength = parseInt(headerMatch[1], 10);
-          const headerSize = headerMatch[0].length;
-          const totalSize = headerSize + contentLength;
-          
-          if (session.buffer.length < totalSize) break;
-          
-          // We have a full message
-          const messageBody = session.buffer.subarray(headerSize, totalSize).toString('utf8');
-          
-          // Remove from buffer
-          session.buffer = session.buffer.subarray(totalSize);
-          
-          // Send only the JSON body to the client
-          callback(messageBody);
-        }
-      });
+    if (!session) return;
+
+    if (session.listenerAttached) return;
+    session.listenerAttached = true;
+
+    session.process.stdout.on('data', (chunk) => {
+      session.buffer = Buffer.concat([session.buffer, chunk]);
       
-      session.process.stderr.on('data', (data) => {
-        const msg = data.toString();
-        if (msg.includes('error') || msg.includes('fail')) {
-          logger.debug(`clangd [${sessionId}] stderr: ${msg}`);
-        }
-      });
-    }
+      while (true) {
+        const content = session.buffer.toString('utf8');
+        const headerMatch = content.match(/Content-Length: (\d+)\r\n\r\n/);
+        
+        if (!headerMatch) break;
+        
+        const contentLength = parseInt(headerMatch[1], 10);
+        const headerSize = headerMatch[0].length;
+        const totalSize = headerSize + contentLength;
+        
+        if (session.buffer.length < totalSize) break;
+        
+        let messageBody = session.buffer.subarray(headerSize, totalSize).toString('utf8');
+        session.buffer = session.buffer.subarray(totalSize);
+
+        // Reverse URI Mapping: Convert absolute temp path back to file:///main.cpp|c
+        const absoluteUriPrefix = new URL('.', pathToFileURL(session.tempDir)).href;
+        
+        // Escape special chars in path for regex
+        const escapedPrefix = absoluteUriPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const absoluteUriPattern = new RegExp(`${escapedPrefix}main\\.(cpp|c)`, 'g');
+        
+        messageBody = messageBody.replace(absoluteUriPattern, (match, ext) => {
+          return `file:///main.${ext}`;
+        });
+        
+        callback(messageBody);
+      }
+    });
+
+    session.process.stderr.on('data', (data) => {
+      const msg = data.toString();
+      if (msg.includes('error') || msg.includes('fail')) {
+        logger.debug(`clangd [${sessionId}] stderr: ${msg}`);
+      }
+    });
   }
 
   /**
