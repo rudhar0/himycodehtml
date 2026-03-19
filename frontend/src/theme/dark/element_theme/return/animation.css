@@ -1,0 +1,19 @@
+@keyframes retGlow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2), 0 8px 28px rgba(239, 68, 68, 0.12); }
+  50%      { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.55), 0 12px 40px rgba(239, 68, 68, 0.28); }
+}
+
+@keyframes retRock {
+  0%, 100% { transform: rotate(-12deg) translateX(0); }
+  50%      { transform: rotate(8deg) translateX(1px); }
+}
+
+@keyframes numRoll {
+  0%   { transform: translateY(-120%); opacity: 0; }
+  100% { transform: translateY(0);     opacity: 1; }
+}
+
+@keyframes scan {
+  0%   { top: 0%;   opacity: 0.45; }
+  100% { top: 110%; opacity: 0;   }
+}

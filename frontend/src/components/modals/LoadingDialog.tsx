@@ -40,15 +40,15 @@ export default function LoadingDialog() {
   const isError = !!analysisError;
   const isComplete = analysisStage === 'complete';
 
-  // Auto-dismiss after 5 seconds of completion
+  // Auto-dismiss after completion (5s) or error (10s)
   useEffect(() => {
-    if (isComplete) {
+    if (isComplete || isError) {
       const timer = setTimeout(() => {
         dismissAnalysisResult();
-      }, 5000);
+      }, isComplete ? 5000 : 10000);
       return () => clearTimeout(timer);
     }
-  }, [isComplete, dismissAnalysisResult]);
+  }, [isComplete, isError, dismissAnalysisResult]);
 
   if (analysisStage === 'idle' && !isError) return null;
 
@@ -216,7 +216,7 @@ export default function LoadingDialog() {
               </>
             ) : (
               <>
-                <strong>Pipeline active.</strong> Every function call is being traced as a <code>PUSH/POP</code> event, parsed into <code>JSON</code>, and streamed to the canvas.
+                <strong>First run may take up to 2 minutes.</strong> Clang must load headers, compile your code with full tracer instrumentation, and warm up the runtime. Once running, every function call is traced as a <code>FRAME PUSH / POP</code> event, then parsed into <code>JSON</code> step objects and streamed to the canvas. Subsequent runs are much faster once everything is cached.
               </>
             )}
           </div>
@@ -227,12 +227,12 @@ export default function LoadingDialog() {
           <span className="dlg-cmd">
             {isError ? 'Process terminated with non-zero exit code' : isComplete ? 'Trace generated and optimized successfully' : `clang++ -O2 -finstrument-functions main.cpp`}
           </span>
-          {isComplete ? (
+          {isComplete || isError ? (
             <button 
-              className="dlg-cancel !cursor-pointer !opacity-100 !border-acc2 !text-acc2 hover:bg-acc2/10"
+              className={`dlg-cancel !cursor-pointer !opacity-100 ${isError ? '!border-red-500/50 !text-red-400 hover:bg-red-500/10' : '!border-acc2 !text-acc2 hover:bg-acc2/10'}`}
               onClick={dismissAnalysisResult}
             >
-              Launch
+              {isError ? 'Close' : 'Launch'}
             </button>
           ) : (
             <button className="dlg-cancel" disabled>Cancel</button>

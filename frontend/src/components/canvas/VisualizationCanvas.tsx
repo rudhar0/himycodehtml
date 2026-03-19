@@ -33,6 +33,7 @@ import { IterationElement } from './elements/IterationElement';
 import { ControlNodeElement } from "./elements/ControlNodeElement";
 import { ControlLinkArrow } from "./elements/ControlLinkArrow";
 import { ControlCallerBlock } from "./elements/ControlCallerBlock";
+import { BreakContinueElement } from "./elements/BreakContinueElement";
 import { resizeAllContainers } from "./utils/resizeContainer";
 
 const DARK_COLORS = {
@@ -1117,6 +1118,21 @@ export default function VisualizationCanvas() {
             height={height}
             isNew={isNew}
             isWaiting={!data?.value && !data?.assignments}
+          />
+        );
+
+      case "control_jump":
+        return (
+          <BreakContinueElement
+            key={id}
+            id={id}
+            kind={(data?.kind || element.subtype || 'break') as 'break' | 'continue'}
+            line={data?.line}
+            x={x}
+            y={y}
+            isNew={isNew}
+            stepNumber={stepId}
+            enterDelay={enterDelayMap.get(id) || 0}
           />
         );
 

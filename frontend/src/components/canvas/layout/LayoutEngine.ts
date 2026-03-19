@@ -25,7 +25,8 @@ export interface LayoutElement {
     | "array_reference"
     | "call_site"
     | "condition_caller"
-    | "loop_caller";
+    | "loop_caller"
+    | "control_jump";
   subtype?: string;
   x: number;
   y: number;
@@ -3411,6 +3412,39 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
       this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
       layout.elements.push(outputElement);
       this.elementHistory.set(outputId, outputElement);
+      return;
+    }
+
+    if (stepType === 'loop_break' || stepType === 'loop_continue') {
+      const jumpId = `control-jump-${stepIndex}`;
+      if (this.elementHistory.has(jumpId)) return;
+
+      const scopeDepth = this.getScopeDepth(step, frameId);
+      const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
+
+      const jumpElement: LayoutElement = {
+        id: jumpId,
+        type: 'control_jump',
+        subtype: stepType === 'loop_break' ? 'break' : 'continue',
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
+        height: 48,
+        parentId: placement.parent.id,
+        stepId: stepIndex,
+        data: {
+          kind: stepType === 'loop_break' ? 'break' : 'continue',
+          line: (step as any).line,
+          frameId,
+          birthStep: stepIndex,
+        },
+      };
+
+      this.appendElementToPlacement(ownerFrame, placement, jumpElement);
+      this.markEphemeralControlUsed(frameId, scopeDepth, placement.parent.id, stepIndex, stepLine);
+      layout.elements.push(jumpElement);
+      this.elementHistory.set(jumpId, jumpElement);
+      this.createdInStep.set(jumpId, stepIndex);
       return;
     }
 
