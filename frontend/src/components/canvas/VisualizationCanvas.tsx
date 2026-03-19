@@ -821,17 +821,27 @@ export default function VisualizationCanvas() {
     switch (type) {
       case "main":
         return (
-          <StackFrame
+          <FunctionElement
             key={id}
             id={id}
-            functionName="main()"
+            functionName={data?.functionName || "main"}
+            returnType={data?.returnType || "int"}
             x={x}
             y={y}
             width={width}
             height={height}
+            isRecursive={data?.isRecursive || false}
+            depth={data?.depth || 0}
+            calledFrom={data?.calledFrom}
+            parameters={data?.parameters || []}
+            localVarCount={data?.localVarCount || 0}
             isNew={false}
+            isActive={data?.isActive || false}
+            isReturning={data?.isReturning || false}
+            stepNumber={stepId}
+            enterDelay={0}
           >
-            {filterFlowChildren(children).map((child, idx) => {
+            {filterFlowChildren(children).map((child) => {
               const relativeX = child.x - x;
               const relativeY =
                 child.y - y - getBodyOffsetY(element.type, element.subtype);
@@ -846,7 +856,7 @@ export default function VisualizationCanvas() {
                 </Group>
               );
             })}
-          </StackFrame>
+          </FunctionElement>
         );
 
       case "call_site":

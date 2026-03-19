@@ -1,10 +1,9 @@
-// frontend/src/components/canvas/elements/FunctionElement.tsx
-// COMPLETE FILE - REPLACE ENTIRELY
-
 import React, { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { Group, Rect, Text, Line, Circle } from 'react-konva';
 import Konva from 'konva';
 import { resizeContainer } from '../utils/resizeContainer';
+import { MAIN_THEME } from '../../../theme/mainTheme';
+import { useExecutionStore } from '../../../store/slices/executionSlice';
 
 // ============================================
 // TYPE DEFINITIONS
@@ -45,18 +44,17 @@ export interface FunctionElementProps {
   children?: React.ReactNode;
   
   // Callbacks
-  onConnectorClick?: (pos: { x: number; y: number }) => void;
+  onConnectorClick?: (id: string) => void;
 }
 
 // ============================================
 // CONSTANTS
 // ============================================
 
-const BOX_WIDTH = 400;
-const HEADER_HEIGHT = 55;
-const MIN_BODY_HEIGHT = 80;
+const BOX_WIDTH = 410; // Main card width
+const HEADER_HEIGHT = 105; // Taller header for main metadata
+const CORNER_RADIUS = 14;
 const PADDING = 16;
-const CORNER_RADIUS = 10;
 const CONNECTOR_RADIUS = 11;
 
 const COLORS = {
@@ -110,16 +108,23 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
   children,
   onConnectorClick,
 }) => {
+  const isMain = functionName.toLowerCase().startsWith('main');
   const groupRef = useRef<Konva.Group>(null);
-  const glowRef = useRef<Konva.Rect>(null);
+  const shimmerRef = useRef<Konva.Rect>(null);
+  const mainBoardRef = useRef<Konva.Rect>(null);
   const connectorRef = useRef<Konva.Circle>(null);
   const [isHovered, setIsHovered] = useState(false);
   const isInitialMount = useRef(true);
   const tweenRef = useRef<Konva.Tween | null>(null);
 
+  // Real stats from store
+  const totalExecutionSteps = useExecutionStore(state => state.executionTrace?.steps.length || 0);
+
   // Use prop height/width directly (calculated by LayoutEngine)
-  const baseWidth = width || BOX_WIDTH;
+  const baseWidth = isMain ? BOX_WIDTH : (width || 400);
+  const headerHeight = isMain ? HEADER_HEIGHT : 55;
   const baseHeight = height || 150;
+  
   const [autoSize, setAutoSize] = useState({ width: baseWidth, height: baseHeight });
   const totalWidth = Math.max(baseWidth, autoSize.width);
   const totalHeight = Math.max(baseHeight, autoSize.height);
@@ -130,14 +135,111 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       ? COLORS.recursive 
       : COLORS.normal;
 
-  const borderColor = isActive ? COLORS.active.primary : colorScheme.primary;
+  const borderColor = isMain 
+    ? (isActive ? '#7C3AED' : MAIN_THEME.border.dark)
+    : (isActive ? COLORS.active.primary : colorScheme.primary);
+
+  const glowColor = isMain ? MAIN_THEME.glow.a : (isActive ? COLORS.active.glow : colorScheme.glow);
+
+  useEffect(() => {
+    if (!isMain) return;
+    
+    const board = mainBoardRef.current;
+    if (!board) return;
+
+    const anim = new Konva.Animation((frame) => {
+      if (!frame) return;
+      const layer = board.getLayer();
+      if (!layer) return;
+
+      const period = 2400; // Faster "active" breathing
+      const val = 0.5 + 0.5 * Math.sin((frame.time * 2 * Math.PI) / period);
+      
+      // Reduced intensity (50% reduction in variance and base)
+      board.strokeWidth(1.2 + val * 1.8);
+      board.shadowBlur(15 + val * 28);
+      board.shadowOpacity(0.15 + val * 0.3);
+      
+      // Softer color breathing
+      board.stroke(val > 0.5 ? "rgba(139, 92, 246, 0.55)" : "rgba(124, 58, 237, 0.35)");
+      
+      layer.batchDraw();
+    });
+    
+    anim.start();
+    return () => { 
+      anim.stop(); 
+    };
+  }, [isMain]);
+
+  // ============================================
+  // SHIMMER ANIMATION (Main only)
+  // ============================================
+  useEffect(() => {
+    if (!isMain || !shimmerRef.current) return;
+    const anim = new Konva.Animation((frame) => {
+      if (!frame || !shimmerRef.current) return;
+      const speed = 180; // px per second
+      const offset = (frame.time / 1000 * speed) % (totalWidth * 2.5);
+      shimmerRef.current.x(-totalWidth + offset);
+    }, shimmerRef.current.getLayer());
+    anim.start();
+    return () => {
+      anim.stop();
+    };
+  }, [isMain, totalWidth]);
+
+  // ============================================
+  // SUB-CARD RENDERING (Main specialized)
+  // ============================================
+  const renderSubCard = (kind: 'OUTPUT' | 'VARIABLES' | 'RETURNS', title: string, step: number, icon: string) => {
+    const clr = kind === 'OUTPUT' ? MAIN_THEME.types.string : 
+                kind === 'VARIABLES' ? MAIN_THEME.types.int : 
+                MAIN_THEME.types.ptr;
+    
+    return (
+      <Group x={12} y={10}>
+        <Rect 
+          width={totalWidth - 24} 
+          height={75} 
+          cornerRadius={9} 
+          fill={MAIN_THEME.body.dark} 
+          stroke={clr.bd} 
+          strokeWidth={1}
+          shadowColor={clr.clr}
+          shadowBlur={isActive && step === stepNumber ? 12 : 0}
+        />
+        
+        {/* Sub Header */}
+        <Group>
+          <Rect width={totalWidth - 24} height={26} fill={clr.bg} cornerRadius={[9, 9, 0, 0]} />
+          <Circle x={14} y={13} radius={3.5} fill={clr.clr} />
+          <Text text={title} x={28} y={8} fontSize={10} fontStyle="bold" fill={clr.clr} fontFamily="'SF Pro Display', system-ui" letterSpacing={0.5} />
+          <Text text={`#${step}`} x={totalWidth - 55} y={8} fontSize={9} fill="rgba(255,255,255,0.4)" fontFamily="'JetBrains Mono', monospace" />
+        </Group>
+
+        {/* Sub Body */}
+        <Group y={30} x={12}>
+           <Text text={kind === 'OUTPUT' ? 'print' : kind === 'VARIABLES' ? 'declarations' : 'return value'} fontSize={9} fontStyle="bold" fill="rgba(255,255,255,0.3)" />
+           <Text 
+              text={kind === 'OUTPUT' ? '"Hello, World!"' : kind === 'VARIABLES' ? `${localVarCount} vars` : returnType} 
+              y={14} 
+              fontSize={13} 
+              fontStyle="bold" 
+              fill={clr.clr} 
+              fontFamily="'JetBrains Mono', monospace" 
+           />
+        </Group>
+      </Group>
+    );
+  };
 
   // ============================================
   // ENTRANCE ANIMATION
   // ============================================
   useEffect(() => {
     const group = groupRef.current;
-    const glow = glowRef.current;
+    const board = mainBoardRef.current;
 
     if (!group) return;
     if (tweenRef.current) {
@@ -147,7 +249,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
 
     if (isNew && isInitialMount.current) {
       group.opacity(0);
-      group.scaleX(0.01); // Start small but not zero
+      group.scaleX(0.01); 
       group.scaleY(0.01);
       const origY = group.y();
       group.y(origY + 35);
@@ -163,7 +265,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
           duration: 0.55,
           easing: Konva.Easings.BackEaseOut,
           onFinish: () => {
-            if (glow) glow.to({ opacity: 0.65, duration: 0.3 });
+            if (board) board.to({ opacity: isMain ? 1 : 0.98, duration: 0.3 });
             resizeContainer(group, { padding: 16, minWidth: baseWidth, minHeight: baseHeight });
             group.getLayer()?.batchDraw();
           }
@@ -188,7 +290,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       group.opacity(1);
       group.scaleX(1);
       group.scaleY(1);
-      if (glow) glow.opacity(0.65);
+      if (board) board.opacity(isMain ? 1 : 0.98);
       isInitialMount.current = false;
     }
 
@@ -215,7 +317,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       skipShadow: true,
     });
     const padding = 16;
-    const bottomReserve = 40; // keep space for step/return indicators
+    const bottomReserve = isMain ? 50 : 40; 
 
     const desiredWidth = Math.ceil(Math.max(0, bounds.x + bounds.width) + padding);
     const desiredHeight = Math.ceil(
@@ -225,61 +327,44 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
     setAutoSize((prev) => {
       const nextWidth = Math.max(baseWidth, desiredWidth);
       const nextHeight = Math.max(baseHeight, desiredHeight);
-      if (prev.width === nextWidth && prev.height === nextHeight) {
+      
+      // STABILIZATION: Only update if change is > 1.5px to prevent sub-pixel jitter
+      const diffW = Math.abs(prev.width - nextWidth);
+      const diffH = Math.abs(prev.height - nextHeight);
+      
+      if (diffW < 1.5 && diffH < 1.5) {
         return prev;
       }
       return { width: nextWidth, height: nextHeight };
     });
-  }, [baseWidth, baseHeight]);
+  }, [baseWidth, baseHeight, isMain]);
 
   useEffect(() => {
-    setAutoSize((prev) => {
-      if (prev.width === baseWidth && prev.height === baseHeight) {
-        return prev;
-      }
-      return { width: baseWidth, height: baseHeight };
-    });
-
+    // Initial size reset if props change fundamentally
+    setAutoSize({ width: baseWidth, height: baseHeight });
+    
     const raf = requestAnimationFrame(measureContent);
     return () => cancelAnimationFrame(raf);
-  }, [baseWidth, baseHeight, measureContent, children, parameters.length, localVarCount, isReturning, isRecursive, depth, calledFrom]);
+  }, [baseWidth, baseHeight, measureContent, parameters.length, localVarCount, isReturning]);
 
   // ============================================
   // ACTIVE STATE ANIMATION
   // ============================================
   useEffect(() => {
-    if (isActive && glowRef.current) {
-      glowRef.current.to({
-        shadowBlur: 32,
-        opacity: 0.9,
+    if (isActive && mainBoardRef.current) {
+      mainBoardRef.current.to({
+        shadowBlur: isMain ? 40 : 32,
+        opacity: 0.95,
         duration: 0.25
       });
-    } else if (glowRef.current) {
-      glowRef.current.to({
+    } else if (mainBoardRef.current) {
+      mainBoardRef.current.to({
         shadowBlur: 18,
-        opacity: 0.65,
+        opacity: isMain ? 1 : 0.65,
         duration: 0.25
       });
     }
-  }, [isActive]);
-
-  // ============================================
-  // CONNECTOR PULSE
-  // ============================================
-  useEffect(() => {
-    if (isActive && connectorRef.current) {
-      const pulse = new Konva.Tween({
-        node: connectorRef.current,
-        scaleX: 1.25,
-        scaleY: 1.25,
-        duration: 0.4,
-        yoyo: true,
-        repeat: -1
-      });
-      pulse.play();
-      return () => pulse.destroy();
-    }
-  }, [isActive]);
+  }, [isActive, isMain]);
 
   return (
     <Group
@@ -291,211 +376,227 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Glow Effect */}
-      <Rect
-        ref={glowRef}
-        name="glow-bg"
-        x={-5}
-        y={-5}
-        width={totalWidth + 10}
-        height={totalHeight + 10}
-        fill="transparent"
-        cornerRadius={CORNER_RADIUS + 3}
-        shadowColor={isActive ? COLORS.active.glow : colorScheme.glow}
-        shadowBlur={18}
-        shadowOpacity={0.65}
-        opacity={0}
-      />
-
+      {/* Extra glow removed for consolidation */}
       {/* Main Background */}
       <Rect
+        ref={mainBoardRef}
         name="main-bg"
         width={totalWidth}
         height={totalHeight}
-        fill="rgba(15, 23, 42, 0.96)"
+        fill={isMain ? "rgba(18, 16, 40, 0.05)" : "rgba(15, 23, 42, 0.98)"}
         stroke={borderColor}
-        strokeWidth={isActive ? 3 : 2}
+        strokeWidth={isMain ? 1.2 : (isActive ? 2.5 : 1.2)}
         cornerRadius={CORNER_RADIUS}
-        shadowColor="rgba(0, 0, 0, 0.35)"
-        shadowBlur={14}
-        shadowOffsetY={3}
+        shadowColor={isMain ? "#7C3AED" : "rgba(0, 0, 0, 0.45)"}
+        shadowBlur={isMain ? 15 : 20}
+        shadowOpacity={isMain ? 0.2 : 0.1}
+        shadowOffsetY={isMain ? 8 : 6}
+        perfectDrawEnabled={false}
+        listening={!isMain}
       />
 
       <Group name="content-bounds">
-      {/* Header Background */}
-      <Rect
-        width={totalWidth}
-        height={HEADER_HEIGHT}
-        fill={colorScheme.bg}
-        cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
-      />
-
-      {/* Accent Line */}
-      <Line
-        points={[0, 0, 0, HEADER_HEIGHT]}
-        stroke={colorScheme.primary}
-        strokeWidth={5}
-        lineCap="round"
-      />
-
-      {/* Function Name */}
-      <Text
-        text={functionName}
-        x={PADDING}
-        y={10}
-        fontSize={18}
-        fontStyle="bold"
-        fill="#F1F5F9"
-        fontFamily="'SF Pro Display', system-ui"
-      />
-
-      {/* Return Type Badge */}
-      <Group x={PADDING} y={32}>
-        <Rect
-          width={returnType.length * 7.5 + 14}
-          height={16}
-          fill={colorScheme.primary}
-          cornerRadius={8}
-          opacity={0.4}
-        />
-        <Text
-          text={returnType}
-          x={7}
-          y={2.5}
-          fontSize={10}
-          fontStyle="bold"
-          fill={colorScheme.light}
-          fontFamily="'SF Mono', monospace"
-        />
-      </Group>
-
-      {/* Recursive Badge */}
-      {isRecursive && (
-        <Group x={totalWidth - 95} y={8}>
+        {/* ── HEADER ── */}
+        <Group>
+          {/* Header Grad Background */}
           <Rect
-            width={85}
-            height={20}
-            fill={COLORS.recursive.primary}
-            cornerRadius={10}
-            opacity={0.25}
+            width={totalWidth}
+            height={headerHeight}
+            fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+            fillLinearGradientEndPoint={{ x: totalWidth, y: 0 }}
+            fillLinearGradientColorStops={isMain ? [
+              0, MAIN_THEME.header.gradStart,
+              0.52, MAIN_THEME.header.gradMid,
+              1, MAIN_THEME.header.gradEnd
+            ] : [
+              0, colorScheme.primary,
+              1, colorScheme.primary
+            ]}
+            cornerRadius={[CORNER_RADIUS, CORNER_RADIUS, 0, 0]}
+            opacity={isMain ? 1 : 0.8}
           />
-          <Text
-            text="🔄 RECURSIVE"
-            width={85}
-            y={4}
-            fontSize={9}
-            fontStyle="bold"
-            fill={COLORS.recursive.light}
-            align="center"
-            fontFamily="'SF Pro Display', system-ui"
-          />
+
+          {/* Grid Texture Overlay (Main only) */}
+          {isMain && (
+            <Group>
+              {Array.from({ length: 15 }).map((_, i) => (
+                <Line key={`grid-h-${i}`} points={[0, i * 4, totalWidth, i * 4]} stroke="rgba(255,255,255,0.03)" strokeWidth={1} />
+              ))}
+              {Array.from({ length: 40 }).map((_, i) => (
+                <Line key={`grid-v-${i}`} points={[i * 10, 0, i * 10, headerHeight]} stroke="rgba(255,255,255,0.03)" strokeWidth={1} />
+              ))}
+            </Group>
+          )}
+
+          {/* Shimmer Sweep Overlay (Main only) */}
+          {isMain && (
+            <Group clipFunc={(ctx) => ctx.rect(0, 0, totalWidth, headerHeight)}>
+              <Rect
+                ref={shimmerRef}
+                width={totalWidth}
+                height={headerHeight}
+                fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+                fillLinearGradientEndPoint={{ x: totalWidth, y: 0 }}
+                fillLinearGradientColorStops={[
+                  0, 'transparent',
+                  0.5, MAIN_THEME.header.shimmerColor,
+                  1, 'transparent'
+                ]}
+              />
+            </Group>
+          )}
+
+          {/* Header Content */}
+          <Group x={16} y={16}>
+            {/* Icon (Main only) */}
+            {isMain && (
+               <Group>
+                  <Rect width={34} height={34} cornerRadius={9} fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.22)" strokeWidth={1} />
+                  <Line points={[12, 10, 22, 17, 12, 24]} stroke="white" strokeWidth={2.5} lineCap="round" lineJoin="round" />
+                  <Circle x={26} y={17} radius={2.2} fill="rgba(255,255,255,0.6)" />
+               </Group>
+            )}
+
+            <Group x={isMain ? 46 : 0}>
+              <Text
+                text={isMain ? "main()" : functionName}
+                fontSize={isMain ? 19 : 18}
+                fontStyle="bold"
+                fill="#FFFFFF"
+                fontFamily="'JetBrains Mono', monospace"
+              />
+              <Text
+                text={isMain ? `int main(int argc, char* argv[])` : returnType}
+                y={isMain ? 22 : 22}
+                fontSize={10}
+                fill="rgba(255,255,255,0.5)"
+                fontFamily="'JetBrains Mono', monospace"
+              />
+            </Group>
+
+            {/* Badges */}
+            <Group x={totalWidth - (isMain ? 110 : 90)} y={0}>
+              {isActive && (
+                <Group>
+                  <Rect width={80} height={19} cornerRadius={4} fill={MAIN_THEME.badges.running.bg} stroke={MAIN_THEME.badges.running.border} strokeWidth={1} />
+                  <Text text="● RUNNING" x={8} y={5} fontSize={9} fontStyle="bold" fill={MAIN_THEME.badges.running.text} fontFamily="'JetBrains Mono', monospace" />
+                </Group>
+              )}
+              {!isActive && isMain && (
+                 <Group>
+                  <Rect width={80} height={19} cornerRadius={4} fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
+                  <Text text="STOPPED" x={15} y={5} fontSize={9} fontStyle="bold" fill="rgba(255,255,255,0.4)" fontFamily="'JetBrains Mono', monospace" />
+                </Group>
+              )}
+              {!isMain && isRecursive && (
+                 <Group>
+                   <Rect width={80} height={19} cornerRadius={4} fill={COLORS.recursive.bg} stroke={COLORS.recursive.primary} strokeWidth={1} />
+                   <Text text="🔄 RECURSIVE" x={8} y={5} fontSize={8} fontStyle="bold" fill={COLORS.recursive.light} fontFamily="'SF Pro Display', sans-serif" />
+                 </Group>
+              )}
+            </Group>
+          </Group>
+
+          {/* Metadata Pills (Main only) */}
+          {isMain && (
+            <Group x={16} y={72}>
+               <Line points={[0, 0, totalWidth-32, 0]} stroke="rgba(255,255,255,0.1)" strokeWidth={1} />
+               <Group y={10}>
+                  {/* File Pill (Grow) */}
+                  <Group>
+                    <Rect width={totalWidth - 32 - 135} height={20} cornerRadius={5} fill={MAIN_THEME.meta.pillBg} />
+                    <Group x={10} y={5}>
+                        <Rect width={11} height={11} stroke="rgba(255,255,255,0.6)" strokeWidth={1.2} cornerRadius={1.5} />
+                        <Line points={[3, 4, 8, 4]} stroke="rgba(255,255,255,0.6)" strokeWidth={1.2} />
+                        <Line points={[3, 7, 6, 7]} stroke="rgba(255,255,255,0.6)" strokeWidth={1.2} />
+                    </Group>
+                    <Text text={`src / `} x={30} y={5} fontSize={10} fill={MAIN_THEME.meta.text} fontFamily="'JetBrains Mono', monospace" />
+                    <Text text={`main.cpp`} x={65} y={5} fontSize={10} fontStyle="bold" fill={MAIN_THEME.meta.accent} fontFamily="'JetBrains Mono', monospace" />
+                  </Group>
+                  
+                  {/* Lines Pill */}
+                  <Group x={totalWidth - 32 - 130}>
+                    <Rect width={50} height={20} cornerRadius={5} fill={MAIN_THEME.meta.pillBg} />
+                    <Text text={`L:`} x={8} y={5} fontSize={10} fill={MAIN_THEME.meta.text} fontFamily="'JetBrains Mono', monospace" />
+                    <Text text={`3–9`} x={22} y={5} fontSize={10} fontStyle="bold" fill={MAIN_THEME.meta.accent} fontFamily="'JetBrains Mono', monospace" />
+                  </Group>
+                  
+                  {/* Step Pill */}
+                  <Group x={totalWidth - 32 - 75}>
+                    <Rect width={75} height={20} cornerRadius={5} fill={MAIN_THEME.meta.pillBg} />
+                    <Text text={`step`} x={8} y={5} fontSize={10} fill={MAIN_THEME.meta.text} fontFamily="'JetBrains Mono', monospace" />
+                    <Text text={`${stepNumber || 0} / ${totalExecutionSteps - 1}`} x={38} y={5} fontSize={10} fontStyle="bold" fill={MAIN_THEME.meta.accent} fontFamily="'JetBrains Mono', monospace" />
+                  </Group>
+               </Group>
+            </Group>
+          )}
+
+          {!isMain && (
+             <Line points={[0, headerHeight, totalWidth, headerHeight]} stroke="rgba(51, 65, 85, 0.5)" strokeWidth={1} />
+          )}
         </Group>
-      )}
 
-      {/* Depth Indicator */}
-      {depth > 0 && (
-        <Text
-          text={`depth: ${depth}`}
-          x={totalWidth - 95}
-          y={32}
-          fontSize={8}
-          fill="#94A3B8"
-          fontFamily="'SF Mono', monospace"
-          fontStyle="italic"
-        />
-      )}
+        {/* ── BODY ── */}
+        <Group y={headerHeight}>
+           <Group x={12} y={20}>
+              {children}
+              
+              {/* If no children, show specialized hints/placeholders (Optional) */}
+              {isMain && !children && (
+                 <Group>
+                    {renderSubCard('OUTPUT', 'Entry', 0, '🏠')}
+                 </Group>
+              )}
+           </Group>
+        </Group>
 
-      {/* Called From */}
-      {calledFrom && (
-        <Text
-          text={`← ${calledFrom}`}
-          x={PADDING + returnType.length * 7.5 + 30}
-          y={35}
-          fontSize={8}
-          fill="#64748B"
-          fontFamily="'SF Mono', monospace"
-          fontStyle="italic"
-        />
-      )}
+        {/* ── FOOTER (Main only) ── */}
+        {isMain && (
+          <Group y={totalHeight - 38}>
+            <Line points={[0, 0, totalWidth, 0]} stroke={MAIN_THEME.border.dark} strokeWidth={1} opacity={0.4} />
+            <Rect width={totalWidth} height={38} fill={MAIN_THEME.footer.bg} cornerRadius={[0, 0, CORNER_RADIUS, CORNER_RADIUS]} />
+            
+            {/* Steps column */}
+            <Group x={16} y={15}>
+               <Text text="steps" x={0} y={-5} fontSize={9} fill={MAIN_THEME.meta.text} fontFamily="'JetBrains Mono', monospace" />
+               <Text text={(totalExecutionSteps - 1).toString()} x={0} y={8} fontSize={12} fontStyle="bold" fill={MAIN_THEME.meta.accent} fontFamily="'JetBrains Mono', monospace" />
+            </Group>
+            
+            <Line points={[totalWidth*0.28, 12, totalWidth*0.28, 26]} stroke={MAIN_THEME.footer.sep} strokeWidth={1} opacity={0.4} />
 
-      {/* Divider */}
-      <Line
-        points={[0, HEADER_HEIGHT, totalWidth, HEADER_HEIGHT]}
-        stroke="#334155"
-        strokeWidth={1}
-      />
+            {/* Vars column */}
+            <Group x={totalWidth * 0.35} y={15}>
+               <Text text="vars" x={0} y={-5} fontSize={9} fill={MAIN_THEME.meta.text} fontFamily="'JetBrains Mono', monospace" />
+               <Text text={localVarCount.toString()} x={0} y={8} fontSize={12} fontStyle="bold" fill={MAIN_THEME.meta.accent} fontFamily="'JetBrains Mono', monospace" />
+            </Group>
 
-      {/* Body Section */}
-      <Group y={HEADER_HEIGHT}>
-        {/* Parameters */}
-        {parameters.length > 0 && (
-          <Group y={PADDING}>
-            <Text
-              text="PARAMS:"
-              x={PADDING}
-              fontSize={9}
-              fontStyle="bold"
-              fill="#64748B"
-              fontFamily="'SF Pro Display', system-ui"
-              letterSpacing={1}
-            />
-            {parameters.map((param, idx) => (
-              <Group key={idx} y={20 + idx * 28}>
-                <Rect
-                  x={PADDING}
-                  width={totalWidth - PADDING * 2}
-                  height={24}
-                  fill="rgba(51, 65, 85, 0.5)"
-                  stroke="#475569"
-                  strokeWidth={1}
-                  cornerRadius={5}
-                />
-                <Text
-                  text={param.type}
-                  x={PADDING + 8}
-                  y={5}
-                  fontSize={9}
-                  fontStyle="bold"
-                  fill="#60A5FA"
-                  fontFamily="'SF Mono', monospace"
-                />
-                <Text
-                  text={param.name}
-                  x={PADDING + 60}
-                  y={5}
-                  fontSize={11}
-                  fontStyle="bold"
-                  fill="#F1F5F9"
-                  fontFamily="'SF Mono', monospace"
-                />
-                {param.value !== undefined && (
-                  <Text
-                    text={`= ${param.value}`}
-                    x={totalWidth - PADDING - 70}
-                    y={5}
-                    fontSize={10}
-                    fill="#10B981"
-                    fontFamily="'SF Mono', monospace"
-                  />
-                )}
-              </Group>
-            ))}
+            <Line points={[totalWidth*0.6, 12, totalWidth*0.6, 26]} stroke={MAIN_THEME.footer.sep} strokeWidth={1} opacity={0.4} />
+
+            {/* Ret column */}
+            <Group x={totalWidth * 0.65} y={15}>
+               <Text text="ret" x={0} y={-5} fontSize={9} fill={MAIN_THEME.meta.text} fontFamily="'JetBrains Mono', monospace" />
+               <Group y={8}>
+                  <Text text="int" x={0} y={0} fontSize={12} fontStyle="bold" fill="#FBC02D" fontFamily="'JetBrains Mono', monospace" />
+                  <Text text=": 0" x={24} y={0} fontSize={12} fontStyle="bold" fill={MAIN_THEME.meta.accent} fontFamily="'JetBrains Mono', monospace" />
+               </Group>
+            </Group>
+
+            <Group x={totalWidth - 65} y={9}>
+               <Rect width={50} height={20} cornerRadius={5} fill={MAIN_THEME.footer.okBg} stroke="rgba(34,197,94,0.25)" strokeWidth={1} />
+               <Circle x={10} y={10} radius={2.5} fill="#22C55E" />
+               <Text text="OK" x={20} y={5} fontSize={10} fontStyle="bold" fill="#22C55E" />
+            </Group>
           </Group>
         )}
-
-        {/* Children */}
-        {children}
       </Group>
 
-      </Group>
-      {/* Call Connector */}
+      {/* ── CONNECTOR ── */}
       <Group
         x={totalWidth}
         y={totalHeight / 2}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        onClick={() => onConnectorClick?.({ x: totalWidth, y: totalHeight / 2 })}
-        onTap={() => onConnectorClick?.({ x: totalWidth, y: totalHeight / 2 })}
+        onClick={() => onConnectorClick?.(id)}
       >
         <Circle
           radius={CONNECTOR_RADIUS + 3}
@@ -507,8 +608,8 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
         <Circle
           radius={CONNECTOR_RADIUS}
           stroke={isActive ? COLORS.active.primary : colorScheme.primary}
-          strokeWidth={isHovered ? 2.5 : 2}
-          fill="rgba(30, 41, 59, 0.9)"
+          strokeWidth={isHovered ? 2.5 : 1.5}
+          fill={MAIN_THEME.body.dark}
         />
         <Circle
           ref={connectorRef}
@@ -516,51 +617,19 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
           fill={isActive ? COLORS.active.primary : colorScheme.light}
           opacity={isActive ? 1 : 0.7}
         />
-        <Text
-          text="→"
-          x={-5}
-          y={-7}
-          fontSize={12}
-          fill="#F1F5F9"
-          fontStyle="bold"
-        />
       </Group>
 
-      {/* Step Number */}
-      {stepNumber !== undefined && (
+      {/* Step Number Badge (Regular only) */}
+      {!isMain && stepNumber !== undefined && (
         <Text
           text={`#${stepNumber}`}
-          x={totalWidth - 45}
-          y={totalHeight - 18}
+          x={totalWidth - 35}
+          y={totalHeight - 15}
           fontSize={9}
           fontStyle="bold"
           fill="#475569"
           fontFamily="'SF Mono', monospace"
         />
-      )}
-
-      {/* Returning Indicator */}
-      {isReturning && (
-        <Group x={PADDING} y={totalHeight - 25}>
-          <Rect
-            width={80}
-            height={18}
-            fill="rgba(239, 68, 68, 0.2)"
-            stroke="#EF4444"
-            strokeWidth={1}
-            cornerRadius={9}
-          />
-          <Text
-            text="↩ RETURNING"
-            width={80}
-            y={3}
-            fontSize={8}
-            fontStyle="bold"
-            fill="#FCA5A5"
-            align="center"
-            fontFamily="'SF Pro Display', system-ui"
-          />
-        </Group>
       )}
     </Group>
   );

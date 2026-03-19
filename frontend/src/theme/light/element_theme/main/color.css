@@ -1,5 +1,18 @@
-.light {
-  --fn-bg: #F5F0FF;
-  --fn-bd: #7C3AED;
-  --fn-tx: #4C1D95;
+:root {
+  --main-hdr-grad: linear-gradient(148deg, #5B21B6 0%, #7C3AED 52%, #6D28D9 100%);
+  --main-body-bg: #F6F3FF;
+  --main-border: rgba(124,58,237,0.35);
+  --main-glow-a: rgba(124,58,237,0.16);
+  --main-glow-b: rgba(124,58,237,0.05);
+
+  /* Sub-cards */
+  --out-hdr: #15803D; --out-body: #F0FDF4; --out-border: rgba(22,163,74,0.3); --out-accent: #16A34A; --out-text: #14532D;
+  --var-hdr: #1D4ED8; --var-body: #EFF6FF; --var-border: rgba(37,99,235,0.3); --var-accent: #2563EB;
+  --ret-hdr: #B91C1C; --ret-body: #FFF5F5; --ret-border: rgba(185,28,28,0.3); --ret-accent: #DC2626; --ret-text: #7F1D1D;
+
+  /* Type Colors */
+  --type-int-clr: #D97706; --type-int-bg: rgba(217,119,6,0.08);
+  --type-str-clr: #16A34A; --type-str-bg: rgba(22,163,74,0.08);
+  --type-flt-clr: #0284C7; --type-flt-bg: rgba(2,132,199,0.08);
+  --type-bool-clr: #7C3AED; --type-bool-bg: rgba(124,58,237,0.08);
 }

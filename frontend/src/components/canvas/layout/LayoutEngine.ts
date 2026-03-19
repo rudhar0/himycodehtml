@@ -2480,8 +2480,11 @@ if (Layer3Result) {
         width: MAIN_FUNCTION_WIDTH,
         height: 80,
         children: [],
-        stepId: 0,
-        data: { frameId: "main-0" },
+        stepId: currentStep, // Use currentStep instead of fixed 0
+        data: { 
+          frameId: "main-0",
+          isActive: true // Main is always active during execution
+        },
       },
       globalPanel: {
         id: "global-panel",
