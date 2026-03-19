@@ -39,20 +39,20 @@ export default function PlaybackControls() {
       <button
         onClick={reset}
         disabled={!hasTrace || isAtStart}
-        className="rounded p-2 hover:bg-[#c8d0d8] dark:hover:bg-[#1a2540] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="rounded p-2 hover:bg-bg3 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         title="Reset to Start"
       >
-        <SkipBack className="h-5 w-5 text-[#5a6a7a] dark:text-slate-300" />
+        <SkipBack className="h-5 w-5 text-t3" />
       </button>
 
       {/* Step Backward */}
       <button
         onClick={stepBackward}
         disabled={!hasTrace || !canStepBackward()}
-        className="rounded p-2 hover:bg-[#c8d0d8] dark:hover:bg-[#1a2540] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="rounded p-2 hover:bg-bg3 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         title="Step Backward"
       >
-        <ChevronLeft className="h-5 w-5 text-[#5a6a7a] dark:text-slate-300" />
+        <ChevronLeft className="h-5 w-5 text-t3" />
       </button>
 
       {/* Play/Pause */}
@@ -78,35 +78,35 @@ export default function PlaybackControls() {
       <button
         onClick={stepForward}
         disabled={!hasTrace || !canStepForward()}
-        className="rounded p-2 hover:bg-[#c8d0d8] dark:hover:bg-[#1a2540] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="rounded p-2 hover:bg-bg3 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         title="Step Forward"
       >
-        <ChevronRight className="h-5 w-5 text-[#5a6a7a] dark:text-slate-300" />
+        <ChevronRight className="h-5 w-5 text-t3" />
       </button>
 
       {/* Skip to End */}
       <button
         onClick={() => useExecutionStore.getState().jumpToStep(totalSteps - 1)}
         disabled={!hasTrace || isAtEnd}
-        className="rounded p-2 hover:bg-[#c8d0d8] dark:hover:bg-[#1a2540] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        className="rounded p-2 hover:bg-bg3 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         title="Skip to End"
       >
-        <SkipForward className="h-5 w-5 text-[#5a6a7a] dark:text-slate-300" />
+        <SkipForward className="h-5 w-5 text-t3" />
       </button>
 
       {/* Step Counter */}
       {hasTrace && (
-        <div className="ml-4 flex items-center gap-2 rounded-lg bg-[#c8d0d8] dark:bg-[#1a2540] px-3 py-1.5">
-          <span className="text-sm font-medium text-[#1a2332] dark:text-slate-300">
+        <div className="ml-4 flex items-center gap-2 rounded-lg bg-bg3 px-3 py-1.5">
+          <span className="text-sm font-medium text-t2">
             Step
           </span>
-          <span 
+          <span
             className="text-lg font-bold"
             style={{ color: COLORS.brand.primary }}
           >
             {currentStep}
           </span>
-          <span className="text-sm text-[#5a6a7a] dark:text-slate-500">
+          <span className="text-sm text-t3">
             / {Math.max(totalSteps - 1, 0)}
           </span>
         </div>

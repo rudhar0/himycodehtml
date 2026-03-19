@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeViz | Deep System Visualizer</title>
+    <style>
+        :root {
+            --bg-deep: #05060a;
+            --bg-card: rgba(15, 17, 26, 0.9);
+            --neon-cyan: #00f2ff;
+            --neon-purple: #9d00ff;
+            --neon-pink: #ff007a;
+            --text-dim: #8a8d9b;
+            --text-bright: #e0e6ed;
+            --border: rgba(255, 255, 255, 0.08);
+            --glow-cyan: 0 0 20px rgba(0, 242, 255, 0.3);
+            --glow-purple: 0 0 20px rgba(157, 0, 255, 0.3);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-deep);
+            background-image: radial-gradient(circle at 50% 50%, #10121d 0%, #05060a 100%);
+            color: var(--text-bright);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- Header --- */
+        header {
+            height: 60px;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.5);
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(15px);
+            z-index: 1000;
+        }
+
+        .logo-group {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .logo {
+            font-size: 1.4rem;
+            font-weight: 900;
+            letter-spacing: 1px;
+            color: #fff;
+            text-shadow: 0 0 10px var(--neon-cyan);
+        }
+
+        .logo span { color: var(--neon-cyan); }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            color: var(--text-bright);
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: 0.2s all ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover { 
+            background: rgba(0, 242, 255, 0.1); 
+            border-color: var(--neon-cyan);
+            box-shadow: var(--glow-cyan);
+        }
+
+        button.active-btn {
+            background: var(--neon-cyan);
+            color: #000;
+            border: none;
+        }
+
+        /* --- Main Layout --- */
+        main {
+            flex: 1;
+            display: flex;
+            padding: 1.5rem;
+            gap: 1.5rem;
+            position: relative;
+        }
+
+        .architecture-view {
+            flex: 2;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+        }
+
+        .layer-column {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .layer-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 8px;
+        }
+
+        .file-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.3s cubic-bezier(0.2, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .file-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--neon-cyan);
+            background: rgba(0, 242, 255, 0.02);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .file-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 3px; height: 100%;
+            background: var(--neon-purple);
+            opacity: 0.5;
+        }
+
+        .file-card.processing::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0; width: 0%; height: 2px;
+            background: var(--neon-cyan);
+            animation: progress 2s infinite;
+        }
+
+        @keyframes progress { from { width: 0; } to { width: 100%; } }
+
+        .file-card h4 {
+            margin: 0 0 6px 0;
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            color: var(--neon-cyan);
+        }
+
+        .file-card p {
+            margin: 0;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
+
+        /* --- Viz Panels --- */
+        .visual-analysis {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            max-width: 450px;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px 16px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-dim);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-content {
+            flex: 1;
+            padding: 20px;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        /* --- Specific Viz Elements --- */
+        .stack-container {
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 8px;
+            align-items: stretch;
+        }
+
+        .stack-frame {
+            background: rgba(157, 0, 255, 0.1);
+            border: 1px solid var(--neon-purple);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            animation: slideIn 0.3s ease-out;
+            position: relative;
+        }
+
+        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .scope-badge {
+            position: absolute;
+            top: -6px; right: 10px;
+            background: var(--neon-purple);
+            color: #fff;
+            font-size: 0.6rem;
+            padding: 1px 6px;
+            border-radius: 10px;
+        }
+
+        .variable-list {
+            margin-top: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .var-row {
+            display: flex;
+            justify-content: space-between;
+            color: var(--neon-cyan);
+            font-family: monospace;
+        }
+
+        /* --- Memory Viz --- */
+        .memory-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+        }
+
+        .mem-cell {
+            aspect-ratio: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 2px;
+            position: relative;
+        }
+
+        .mem-cell.active { background: rgba(0, 242, 255, 0.3); border-color: var(--neon-cyan); }
+        .mem-cell.pointed { box-shadow: 0 0 10px var(--neon-cyan); }
+
+        /* --- SVG Overlay for Pointers --- */
+        #pointer-canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            stroke: var(--neon-cyan);
+            stroke-width: 2;
+            fill: none;
+        }
+
+        /* --- Edge Case Overlay --- */
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 6, 10, 0.9);
+            z-index: 2000;
+            display: none;
+            padding: 4rem;
+            box-sizing: border-box;
+        }
+
+        .overlay-content {
+            background: var(--bg-card);
+            border: 1px solid var(--neon-purple);
+            box-shadow: var(--glow-purple);
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+        }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo-group">
+        <div class="logo">CODE<span>VIZ</span></div>
+        <div style="font-size: 0.6rem; color: var(--text-dim); background: #1a1b25; padding: 2px 6px; border-radius: 30px;">SYSTEM.MAP v2.0</div>
+    </div>
+    <div class="controls">
+        <div style="font-size: 0.7rem; color: var(--text-dim);">SIMULATION_SPEED</div>
+        <input type="range" id="speed-slider" min="1" max="100" value="60" style="width: 80px;">
+        <button id="btn-full-run" class="active-btn">RUN SIMULATION</button>
+        <button id="btn-edge-cases">VIEW EDGE CASES</button>
+    </div>
+</header>
+
+<main>
+    <div class="architecture-view">
+        <!-- Layer 1 -->
+        <div class="layer-column">
+            <div class="layer-title">Layer 1: Frontend</div>
+            <div class="file-card" data-step="rendering">
+                <h4>TraceProcessor.ts</h4>
+                <p>Receives raw JSON. Reconstructs temporal sequence and resolves pointer addresses.</p>
+            </div>
+            <div class="file-card">
+                <h4>ExecutionCanvas.tsx</h4>
+                <p>Declarative rendering engine for variables, stacks, and complex aliasing graphs.</p>
+            </div>
+        </div>
+
+        <!-- Layer 2 -->
+        <div class="layer-column">
+            <div class="layer-title">Layer 2: Controller</div>
+            <div class="file-card" data-step="orchestration">
+                <h4>ToolchainService.js</h4>
+                <p>Locates LLVM-MinGW. Manages include paths for <code>trace.h</code> and manages compilation flags.</p>
+            </div>
+            <div class="file-card">
+                <h4>backendSpawner.ts</h4>
+                <p>Spawns the instrumented binary. Captures stdout and pipes real-time trace tokens to the frontend.</p>
+            </div>
+        </div>
+
+        <!-- Layer 3 -->
+        <div class="layer-column">
+            <div class="layer-title">Layer 3: Core Engine</div>
+            <div class="file-card" data-step="instrumentation">
+                <h4>CodeInstrumenter.js</h4>
+                <p>The regex brain. Injects <code>__trace_assign</code> and <code>__trace_scope_enter</code> into the source code.</p>
+            </div>
+            <div class="file-card">
+                <h4>StructureBuilder.js</h4>
+                <p>Static analysis phase. Maps loops and conditions to a hierarchy used during runtime tracking.</p>
+            </div>
+        </div>
+
+        <!-- Layer 4 -->
+        <div class="layer-column">
+            <div class="layer-title">Layer 4: Native Layer</div>
+            <div class="file-card" data-step="execution">
+                <h4>trace_runtime.h</h4>
+                <p>C-compatible interface. Uses <code>__auto_type</code> to safely capture any variable type during assignment.</p>
+            </div>
+            <div class="file-card">
+                <h4>trace_runtime.cpp</h4>
+                <p>Internal tracking logic. Maintains the runtime scope stack and handles JSON serialization.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="visual-analysis">
+        <!-- Stack Visualizer -->
+        <div class="panel" style="flex: 1.2;">
+            <div class="panel-header">
+                <span>EXECUTION STACK</span>
+                <span id="stack-count">0 FRAMES</span>
+            </div>
+            <div class="panel-content">
+                <div class="stack-container" id="stack-view">
+                    <!-- Frames injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Memory/Pointer Visualizer -->
+        <div class="panel" style="flex: 1;">
+            <div class="panel-header">
+                <span>MEMORY POOL (HEAP/STACK)</span>
+                <span>0x00FF...</span>
+            </div>
+            <div class="panel-content" style="position: relative;">
+                <div class="memory-grid" id="memory-view">
+                    <!-- 64 cells -->
+                </div>
+                <svg id="pointer-canvas"></svg>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="overlay" id="edge-case-overlay">
+    <div class="overlay-content">
+        <div style="display: flex; justify-content: space-between; align-items: start;">
+            <div>
+                <h2 style="margin: 0; color: var(--neon-cyan);">⚠️ Edge Cases & How CodeViz Handles Them</h2>
+                <p style="color: var(--text-dim);">Animations of real technical hurdles solved in the engine.</p>
+            </div>
+            <button id="close-overlay" style="padding: 10px 20px;">BACK TO ARCHITECTURE</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-top: 3rem; flex: 1;">
+            <!-- Case 1: Nested conditions -->
+            <div class="panel">
+                <div class="panel-header">NESTED SCOPE RECOVERY</div>
+                <div class="panel-content">
+                    <p style="font-size: 0.8rem; color: var(--text-dim);">CodeViz uses a Scope Stack to ensure an 'if' inside a 'for' doesn't orphan the loop's execution context.</p>
+                    <div id="nested-demo" style="margin-top: 20px;">
+                        <div style="color: var(--neon-cyan); font-family: monospace;">for (i) { <span style="font-size: 0.6rem; opacity: 0.5;">scope_id: 11</span></div>
+                        <div style="color: var(--neon-purple); font-family: monospace; margin-left: 20px;">if (x) { <span style="font-size: 0.6rem; opacity: 0.5;">scope_id: 12</span></div>
+                        <div style="color: var(--text-bright); font-family: monospace; margin-left: 40px;">// Correct Push/Pop</div>
+                        <div style="color: var(--neon-purple); font-family: monospace; margin-left: 20px;">}</div>
+                        <div style="color: var(--neon-cyan); font-family: monospace;">}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Case 2: Pointer Aliasing -->
+            <div class="panel">
+                <div class="panel-header">POINTER ALIAS TRACKING</div>
+                <div class="panel-content">
+                    <p style="font-size: 0.8rem; color: var(--text-dim);">When <code>int *q = p</code>, CodeViz detects the address match in the trace processor and draws two arrows to one cell.</p>
+                    <div style="display: flex; justify-content: space-around; margin-top: 40px;">
+                        <div id="p-var" style="border: 1px solid var(--neon-cyan); padding: 5px 10px;">p (ptr)</div>
+                        <div id="q-var" style="border: 1px solid var(--neon-cyan); padding: 5px 10px;">q (ptr)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Case 3: Loop Bug -->
+            <div class="panel">
+                <div class="panel-header">THE LOOP FLUSH FIX</div>
+                <div class="panel-content">
+                    <p style="font-size: 0.8rem; color: var(--text-dim);">Old Bug: <code>printf</code> at the end of a loop merged with next iteration. Fix: Injection of <code>output_flush</code> tokens.</p>
+                    <div style="border: 1px solid red; padding: 10px; margin-top: 20px; font-size: 0.7rem; color: red;">BUG: [Out1][Out2] as one event</div>
+                    <div style="border: 1px solid var(--neon-cyan); padding: 10px; margin-top: 10px; font-size: 0.7rem; color: var(--neon-cyan);">FIX: [Out1] -> FLUSH -> [Out2]</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const elStack = document.getElementById('stack-view');
+    const elMemory = document.getElementById('memory-view');
+    const btnRun = document.getElementById('btn-full-run');
+    const overlay = document.getElementById('edge-case-overlay');
+
+    // Init Memory Grid
+    for(let i=0; i<64; i++) {
+        const d = document.createElement('div');
+        d.className = 'mem-cell';
+        d.id = `mem-${i}`;
+        elMemory.appendChild(d);
+    }
+
+    const state = {
+        stack: [],
+        running: false,
+        speed: 800
+    };
+
+    function pushFrame(name, vars = {}) {
+        const frame = { name, vars, id: Math.random().toString(36).substr(2, 9) };
+        state.stack.push(frame);
+        
+        const card = document.createElement('div');
+        card.className = 'stack-frame';
+        card.id = `frame-${frame.id}`;
+        card.innerHTML = `
+            <div class="scope-badge">LOCAL</div>
+            <strong>${name}()</strong>
+            <div class="variable-list" id="vars-${frame.id}"></div>
+        `;
+        elStack.appendChild(card);
+        updateVars(frame.id, vars);
+        document.getElementById('stack-count').innerText = `${state.stack.length} FRAMES`;
+    }
+
+    function popFrame() {
+        const frame = state.stack.pop();
+        if (frame) {
+            const el = document.getElementById(`frame-${frame.id}`);
+            el.style.transform = 'translateX(100%)';
+            el.style.opacity = '0';
+            setTimeout(() => el.remove(), 300);
+        }
+        document.getElementById('stack-count').innerText = `${state.stack.length} FRAMES`;
+    }
+
+    function updateVars(frameId, vars) {
+        const container = document.getElementById(`vars-${frameId}`);
+        container.innerHTML = '';
+        Object.entries(vars).forEach(([k, v]) => {
+            container.innerHTML += `<div class="var-row"><span>${k}</span><span>${v}</span></div>`;
+        });
+    }
+
+    async function runSimulation() {
+        if(state.running) return;
+        state.running = true;
+        btnRun.innerText = "SIMULATING...";
+        btnRun.classList.remove('active-btn');
+        
+        const cards = document.querySelectorAll('.file-card');
+        
+        // Step 1: Instrument
+        cards[4].classList.add('processing');
+        await wait(1500);
+        
+        // Step 2: Compile
+        cards[2].classList.add('processing');
+        await wait(1000);
+        
+        // Step 3: Run Native
+        cards[6].classList.add('processing');
+        pushFrame('main', { x: 0 });
+        await wait(state.speed);
+        updateVars(state.stack[0].id, { x: 10, y: '0x4f' });
+        
+        // Step 4: Trace Flow
+        cards[0].classList.add('processing');
+        pushFrame('calculate', { n: 10 });
+        await wait(state.speed);
+        
+        // Memory animation
+        document.getElementById('mem-12').classList.add('active');
+        document.getElementById('mem-13').classList.add('active');
+        
+        await wait(1000);
+        popFrame();
+        await wait(500);
+        popFrame();
+        
+        cards.forEach(c => c.classList.remove('processing'));
+        btnRun.innerText = "SIMULATION COMPLETE";
+        btnRun.classList.add('active-btn');
+        state.running = false;
+    }
+
+    function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    btnRun.onclick = runSimulation;
+    document.getElementById('btn-edge-cases').onclick = () => overlay.style.display = 'block';
+    document.getElementById('close-overlay').onclick = () => overlay.style.display = 'none';
+
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+/* ── DARK THEME VARIABLES ── */
+/* Prototype palette — applied when `.dark` class is on a parent element  */
+
+.dark {
+  /* Backgrounds */
+  --bg0: #08070F;   /* base/deepest */
+  --bg1: #100F1E;   /* surface — bars, sidebar */
+  --bg2: #181628;   /* panels */
+  --bg3: #1F1C35;   /* raised / hover */
+
+  /* Borders */
+  --bd:  #2D2A45;
+  --bd2: #3D3960;
+
+  /* Text */
+  --t1:  #F1F5F9;   /* primary */
+  --t2:  #94A3B8;   /* secondary */
+  --t3:  #4A5568;   /* muted */
+
+  /* Accent */
+  --acc:  #7C3AED;  /* brand purple */
+  --acc2: #10B981;  /* run / success green */
+  --acc3: #3B82F6;  /* info blue */
+  --accL: #9F67FF;  /* accent light */
+
+  /* Semantic visualization colors (keep existing tokens) */
+  --color-global:    #2DD4BF;
+  --color-stack:     #3B82F6;
+  --color-heap:      #10B981;
+  --color-pointer:   #EF4444;
+  --color-control:   #A855F7;
+  --color-optimized: #F59E0B;
+
+  /* Legacy aliases — map old names to new vars so existing consumers still work */
+  --bg-primary:    var(--bg0);
+  --bg-secondary:  var(--bg2);
+  --bg-tertiary:   var(--bg1);
+  --bg-elevated:   var(--bg3);
+  --text-primary:  var(--t1);
+  --text-secondary:var(--t2);
+  --text-muted:    var(--t3);
+  --border-color:  var(--bd);
+  --border-light:  var(--bd2);
+  --color-accent:  var(--acc);
+  --color-secondary: var(--acc3);
+}

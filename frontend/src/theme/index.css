@@ -1,0 +1,6 @@
+@import './light/variables.css';
+@import './dark/variables.css';
+@import './dark/animations.css';
+@import './light/animations.css';
+
+/* ── THEME MASTER ENTRY ── */

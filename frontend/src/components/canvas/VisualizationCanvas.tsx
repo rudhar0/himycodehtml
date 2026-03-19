@@ -36,33 +36,33 @@ import { ControlCallerBlock } from "./elements/ControlCallerBlock";
 import { resizeAllContainers } from "./utils/resizeContainer";
 
 const DARK_COLORS = {
-  bg: "#0F172A",
-  grid: "#1E293B",
-  mainBorder: "#A855F7",
+  bg: "#181628", // bg2 — user said "less dark"
+  grid: "#2D2A45",
+  mainBorder: "#7C3AED",
   globalBorder: "#2DD4BF",
-  functionBorder: "#8B5CF6",
-  overlayBg: "#1E293B",
-  overlayBorder: "#334155",
-  buttonBg: "#334155",
+  functionBorder: "#9F67FF",
+  overlayBg: "#100F1E",
+  overlayBorder: "#2D2A45",
+  buttonBg: "#1F1C35",
   buttonText: "#F1F5F9",
   textPrimary: "#F1F5F9",
   textSecondary: "#94A3B8",
-  textMuted: "#64748B",
+  textMuted: "#4A5568",
 };
 
 const LIGHT_COLORS = {
-  bg: "#e8ecef",
-  grid: "#d0d8e0",
-  mainBorder: "#A855F7",
+  bg: "#F4F6FA", // bg2
+  grid: "#D8DCE8",
+  mainBorder: "#7C3AED",
   globalBorder: "#2DD4BF",
-  functionBorder: "#8B5CF6",
-  overlayBg: "#f5f7f9",
-  overlayBorder: "#c8d0d8",
-  buttonBg: "#dde3e8",
-  buttonText: "#1a2332",
-  textPrimary: "#1a2332",
-  textSecondary: "#5a6a7a",
-  textMuted: "#8a9aaa",
+  functionBorder: "#9F67FF",
+  overlayBg: "#FFFFFF",
+  overlayBorder: "#D8DCE8",
+  buttonBg: "#EAECF4",
+  buttonText: "#0F172A",
+  textPrimary: "#0F172A",
+  textSecondary: "#475569",
+  textMuted: "#94A3B8",
 };
 
 const SPACING = {
@@ -1486,33 +1486,56 @@ export default function VisualizationCanvas() {
           width: "100%",
           height: "100%",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
+          gap: "8px",
           backgroundColor: COLORS.bg,
-          color: COLORS.textSecondary,
+          position: "relative",
+          overflow: "hidden",
           fontFamily: "system-ui",
         }}
       >
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "64px", marginBottom: "20px", opacity: 0.5 }}>
-            🎨
-          </div>
-          <div
-            style={{
-              fontSize: "20px",
-              fontWeight: 600,
-              marginBottom: "12px",
-              color: COLORS.textPrimary,
-            }}
-          >
-            Responsive Canvas Ready
-          </div>
-          <div style={{ fontSize: "14px", color: COLORS.textMuted }}>
-            Run your code to see animated visualization
-          </div>
+      {/* ── dot grid ── */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          backgroundImage: `radial-gradient(circle, ${COLORS.grid} 1px, transparent 1px)`,
+          backgroundSize: '20px 20px',
+          opacity: 0.5,
+          pointerEvents: 'none',
+        }} />
+
+        {/* ── orbit SVG ── */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+            {/* static center rings */}
+            <circle cx="26" cy="26" r="24" fill="none" stroke="#7C3AED" strokeWidth="1.5" opacity="0.3"/>
+            <circle cx="26" cy="26" r="16" fill="#7C3AED" opacity="0.1"/>
+            <circle cx="26" cy="26" r="8" fill="#7C3AED" opacity="0.25"/>
+            <circle cx="26" cy="26" r="3" fill="#9F67FF"/>
+            {/* orbit group — animated via CSS class */}
+            <g className="animate-orbit" style={{ transformOrigin: '26px 26px' }}>
+              <line x1="26" y1="26" x2="16" y2="16" stroke="#10B981" strokeWidth="1" opacity="0.6"/>
+              <line x1="26" y1="26" x2="36" y2="16" stroke="#3B82F6" strokeWidth="1" opacity="0.6"/>
+              <line x1="26" y1="26" x2="36" y2="36" stroke="#F59E0B" strokeWidth="1" opacity="0.6"/>
+              <line x1="26" y1="26" x2="16" y2="36" stroke="#EC4899" strokeWidth="1" opacity="0.6"/>
+              <circle cx="16" cy="16" r="2.5" fill="#10B981"/>
+              <circle cx="36" cy="16" r="2.5" fill="#3B82F6"/>
+              <circle cx="36" cy="36" r="2.5" fill="#F59E0B"/>
+              <circle cx="16" cy="36" r="2.5" fill="#EC4899"/>
+            </g>
+          </svg>
+        </div>
+
+        <div style={{ fontSize: '14px', fontWeight: 600, color: COLORS.textPrimary, position: 'relative', zIndex: 1 }}>
+          Responsive Canvas Ready
+        </div>
+        <div style={{ fontSize: '11px', color: COLORS.textMuted, position: 'relative', zIndex: 1 }}>
+          Run your code to see animated visualization
         </div>
       </div>
     );
+
   }
   return (
     <>

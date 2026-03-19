@@ -1,0 +1,77 @@
+/* ── SHARED ANIMATIONS ── */
+/* All keyframes from the prototype — imported by both themes */
+
+@keyframes appEntrance {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes themeSwitching {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(0.995); }
+  100% { transform: scale(1); }
+}
+
+/* Run button pulse (green) */
+@keyframes runPulse {
+  0%   { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0.4); }
+  100% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+}
+
+/* Play button pulse */
+@keyframes playPulse {
+  0%   { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0.4); }
+  100% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+/* Active tab underline slide-in */
+@keyframes slideIn {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* Connection dot breathe */
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+/* Canvas orbit */
+@keyframes orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* UPDATE button shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+/* Generic fade-in used by other components */
+@keyframes fadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Generic slide-down entry */
+@keyframes slideDown {
+  0%   { transform: translateY(-20px); opacity: 0; }
+  100% { transform: translateY(0);     opacity: 1; }
+}
+
+/* Existing pulse-highlight (Monaco execution line) */
+@keyframes pulse-highlight {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* Animation utility classes */
+.animate-app-entrance  { animation: appEntrance  0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pulse-run     { animation: runPulse     2s   infinite; }
+.animate-pulse-play    { animation: playPulse    2.5s infinite; }
+.animate-breathe       { animation: breathe      2s   infinite; }
+.animate-orbit         { animation: orbit        20s  linear infinite; }
+.animate-shimmer       { animation: shimmer      2.5s infinite; }
+.animate-slide-in      { animation: slideIn      0.25s ease both; }
+.animate-pulse-highlight { animation: pulse-highlight 1s ease-in-out infinite; }

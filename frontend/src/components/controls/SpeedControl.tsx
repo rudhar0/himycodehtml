@@ -12,19 +12,19 @@ export default function SpeedControl() {
 
   return (
     <div className="flex items-center gap-2">
-      <Gauge className="h-4 w-4 text-[#5a6a7a] dark:text-slate-400" />
+      <Gauge className="h-4 w-4 text-t3" />
       
-      <div className="flex items-center gap-1 rounded-lg bg-[#c8d0d8] dark:bg-[#1a2540] p-1">
+      <div className="flex items-center gap-1 rounded-lg bg-bg0 p-1">
         {PLAYBACK_SPEEDS.map((option) => (
           <button
             key={option.value}
             onClick={() => setSpeed(option.value)}
             className={`
-              rounded px-3 py-1 text-sm font-medium transition-colors
+              rounded px-2 py-1 text-xs font-medium transition-colors font-mono
               ${
                 speed === option.value
-                  ? 'bg-[#3B82F6] text-white'
-                  : 'text-[#5a6a7a] dark:text-slate-400 hover:bg-[#b0bac4] dark:hover:bg-[#26355d] hover:text-[#1a2332] dark:hover:text-slate-200'
+                  ? 'bg-acc text-white'
+                  : 'text-t3 hover:bg-bg3 hover:text-t2'
               }
             `}
           >

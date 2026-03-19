@@ -1,57 +1,11 @@
 @import 'allotment/dist/style.css';
+@import './theme/index.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Colors */
-  --color-global: #2DD4BF;
-  --color-stack: #3B82F6;
-  --color-heap: #10B981;
-  --color-pointer: #EF4444;
-  --color-control: #A855F7;
-  --color-optimized: #F59E0B;
-  
-  /* Durations */
-  --duration-fast: 200ms;
-  --duration-normal: 500ms;
-  --duration-slow: 800ms;
-  
-  /* Z-index layers */
-  --z-canvas-base: 1;
-  --z-canvas-arrows: 10;
-  --z-canvas-overlay: 20;
-  --z-ui-controls: 100;
-  --z-modal: 1000;
-  
-  /* Light theme variables - Soft, layered design */
-  --bg-primary: #e8ecef;      /* App background - soft gray */
-  --bg-secondary: #f5f7f9;    /* Cards/panels - off-white */
-  --bg-tertiary: #dde3e8;     /* Navbar/headers - slightly darker */
-  --bg-elevated: #ffffff;     /* Elevated elements like modals */
-  --text-primary: #1a2332;    /* Near-black for primary text */
-  --text-secondary: #5a6a7a;  /* Muted gray for secondary text */
-  --text-muted: #8a9aaa;      /* Even more muted */
-  --border-color: #c8d0d8;    /* Subtle gray borders */
-  --border-light: #d8e0e8;    /* Lighter borders */
-}
-
-.dark {
-  /* Dark theme variables - Deep Navy + Amber */
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #0f1629;
-  --bg-tertiary: #161e33;
-  --bg-elevated: #1a2540;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --border-color: #1a2540;
-  --border-light: #26355d;
-  
-  --color-accent: #F59E0B;
-  --color-secondary: #3B82F6;
-}
-
+/* ── GLOBAL BASE STYLES ── */
 * {
   margin: 0;
   padding: 0;
@@ -59,21 +13,20 @@
 }
 
 body {
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
-  background: radial-gradient(circle at top left, #0f1629, #0a0e1a);
-  color: var(--text-primary);
+  background: var(--bg0);
+  color: var(--t1);
   transition: background-color 0.2s ease, color 0.2s ease;
   min-height: 100vh;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
 #root {
@@ -82,92 +35,41 @@ code {
   overflow: hidden;
 }
 
-/* Scrollbar styling - Light mode */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ── SCROLLBARS ── */
+::-webkit-scrollbar       { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--t3); }
+
+/* ── ALLOTMENT ── */
+.split-view-view { background: var(--bg0); }
+.sash            { background: var(--bd) !important; }
+.sash:hover      { background: var(--t3) !important; }
+
+/* ── MONACO EDITOR ── */
+.monaco-editor         { background: var(--bg0) !important; }
+.monaco-editor .margin { background: var(--bg1) !important; }
+
+/* ── EXECUTION LINE HIGHLIGHTING ── */
+.current-execution-line,
+.current-execution-line-inline,
+.monaco-editor .current-execution-line {
+  background-color: rgba(124, 58, 237, 0.12) !important;
 }
 
-::-webkit-scrollbar-track {
-  background: #dde3e8;
+.executed-line,
+.executed-line-inline,
+.monaco-editor .executed-line {
+  background-color: rgba(16, 185, 129, 0.08) !important;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #b0bac4;
-  border-radius: 4px;
+.current-line-glyph::before {
+  content: '▶';
+  color: var(--acc);
+  font-size: 14px;
+  margin-left: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #8a9aaa;
-}
-
-/* Scrollbar styling - Dark mode */
-.dark ::-webkit-scrollbar-track {
-  background: #0a0e1a;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: #1a2540;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #26355d;
-}
-
-/* Allotment customization */
-.split-view-view {
-  background: var(--bg-primary);
-}
-
-.sash {
-  background: var(--border-color) !important;
-}
-
-.sash:hover {
-  background: #8a9aaa !important;
-}
-
-.dark .sash:hover {
-  background: #475569 !important;
-}
-
-/* Animation utilities */
-@keyframes pulse-highlight {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-.animate-pulse-highlight {
-  animation: pulse-highlight 1s ease-in-out infinite;
-}
-
-/* Monaco Editor theme override - Light mode */
-.monaco-editor {
-  background: #f5f7f9 !important;
-}
-
-.monaco-editor .margin {
-  background: #e8ecef !important;
-}
-
-/* Monaco Editor theme override - Dark mode */
-.dark .monaco-editor {
-  background: #0a0e1a !important;
-}
-
-.dark .monaco-editor .margin {
-  background: #0f1629 !important;
-}
-
-/* Konva canvas container */
-.konva-canvas-container {
-  cursor: grab;
-}
-
-.konva-canvas-container:active {
-  cursor: grabbing;
-}
+/* ── KONVA CANVAS ── */
+.konva-canvas-container        { cursor: grab; }
+.konva-canvas-container:active { cursor: grabbing; }

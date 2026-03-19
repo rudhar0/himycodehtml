@@ -26,34 +26,71 @@ const CodeEditor: React.FC = () => {
   };
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
-    // Define dark theme
+    // Define dark theme — prototype palette
     monaco.editor.defineTheme('visualizer-dark', {
       base: 'vs-dark',
       inherit: true,
-      rules: [],
+      rules: [
+        // Keywords: purple #C084FC
+        { token: 'keyword',                foreground: 'C084FC', fontStyle: 'bold' },
+        { token: 'keyword.cpp',            foreground: 'C084FC', fontStyle: 'bold' },
+        { token: 'keyword.control',        foreground: 'C084FC', fontStyle: 'bold' },
+        { token: 'keyword.operator',       foreground: 'C084FC' },
+        { token: 'keyword.directive',      foreground: 'C084FC' }, // prototype uses purple for #include? Wait, prototype shows green for #include. Let's check.
+        // Types
+        { token: 'type.cpp',               foreground: 'C084FC' },
+        { token: 'storage.type.cpp',       foreground: 'C084FC' },
+        
+        // Functions / Identifiers: blue #60A5FA
+        { token: 'identifier',             foreground: '60A5FA' },
+        { token: 'entity.name.function',   foreground: '60A5FA' },
+        { token: 'function',               foreground: '60A5FA' },
+        
+        // Strings: green #34D399
+        { token: 'string',                 foreground: '34D399' },
+        { token: 'string.quoted',          foreground: '34D399' },
+        { token: 'string.include',         foreground: '34D399' },
+        
+        // Numbers / namespaces: amber #F59E0B
+        { token: 'number',                 foreground: 'F59E0B' },
+        { token: 'constant.numeric',       foreground: 'F59E0B' },
+        { token: 'namespace',              foreground: 'F59E0B' },
+        
+        // Punctuation / delimiters: secondary text #94A3B8
+        { token: 'delimiter',              foreground: '94A3B8' },
+        { token: 'operator',               foreground: '94A3B8' },
+        
+        // Comments: muted #4A5568
+        { token: 'comment',                foreground: '4A5568', fontStyle: 'italic' },
+      ],
       colors: {
-        'editor.background': '#0f172a',
-        'editor.foreground': '#f8fafc',
-        'editorLineNumber.foreground': '#475569',
-        'editorLineNumber.activeForeground': '#a855f7',
-        'editorCursor.foreground': '#a855f7',
-        'editor.selectionBackground': '#a855f733',
+        'editor.background':                '#08070F',
+        'editor.foreground':                '#94A3B8',
+        'editor.lineHighlightBackground':   '#7C3AED12',
+        'editorLineNumber.foreground':      '#4A5568',
+        'editorLineNumber.activeForeground': '#7C3AED',
+        'editorCursor.foreground':          '#9F67FF',
+        'editor.selectionBackground':       '#7C3AED33',
+        'editorGutter.background':          '#08070F', // matches prototype
       },
     });
 
-    // Define light theme with soft gray background
+    // Define light theme — prototype light palette
     monaco.editor.defineTheme('visualizer-light', {
       base: 'vs',
       inherit: true,
-      rules: [],
+      rules: [
+        { token: 'keyword',                foreground: '7C3AED', fontStyle: 'bold' },
+        { token: 'identifier',             foreground: '2563EB' },
+        { token: 'string',                 foreground: '059669' },
+        { token: 'number',                 foreground: 'F59E0B' },
+        { token: 'comment',                foreground: '94A3B8', fontStyle: 'italic' },
+      ],
       colors: {
-        'editor.background': '#f5f7f9',
-        'editor.foreground': '#1a2332',
-        'editorLineNumber.foreground': '#8a9aaa',
-        'editorLineNumber.activeForeground': '#7c3aed',
-        'editorCursor.foreground': '#7c3aed',
-        'editor.selectionBackground': '#a855f733',
-        'editorGutter.background': '#e8ecef',
+        'editor.background':                '#F4F6FA',
+        'editor.foreground':                '#0F172A',
+        'editorLineNumber.foreground':      '#94A3B8',
+        'editorLineNumber.activeForeground': '#7C3AED',
       },
     });
 

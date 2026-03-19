@@ -43,11 +43,12 @@ export default function FileLoader() {
   return (
     <button
       onClick={handleFileOpen}
-      className="flex items-center gap-2 rounded-lg bg-[#c8d0d8] dark:bg-slate-700 px-3 py-1.5 text-sm font-medium text-[#1a2332] dark:text-slate-200 hover:bg-[#b0bac4] dark:hover:bg-slate-600 transition-colors"
+      className="flex items-center gap-1.5 rounded-lg px-3 py-[5px] text-xs font-medium text-t2 transition-colors hover:bg-bg3"
+      style={{ border: '1px solid var(--bd2)' }}
       title="Open File"
     >
-      <Upload className="h-4 w-4" />
-      <span>Open File</span>
+      <Upload className="h-3 w-3" />
+      Open File
     </button>
   );
 }

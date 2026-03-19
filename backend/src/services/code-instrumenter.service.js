@@ -163,8 +163,33 @@ class CodeInstrumenter {
     if (/^\s*fputs\s*\(/.test(trimmed)) return true;
     if (/^\s*putchar\s*\(/.test(trimmed)) return true;
     if (/^\s*fprintf\s*\(\s*stdout\s*,/.test(trimmed)) return true;
+    // FIX 1: recognise C++ cout
+    if (/^\s*(?:std\s*::\s*)?cout\s*<</.test(trimmed)) return true;
 
     return false;
+  }
+
+  isStdinInputStatement(trimmed) {
+    if (!trimmed || !trimmed.endsWith(';')) return false;
+    if (/^\s*(scanf|fscanf|sscanf|getchar|fgets|gets)\s*\(/.test(trimmed)) return true;
+    // FIX 2: recognise C++ cin
+    if (/^\s*(?:std\s*::\s*)?cin\s*>>/.test(trimmed)) return true;
+    return false;
+  }
+
+  // FIX 3: helper used by braceless if/else body emitters so that a printf/cout
+  // inside the body also gets output_flush injected (mirrors the normal path).
+  pushBodyStatement(body, indent, lineNum, out) {
+    const bodyTrimmed = body.trim();
+    if (!bodyTrimmed) return;
+    if (this.isStdoutOutputStatement(bodyTrimmed)) {
+      out.push(`${indent}${bodyTrimmed}`);
+      this.appendOutputFlush(out, indent, lineNum);
+    } else if (this.isStdinInputStatement(bodyTrimmed)) {
+      out.push(`${indent}${bodyTrimmed}`);
+    } else {
+      this.wrapStatementIfContinue(bodyTrimmed, indent, lineNum).forEach(l => out.push(l));
+    }
   }
 
   appendOutputFlush(out, indent, lineNumber) {
@@ -659,6 +684,13 @@ class CodeInstrumenter {
         continue;
       }
 
+      // FIX 2: Handle scanf/cin/getchar BEFORE the generic assignment / ++ regexes
+      // so they don't get mis-identified and receive a spurious __trace_assign.
+      if (this.isStdinInputStatement(trimmed)) {
+        out.push(line);
+        continue;
+      }
+
       const ptrDeref = trimmed.match(/^\s*\*\s*(\w+)\s*=\s*([^;]+);/);
       if (ptrDeref) {
         const [, ptrName, value] = ptrDeref;
@@ -1002,7 +1034,7 @@ class CodeInstrumenter {
         this.blockDepth++;
         out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
-        this.wrapStatementIfContinue(body, indent + '  ', i + 1).forEach(l => out.push(l));
+        this.pushBodyStatement(body, indent + '  ', i + 1, out);
         // FIX: Emit exit and decrement blockDepth
         out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 1});`);
         this.blockDepth--;
@@ -1033,7 +1065,7 @@ class CodeInstrumenter {
         out.push(`${indent}  __trace_branch_taken(${condId}, "if", ${i + 1});`);
         // Consume next line as body
         const bodyLine = i + 1 < lines.length ? lines[i + 1] : '';
-        this.wrapStatementIfContinue(bodyLine, indent + '  ', i + 2).forEach(l => out.push(l));
+        this.pushBodyStatement(bodyLine, indent + '  ', i + 2, out);
         // FIX: Emit exit and decrement blockDepth
         out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 2});`);
         this.blockDepth--;
@@ -1108,7 +1140,7 @@ class CodeInstrumenter {
         this.blockDepth++;
         out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
-        this.wrapStatementIfContinue(elseBodyLine, indent + '  ', i + 2).forEach(l => out.push(l));
+        this.pushBodyStatement(elseBodyLine, indent + '  ', i + 2, out);
         // FIX: Emit exit and decrement blockDepth
         out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 2});`);
         this.blockDepth--;
@@ -1125,8 +1157,9 @@ class CodeInstrumenter {
         const condId = conditionIdCounter++;
         // else-if belongs to a NEW condId but same group — push it so a later else can find it
         ifConditionIdStack.push({ condId, braceDepthAtOpen: this.blockDepth });
-        out.push(`${indent}} else {`);
+        // FIX: emit block_exit BEFORE `} else {` so it fires inside the then-branch body
         suppressedBlockExits.forEach(stmt => out.push(stmt));
+        out.push(`${indent}} else {`);
         suppressedBlockEnters.forEach(stmt => out.push(stmt));
         out.push(`${indent}  __trace_condition_eval(${condId}, "${condition.replace(/"/g, '\\"')}", (${condition}) ? 1 : 0, ${i + 1});`);
         out.push(`${indent}  if (${condition}) {`);
@@ -1141,8 +1174,9 @@ class CodeInstrumenter {
         // FIX: Use the stack top — this is always the correct parent if/else-if.
         // Old code used lastIfConditionId (a flat var) which was overwritten by any inner if.
         const condId = peekIfCondId() !== null ? peekIfCondId() : conditionIdCounter++;
-        out.push(`${indent}} else {`);
+        // FIX: emit block_exit BEFORE `} else {` so it fires inside the then-branch body
         suppressedBlockExits.forEach(stmt => out.push(stmt));
+        out.push(`${indent}} else {`);
         suppressedBlockEnters.forEach(stmt => out.push(stmt));
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
         continue;
@@ -1153,14 +1187,15 @@ class CodeInstrumenter {
       if (elseNoBrace) {
         const condId = peekIfCondId() !== null ? peekIfCondId() : conditionIdCounter++;
         const bodyLine = i + 1 < lines.length ? lines[i + 1] : '';
-        out.push(`${indent}} else {`);
+        // FIX: emit block_exit BEFORE `} else {` so it fires inside the then-branch body
         suppressedBlockExits.forEach(stmt => out.push(stmt));
+        out.push(`${indent}} else {`);
         suppressedBlockEnters.forEach(stmt => out.push(stmt));
         // FIX: Increment blockDepth and emit enter for synthetic block
         this.blockDepth++;
         out.push(`${indent}  __trace_block_enter(${this.blockDepth}, ${i + 1});`);
         out.push(`${indent}  __trace_branch_taken(${condId}, "else", ${i + 1});`);
-        this.wrapStatementIfContinue(bodyLine, indent + '  ', i + 2).forEach(l => out.push(l));
+        this.pushBodyStatement(bodyLine, indent + '  ', i + 2, out);
         // FIX: Emit exit and decrement blockDepth
         out.push(`${indent}  __trace_block_exit(${this.blockDepth}, ${i + 2});`);
         this.blockDepth--;

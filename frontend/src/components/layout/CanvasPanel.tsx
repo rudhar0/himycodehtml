@@ -6,39 +6,40 @@ export default function CanvasPanel() {
   const { zoom, resetView, zoomIn, zoomOut } = useCanvasStore();
 
   return (
-    <div className="flex h-full flex-col bg-[#e8ecef] dark:bg-slate-950">
-      {/* Canvas Header */}
-      <div className="flex items-center justify-between border-b border-[#1a2540] bg-[#0f1629] px-4 py-2">
-        <span className="text-sm font-medium text-[#1a2332] dark:text-slate-300">Visualization Canvas</span>
-        
+    <div className="flex h-full flex-col bg-bg2">
+      {/* Canvas Header — matches prototype .canvas-header */}
+      <div className="flex items-center justify-between border-b border-bd bg-bg1 px-4"
+           style={{ height: '34px' }}>
+        <span className="text-xs font-medium text-t1">Visualization Canvas</span>
+
         {/* Canvas Controls */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[#5a6a7a] dark:text-slate-500 mr-2">
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-t3 mr-1">
             {Math.round(zoom * 100)}%
           </span>
-          
+
           <button
             onClick={zoomOut}
-            className="rounded p-1.5 hover:bg-[#c8d0d8] dark:hover:bg-slate-800 transition-colors"
+            className="flex items-center justify-center w-5 h-5 hover:opacity-70 transition-opacity"
             title="Zoom Out"
           >
-            <ZoomOut className="h-4 w-4 text-[#5a6a7a] dark:text-slate-400" />
+            <ZoomOut className="h-4 w-4 text-t3" />
           </button>
-          
+
           <button
             onClick={zoomIn}
-            className="rounded p-1.5 hover:bg-[#c8d0d8] dark:hover:bg-slate-800 transition-colors"
+            className="flex items-center justify-center w-5 h-5 hover:opacity-70 transition-opacity"
             title="Zoom In"
           >
-            <ZoomIn className="h-4 w-4 text-[#5a6a7a] dark:text-slate-400" />
+            <ZoomIn className="h-4 w-4 text-t3" />
           </button>
-          
+
           <button
             onClick={resetView}
-            className="rounded p-1.5 hover:bg-[#c8d0d8] dark:hover:bg-slate-800 transition-colors"
+            className="flex items-center justify-center w-5 h-5 hover:opacity-70 transition-opacity"
             title="Reset View"
           >
-            <Maximize2 className="h-4 w-4 text-[#5a6a7a] dark:text-slate-400" />
+            <Maximize2 className="h-4 w-4 text-t3" />
           </button>
         </div>
       </div>

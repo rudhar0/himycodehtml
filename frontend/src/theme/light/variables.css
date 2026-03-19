@@ -1,0 +1,56 @@
+/* ── LIGHT THEME VARIABLES ── */
+/* Prototype palette — applied by default on :root (no extra class needed) */
+
+:root {
+  /* Backgrounds */
+  --bg0: #E8ECF2;   /* base */
+  --bg1: #FFFFFF;   /* surface — bars, sidebar */
+  --bg2: #F4F6FA;   /* panels */
+  --bg3: #EAECF4;   /* raised / hover */
+
+  /* Borders */
+  --bd:  #D8DCE8;
+  --bd2: #BEC4D6;
+
+  /* Text */
+  --t1:  #0F172A;
+  --t2:  #475569;
+  --t3:  #94A3B8;
+
+  /* Accent */
+  --acc:  #7C3AED;
+  --acc2: #059669;
+  --acc3: #2563EB;
+  --accL: #7C3AED;
+
+  /* Semantic visualization colors */
+  --color-global:    #2DD4BF;
+  --color-stack:     #3B82F6;
+  --color-heap:      #10B981;
+  --color-pointer:   #EF4444;
+  --color-control:   #A855F7;
+  --color-optimized: #F59E0B;
+
+  /* Durations */
+  --duration-fast:   200ms;
+  --duration-normal: 500ms;
+  --duration-slow:   800ms;
+
+  /* Z-index layers */
+  --z-canvas-base:    1;
+  --z-canvas-arrows: 10;
+  --z-canvas-overlay:20;
+  --z-ui-controls:  100;
+  --z-modal:       1000;
+
+  /* Legacy aliases */
+  --bg-primary:    var(--bg0);
+  --bg-secondary:  var(--bg2);
+  --bg-tertiary:   var(--bg1);
+  --bg-elevated:   var(--bg3);
+  --text-primary:  var(--t1);
+  --text-secondary:var(--t2);
+  --text-muted:    var(--t3);
+  --border-color:  var(--bd);
+  --border-light:  var(--bd2);
+}

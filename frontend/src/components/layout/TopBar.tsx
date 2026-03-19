@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Menu, Play, FileCode, Settings, Sun, Moon } from 'lucide-react';
+import { Menu, Play, Settings, Sun, Moon } from 'lucide-react';
 import { useUIStore } from '@store/slices/uiSlice';
 import { useExecutionStore } from '@store/slices/executionSlice';
 import { useEditorStore } from '@store/slices/editorSlice';
@@ -37,38 +37,16 @@ export default function TopBar() {
   };
 
   const handleRun = () => {
-    if (!code.trim()) {
-      return;
-    }
-    
-    if (!isConnected) {
-      alert('Not connected to server');
-      return;
-    }
-    
-    // Auto-detect language
+    if (!code.trim()) return;
+    if (!isConnected) { alert('Not connected to server'); return; }
     const language: 'c' | 'cpp' = code.includes('iostream') || code.includes('std::') ? 'cpp' : 'c';
     const requirements = detectInputRequirements(code);
-    if (requirements.length === 0) {
-      runTrace(code, language, []);
-      return;
-    }
-
+    if (requirements.length === 0) { runTrace(code, language, []); return; }
     if (!ensureInputDialogHost()) {
-      const defaults = requirements.map((req) => defaultInputValue(req.type));
-      console.warn('[InputDialog] Failed to render input dialog host, using default inputs.');
-      runTrace(code, language, defaults);
+      runTrace(code, language, requirements.map((req) => defaultInputValue(req.type)));
       return;
     }
-
-    setPendingInput({
-      code,
-      language,
-      requirements,
-      values: [],
-      entered: [],
-      index: 0,
-    });
+    setPendingInput({ code, language, requirements, values: [], entered: [], index: 0 });
   };
 
   const currentRequirement = useMemo(() => {
@@ -83,10 +61,7 @@ export default function TopBar() {
       const values = [...prev.values, value];
       const entered = [...prev.entered, { variable: req.variable, value, type: req.type }];
       const nextIndex = prev.index + 1;
-      if (nextIndex >= prev.requirements.length) {
-        runTrace(prev.code, prev.language, values);
-        return null;
-      }
+      if (nextIndex >= prev.requirements.length) { runTrace(prev.code, prev.language, values); return null; }
       return { ...prev, values, entered, index: nextIndex };
     });
   };
@@ -94,92 +69,94 @@ export default function TopBar() {
   const backInputStep = () => {
     setPendingInput((prev) => {
       if (!prev || prev.index <= 0) return prev;
-      return {
-        ...prev,
-        index: prev.index - 1,
-        values: prev.values.slice(0, -1),
-        entered: prev.entered.slice(0, -1),
-      };
+      return { ...prev, index: prev.index - 1, values: prev.values.slice(0, -1), entered: prev.entered.slice(0, -1) };
     });
   };
 
   const cancelInputDialog = () => {
     setPendingInput((prev) => {
       if (!prev) return prev;
-      const defaults = prev.requirements.map((req) => defaultInputValue(req.type));
-      runTrace(prev.code, prev.language, defaults);
+      runTrace(prev.code, prev.language, prev.requirements.map((req) => defaultInputValue(req.type)));
       return null;
     });
   };
 
   return (
-    <div className="flex h-12 items-center justify-between border-b border-[#1a2540] bg-[#0f1629] px-4">
-      {/* Left Section */}
+    /**
+     * Prototype titlebar layout:
+     * [logo-icon logo-text]   ──flex-1 spacer──   [Run] [OpenFile] [Divider] [Connected] [☀] [⚙]
+     */
+    <div className="flex h-11 items-center border-b border-bd bg-bg1 px-3 flex-shrink-0">
+
+      {/* ── LEFT: Sidebar Toggle + Logo ── */}
       <div className="flex items-center gap-2">
-        {/* Sidebar Toggle */}
         <button
           onClick={toggleSidebar}
-          className="rounded p-2 hover:bg-[#c8d0d8] dark:hover:bg-slate-800 transition-colors"
+          className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-bg3 transition-colors"
           title={isSidebarOpen ? 'Hide Sidebar' : 'Show Sidebar'}
         >
-          <Menu className="h-5 w-5 text-[#5a6a7a] dark:text-slate-300" />
+          <Menu className="h-4 w-4 text-t2" />
         </button>
 
-        {/* App Title */}
-        <div className="flex items-center gap-2 ml-2">
-          <FileCode className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-          <div className="flex flex-col">
-            <span className="font-semibold text-[#1a2332] dark:text-slate-200">{APP_CONFIG.name}</span>
-            <span className="text-xs text-[#5a6a7a] dark:text-slate-500">{APP_CONFIG.tagline}</span>
+        <div className="flex items-center gap-2">
+          <div
+            className="flex h-[22px] w-[22px] items-center justify-center rounded-md flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path d="M4 3.5L8.5 7L4 10.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="10.5" cy="7" r="1.5" fill="#9F67FF"/>
+            </svg>
+          </div>
+          <div className="flex flex-col gap-px">
+            <span className="text-[14px] font-semibold leading-none text-t1">{APP_CONFIG.name}</span>
+            <span className="text-[10px] leading-none text-t3">{APP_CONFIG.tagline}</span>
           </div>
         </div>
       </div>
 
-      {/* Center Section */}
-      <div className="flex items-center gap-4">
-        {/* Run Button */}
+      {/* ── SPACER ── */}
+      <div className="flex-1" />
+
+      {/* ── RIGHT: Run + File + Status + Utils ── */}
+      <div className="flex items-center gap-2">
         <button
           onClick={handleRun}
           disabled={!code.trim() || isAnalyzing || !isConnected}
-          className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="flex items-center gap-1.5 rounded-lg bg-acc2 px-4 py-[5px] text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          style={{ animation: 'runPulse 2s infinite' }}
         >
-          <Play className="h-4 w-4" />
+          <Play className="h-3 w-3 fill-white" />
           {isAnalyzing ? 'Analyzing...' : 'Run'}
         </button>
 
-        {/* File Loader */}
         <FileLoader />
-      </div>
 
-      {/* Right Section */}
-      <div className="flex items-center gap-3">
-        {/* Connection Status */}
-        <div className="flex items-center gap-2 text-xs">
-          <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-[#5a6a7a] dark:text-slate-400">{isConnected ? 'Connected' : 'Disconnected'}</span>
+        <div className="w-px h-5 bg-bd mx-1 flex-shrink-0" />
+
+        <div className="flex items-center gap-1.5 px-1">
+          <div
+            className={`h-[7px] w-[7px] rounded-full flex-shrink-0 ${isConnected ? 'bg-acc2' : 'bg-red-500'}`}
+            style={{ animation: 'breathe 2s infinite' }}
+          />
+          <span className={`text-[11px] font-medium ${isConnected ? 'text-acc2' : 'text-red-500'}`}>
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
         </div>
 
-        {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          className="rounded-lg p-2 hover:bg-[#c8d0d8] dark:hover:bg-[#1a2540] transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-[#dde3e8] dark:focus:ring-offset-[#0f1629]"
+          className="flex items-center justify-center w-7 h-7 hover:opacity-70 transition-opacity"
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-pressed={theme === 'dark'}
         >
-          {theme === 'dark' ? (
-            <Sun className="h-5 w-5 text-yellow-500 transition-transform hover:rotate-12" />
-          ) : (
-            <Moon className="h-5 w-5 text-[#5a6a7a] transition-transform hover:-rotate-12" />
-          )}
+          {theme === 'dark' ? <Sun className="h-[18px] w-[18px] text-t3" /> : <Moon className="h-[18px] w-[18px] text-t3" />}
         </button>
-        
-        {/* Settings */}
+
         <button
-          className="rounded p-2 hover:bg-[#c8d0d8] dark:hover:bg-slate-800 transition-colors"
+          className="flex items-center justify-center w-7 h-7 hover:opacity-70 transition-opacity"
           title="Settings"
         >
-          <Settings className="h-5 w-5 text-[#5a6a7a] dark:text-slate-300" />
+          <Settings className="h-[18px] w-[18px] text-t3" />
         </button>
       </div>
 
