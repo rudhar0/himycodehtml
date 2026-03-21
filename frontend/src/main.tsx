@@ -3,6 +3,19 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import './bootstrap/desktopBootstrap';
+import { loader } from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
+import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
+
+// Define worker loading for Vite
+self.MonacoEnvironment = {
+  getWorker() {
+    return new editorWorker();
+  }
+};
+
+// Configure Monaco to use local instance to avoid CDN storage/tracking issues
+loader.config({ monaco });
 
 // Platform-agnostic bootstrap logic
 async function bootstrap() {

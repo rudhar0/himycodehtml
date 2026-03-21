@@ -4,6 +4,8 @@ import Konva from 'konva';
 import { resizeContainer } from '../utils/resizeContainer';
 import { MAIN_THEME } from '../../../theme/mainTheme';
 import { useExecutionStore } from '../../../store/slices/executionSlice';
+import { useThemeStore } from '../../../store/slices/themeSlice';
+
 
 // ============================================
 // TYPE DEFINITIONS
@@ -108,7 +110,10 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
   children,
   onConnectorClick,
 }) => {
+  const { theme } = useThemeStore();
+  const dark = theme === 'dark';
   const isMain = functionName.toLowerCase().startsWith('main');
+
   const groupRef = useRef<Konva.Group>(null);
   const shimmerRef = useRef<Konva.Rect>(null);
   const mainBoardRef = useRef<Konva.Rect>(null);
@@ -136,10 +141,11 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       : COLORS.normal;
 
   const borderColor = isMain 
-    ? (isActive ? '#7C3AED' : MAIN_THEME.border.dark)
+    ? (isActive ? '#7C3AED' : (dark ? MAIN_THEME.border.dark : MAIN_THEME.border.light))
     : (isActive ? COLORS.active.primary : colorScheme.primary);
 
-  const glowColor = isMain ? MAIN_THEME.glow.a : (isActive ? COLORS.active.glow : colorScheme.glow);
+  const glowColor = isMain ? (dark ? MAIN_THEME.glow.a : MAIN_THEME.glow.b) : (isActive ? COLORS.active.glow : colorScheme.glow);
+
 
   useEffect(() => {
     if (!isMain) return;
@@ -161,7 +167,11 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       board.shadowOpacity(0.15 + val * 0.3);
       
       // Softer color breathing
-      board.stroke(val > 0.5 ? "rgba(139, 92, 246, 0.55)" : "rgba(124, 58, 237, 0.35)");
+      board.stroke(val > 0.5 
+        ? (dark ? "rgba(139, 92, 246, 0.55)" : "rgba(124, 58, 237, 0.55)") 
+        : (dark ? "rgba(124, 58, 237, 0.35)" : "rgba(139, 92, 246, 0.35)")
+      );
+
       
       layer.batchDraw();
     });
@@ -203,7 +213,7 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
           width={totalWidth - 24} 
           height={75} 
           cornerRadius={9} 
-          fill={MAIN_THEME.body.dark} 
+          fill={dark ? MAIN_THEME.body.dark : MAIN_THEME.body.light} 
           stroke={clr.bd} 
           strokeWidth={1}
           shadowColor={clr.clr}
@@ -383,7 +393,9 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
         name="main-bg"
         width={totalWidth}
         height={totalHeight}
-        fill={isMain ? "rgba(18, 16, 40, 0.05)" : "rgba(15, 23, 42, 0.98)"}
+        fill={isMain 
+          ? (dark ? "rgba(18, 16, 40, 0.05)" : "rgba(255, 255, 255, 0.05)") 
+          : (dark ? "rgba(15, 23, 42, 0.98)" : "rgba(255, 255, 255, 0.98)")}
         stroke={borderColor}
         strokeWidth={isMain ? 1.2 : (isActive ? 2.5 : 1.2)}
         cornerRadius={CORNER_RADIUS}
@@ -591,33 +603,35 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       </Group>
 
       {/* ── CONNECTOR ── */}
-      <Group
-        x={totalWidth}
-        y={totalHeight / 2}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onClick={() => onConnectorClick?.(id)}
-      >
-        <Circle
-          radius={CONNECTOR_RADIUS + 3}
-          fill="transparent"
-          shadowColor={isActive ? COLORS.active.glow : colorScheme.glow}
-          shadowBlur={isActive ? 18 : 10}
-          shadowOpacity={isHovered || isActive ? 0.9 : 0.6}
-        />
-        <Circle
-          radius={CONNECTOR_RADIUS}
-          stroke={isActive ? COLORS.active.primary : colorScheme.primary}
-          strokeWidth={isHovered ? 2.5 : 1.5}
-          fill={MAIN_THEME.body.dark}
-        />
-        <Circle
-          ref={connectorRef}
-          radius={CONNECTOR_RADIUS - 5}
-          fill={isActive ? COLORS.active.primary : colorScheme.light}
-          opacity={isActive ? 1 : 0.7}
-        />
-      </Group>
+      {!isMain && (
+        <Group
+          x={totalWidth}
+          y={totalHeight / 2}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          onClick={() => onConnectorClick?.(id)}
+        >
+          <Circle
+            radius={CONNECTOR_RADIUS + 3}
+            fill="transparent"
+            shadowColor={isActive ? COLORS.active.glow : colorScheme.glow}
+            shadowBlur={isActive ? 18 : 10}
+            shadowOpacity={isHovered || isActive ? 0.9 : 0.6}
+          />
+          <Circle
+            radius={CONNECTOR_RADIUS}
+            stroke={isActive ? COLORS.active.primary : colorScheme.primary}
+            strokeWidth={isHovered ? 2.5 : 1.5}
+            fill={dark ? MAIN_THEME.body.dark : MAIN_THEME.body.light}
+          />
+          <Circle
+            ref={connectorRef}
+            radius={CONNECTOR_RADIUS - 5}
+            fill={isActive ? COLORS.active.primary : colorScheme.light}
+            opacity={isActive ? 1 : 0.7}
+          />
+        </Group>
+      )}
 
       {/* Step Number Badge (Regular only) */}
       {!isMain && stepNumber !== undefined && (

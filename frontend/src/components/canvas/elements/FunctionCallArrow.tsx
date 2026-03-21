@@ -4,6 +4,8 @@
 import React, { useRef, useEffect, memo } from 'react';
 import { Group, Arrow, Rect, Text } from 'react-konva';
 import Konva from 'konva';
+import { useThemeStore } from '../../../store/slices/themeSlice';
+
 
 export interface FunctionCallArrowProps {
   id: string;
@@ -34,7 +36,10 @@ export const FunctionCallArrow: React.FC<FunctionCallArrowProps> = memo(({
   isRecursive = false,
   isNew = false
 }) => {
+  const { theme } = useThemeStore();
+  const dark = theme === 'dark';
   const arrowRef = useRef<Konva.Arrow>(null);
+
 
   const calculateCurvedPoints = (): number[] => {
     const dx = toX - fromX;
@@ -119,9 +124,10 @@ export const FunctionCallArrow: React.FC<FunctionCallArrowProps> = memo(({
             y={labelY - 12}
             width={100}
             height={24}
-            fill="rgba(30, 41, 59, 0.95)"
+            fill={dark ? "rgba(30, 41, 59, 0.95)" : "rgba(255, 255, 255, 0.95)"}
             stroke={color}
             strokeWidth={1}
+
             cornerRadius={12}
             shadowColor="rgba(0, 0, 0, 0.3)"
             shadowBlur={8}
@@ -134,8 +140,9 @@ export const FunctionCallArrow: React.FC<FunctionCallArrowProps> = memo(({
             width={100}
             fontSize={10}
             fontStyle="bold"
-            fill="#F1F5F9"
+            fill={dark ? "#F1F5F9" : "#1E293B"}
             align="center"
+
             fontFamily="'SF Mono', monospace"
           />
         </Group>

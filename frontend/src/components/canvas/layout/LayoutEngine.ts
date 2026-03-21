@@ -2,6 +2,7 @@
 
 import type { ExecutionStep, ExecutionTrace } from "../../../types";
 import { useLoopStore } from "../../../store/slices/loopSlice";
+import { SUB_H, SUB_W } from "../../../theme/elementThemeSizing";
 
 export interface LayoutElement {
   id: string;
@@ -84,12 +85,12 @@ const getIndentSize = (frame: LayoutElement) => {
 const HEADER_HEIGHT = 50;
 const MAIN_FUNCTION_X = 40;
 const MAIN_FUNCTION_Y = 40;
-const MAIN_FUNCTION_WIDTH = 400;
-const GLOBAL_PANEL_WIDTH = 400;
+const MAIN_FUNCTION_WIDTH = 420;
+const GLOBAL_PANEL_WIDTH = 420;
 const PANEL_GAP = 40;
 const VARIABLE_HEIGHT = 140;
 const EXPLANATION_HEIGHT = 40;
-const FUNCTION_BOX_WIDTH = 400;
+const FUNCTION_BOX_WIDTH = 420;
 const FUNCTION_VERTICAL_SPACING = 200;
 const PARAMS_HEIGHT = 0;
 const LOCALS_HEIGHT = 0;
@@ -104,6 +105,9 @@ const CONTROL_BODY_HEIGHT = 120;
 const CONTROL_CALLER_BODY_GAP = 20;
 const CONTROL_CHAIN_VERTICAL_GAP = 14;
 const MAX_PARENT_FLOW_WIDTH = 600;
+
+const centerSubX = (placementX: number, placementWidth: number): number =>
+  placementX + Math.max(0, (placementWidth - SUB_W) / 2);
 
 
 interface ArrayTrackerData {
@@ -332,6 +336,8 @@ export class LayoutEngine {
     string,
     Array<{ x: number; y: number; width: number; height: number }>
   > = new Map();
+
+  private static lastVarValueByKey: Map<string, string | undefined> = new Map();
 
   /**
    * Lane-based frames (main/function_call) use LOCALS.usedHeight as the vertical cursor.
@@ -1287,14 +1293,15 @@ if (Layer3Result) {
     }
 
     const placement = this.getPlacementContext(funcFrame, frameId, scopeDepth, step);
+    const x = centerSubX(placement.x, placement.width);
 
     const returnElement: LayoutElement = {
       id: `return-${frameId}-${stepIndex}`,
       type: "function_return",
-      x: placement.x,
+      x,
       y: placement.y,
-      width: placement.width,
-      height: 70,
+      width: SUB_W,
+      height: SUB_H,
       stepId: stepIndex,
       parentId: placement.parent.id,
       data: {
@@ -2524,8 +2531,9 @@ if (Layer3Result) {
     this.recentIfGroupByFrame.clear();
     this.currentScopeDepth.clear();
     this.rightFlowOccupancy.clear();
-this.bodyByStepKey.clear();
-this.bodyStepKeyById.clear();
+ this.bodyByStepKey.clear();
+ this.bodyStepKeyById.clear();
+    this.lastVarValueByKey.clear();
     this.containerByConditionId.clear();
     this.conditionTree = (executionTrace as any).conditionTree ?? null;
 
@@ -2888,13 +2896,15 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
         value: "",
         type: varType || "int",
         primitive: varType || "int",
-        address: "0x0",
+        address: (step as any).address || "0x0",
         scope: "local",
         isInitialized: false,
         isAlive: true,
         birthStep: stepIndex,
         frameId: frameId,
       };
+
+      this.lastVarValueByKey.set(`${frameId}::${varName}`, "");
 
       const scopeDepth = this.getScopeDepth(step, frameId);
       const placementScopeDepth = this.resolvePlacementScopeDepth(
@@ -2906,8 +2916,8 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
         scopeDepth,
       );
       const placement = this.getPlacementContext(ownerFrame, frameId, placementScopeDepth, step);
-      
-      const elementHeight = explanation ? VARIABLE_HEIGHT + EXPLANATION_HEIGHT : VARIABLE_HEIGHT;
+      const x = centerSubX(placement.x, placement.width);
+      const elementHeight = SUB_H;
       const reservesCursorSpace = !this.isImmediateDeclarationInitialization(
         executionTrace,
         stepIndex,
@@ -2919,9 +2929,9 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
         id: varId,
         type: "variable",
         subtype: "variable_load",
-        x: placement.x,
+        x,
         y: placement.y,
-        width: placement.width - 40,
+        width: SUB_W,
         height: elementHeight,
         parentId: placement.parent.id,
         stepId: stepIndex,
@@ -2929,6 +2939,7 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
             ...variable,
             explanation: explanation,
             suppressLayoutSpacing: !reservesCursorSpace,
+            expression: String((step as any).expression || "") || explanation || undefined,
         },
       };
 
@@ -2990,6 +3001,13 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
 
       if (!varName) return;
 
+      const varKey = `${frameId}::${varName}`;
+      const prevTrackedValue = this.lastVarValueByKey.get(varKey);
+      const stepAddress = (step as any).address;
+      const stepExpressionRaw = String((step as any).expression || "").trim();
+      const stepExpression = stepExpressionRaw.length > 0 ? stepExpressionRaw : undefined;
+      const expression = stepExpression || explanation || undefined;
+
       const prevStep = stepIndex > 0 ? (executionTrace.steps[stepIndex - 1] as any) : null;
       const prevType = (prevStep?.eventType || prevStep?.type || "").toLowerCase();
       const prevName = prevStep?.name || prevStep?.symbol;
@@ -3004,17 +3022,22 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
         const declarationElement = this.elementHistory.get(declarationId);
         if (declarationElement && declarationElement.type === "variable") {
           const hadSuppressedSpacing = Boolean(declarationElement.data?.suppressLayoutSpacing);
+          const previousValue = declarationElement.data?.value ?? prevTrackedValue;
 
           declarationElement.stepId = stepIndex;
           declarationElement.data = {
             ...declarationElement.data,
+            previousValue: previousValue !== undefined ? String(previousValue) : undefined,
             value: value !== undefined ? String(value) : undefined,
             isInitialized: true,
             isUpdated: true,
             explanation: explanation,
+            expression,
+            address: stepAddress || declarationElement.data?.address,
             suppressLayoutSpacing: false,
           };
           this.createdInStep.set(declarationElement.id, stepIndex);
+          this.lastVarValueByKey.set(varKey, value !== undefined ? String(value) : undefined);
 
           // If declaration spacing was suppressed in frame lane, reserve it now on initialization.
           if (hadSuppressedSpacing && declarationElement.parentId === ownerFrame.id) {
@@ -3058,14 +3081,23 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
           // UPDATE MODE (Toggle OFF): Reuse existing element instead of creating new one
           const existingElement = this.findLoopChildElement(currentLoop.elementId!, 'variable', varName);
           if (existingElement) {
-            existingElement.data.value = value;
-            existingElement.data.isUpdated = true;
+            const previousValue = existingElement.data?.value ?? prevTrackedValue;
+            existingElement.data = {
+              ...existingElement.data,
+              previousValue: previousValue !== undefined ? String(previousValue) : undefined,
+              value: value !== undefined ? String(value) : undefined,
+              isUpdated: true,
+              explanation,
+              expression,
+              address: stepAddress || existingElement.data?.address,
+            };
             existingElement.stepId = stepIndex;
             this.createdInStep.set(existingElement.id, stepIndex);
-            
+            this.lastVarValueByKey.set(varKey, value !== undefined ? String(value) : undefined);
+             
             // Highlight the reused element if it's the current step
             existingElement.data.isActive = (stepIndex === currentStep);
-            
+             
             return;
           }
         }
@@ -3087,7 +3119,7 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
         value: value,
         type: "int",
         primitive: "int",
-        address: "0x0",
+        address: stepAddress || "0x0",
         scope: "local",
         isInitialized: true,
         isAlive: true,
@@ -3112,29 +3144,26 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
       );
       
       // Calculate height based on explanation and function call
-      const baseHeight = VARIABLE_HEIGHT;
-      const hasExplanation = !!explanation;
-      const hasFunctionCall = isFunctionReturnAssignment;
-      
-      // If function call, add extra space for inline call element
-      const extraHeight = (hasExplanation ? EXPLANATION_HEIGHT : 0) + 
-                         (hasFunctionCall ? 60 : 0); // 60px for inline call
-      const elementHeight = baseHeight + extraHeight;
-      
+      const x = centerSubX(placement.x, placement.width);
+      const elementHeight = SUB_H;
+       
       const varElement: LayoutElement = {
         id: varId,
         type: "variable",
         subtype: isFunctionReturnAssignment ? "variable_with_call" : "variable_load",
-        x: placement.x,
+        x,
         y: placement.y,
-        width: placement.width - 40,
+        width: SUB_W,
         height: elementHeight,
         parentId: placement.parent.id,
         stepId: stepIndex,
         data: {
           ...variable,
+          previousValue: prevTrackedValue !== undefined ? String(prevTrackedValue) : undefined,
           value: value !== undefined ? String(value) : undefined,
           explanation: explanation,
+          expression,
+          address: stepAddress || variable.address,
           hasFunctionCall: isFunctionReturnAssignment,
           // Store function info if it was a call
           functionCallInfo: isFunctionReturnAssignment ? {
@@ -3156,6 +3185,7 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
       layout.elements.push(varElement);
       this.elementHistory.set(varId, varElement);
       this.createdInStep.set(varId, stepIndex);
+      this.lastVarValueByKey.set(varKey, value !== undefined ? String(value) : undefined);
       return;
     }
 
@@ -3322,15 +3352,16 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
 
         const scopeDepth = this.getScopeDepth(step, frameId);
         const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
-
+        const x = centerSubX(placement.x, placement.width);
+ 
         const varElement: LayoutElement = {
           id: varId,
           type: "variable",
           subtype: "array_reference",
-          x: placement.x,
+          x,
           y: placement.y,
-          width: placement.width,
-          height: VARIABLE_HEIGHT,
+          width: SUB_W,
+          height: SUB_H,
           parentId: placement.parent.id,
           stepId: stepIndex,
           data: arrayRefVar,
@@ -3392,16 +3423,15 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
 
       const scopeDepth = this.getScopeDepth(step, frameId);
       const placement = this.getPlacementContext(ownerFrame, frameId, scopeDepth, step);
-      const baseHeight = 60;
-      const elementHeight = explanation ? baseHeight + EXPLANATION_HEIGHT : baseHeight;
+      const x = centerSubX(placement.x, placement.width);
 
       const outputElement: LayoutElement = {
         id: outputId,
         type: "output",
-        x: placement.x,
+        x,
         y: placement.y,
-        width: placement.width,
-        height: elementHeight,
+        width: SUB_W,
+        height: SUB_H,
         parentId: placement.parent.id,
         stepId: stepIndex,
         data: {
@@ -3409,6 +3439,7 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
           rawText: (step as any).rawText,
           frameId: frameId,
           explanation: explanation,
+          isActive: stepIndex === currentStep,
         },
       };
       this.appendElementToPlacement(ownerFrame, placement, outputElement);

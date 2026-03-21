@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Group, Rect, Text, Circle } from 'react-konva';
 import Konva from 'konva';
+import { useThemeStore } from '../../../store/slices/themeSlice';
+
 
 interface ConditionCallerForParentProps {
   id: string;
@@ -34,7 +36,10 @@ export const ConditionCallerForParent: React.FC<ConditionCallerForParentProps> =
   stepNumber,
   onClick
 }) => {
+  const { theme } = useThemeStore();
+  const dark = theme === 'dark';
   const groupRef = useRef<Konva.Group>(null);
+
   const [isHovered, setIsHovered] = useState(false);
 
   const CORNER_RADIUS = 12;
@@ -77,14 +82,15 @@ export const ConditionCallerForParent: React.FC<ConditionCallerForParentProps> =
       <Rect
         width={width}
         height={height}
-        fill={COLORS.bg}
+        fill={dark ? COLORS.bg : '#F8FAFC'}
         stroke={COLORS.border}
         strokeWidth={isHovered ? 3 : 2}
         cornerRadius={CORNER_RADIUS}
         shadowColor={COLORS.border}
         shadowBlur={isHovered ? 15 : 5}
-        shadowOpacity={0.6}
+        shadowOpacity={dark ? 0.6 : 0.3}
       />
+
 
       {/* Label */}
       <Text
@@ -106,10 +112,11 @@ export const ConditionCallerForParent: React.FC<ConditionCallerForParentProps> =
         width={width - 80}
         fontSize={16}
         fontStyle="bold"
-        fill={COLORS.text}
+        fill={dark ? COLORS.text : '#D97706'}
         fontFamily="'SF Mono', monospace"
         ellipsis={true}
       />
+
 
       {/* Result Indicator */}
       <Rect

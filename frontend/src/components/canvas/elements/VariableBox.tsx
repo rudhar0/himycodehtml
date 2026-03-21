@@ -1,14 +1,27 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Group, Rect, Text, Circle, Line } from 'react-konva';
-import Konva from 'konva';
+import React, { useEffect, useMemo, useRef } from "react";
+import { Circle, Group, Line, Rect, Text } from "react-konva";
+import Konva from "konva";
+import gsap from "gsap";
+import {
+  SUB_BODY_MIN_H,
+  SUB_H,
+  SUB_HEADER_H,
+  SUB_HINT_H,
+  SUB_PAD,
+  SUB_RADIUS,
+  SUB_W,
+} from "../../../theme/elementThemeSizing";
+import { clampText, getCssVar, isDarkTheme } from "../utils/cssVars";
+import { useThemeStore } from "../../../store/slices/themeSlice";
 
-export type VariableState = 
-  | 'declared'
-  | 'initialized'
-  | 'updated'
-  | 'multiple-init'
-  | 'accessed'
-  | 'accessed_write';
+
+export type VariableState =
+  | "declared"
+  | "initialized"
+  | "updated"
+  | "multiple-init"
+  | "accessed"
+  | "accessed_write";
 
 interface VariableBoxProps {
   id: string;
@@ -20,7 +33,7 @@ interface VariableBoxProps {
   y: number;
   width: number;
   height: number;
-  section: 'global' | 'stack' | 'heap';
+  section: "global" | "stack" | "heap";
   isNew?: boolean;
   isUpdated?: boolean;
   previousValue?: any;
@@ -31,125 +44,31 @@ interface VariableBoxProps {
   enterDelay?: number;
   color?: string;
   explanation?: string;
+  isActive?: boolean;
 }
 
-const TYPE_COLORS: Record<string, {
-  primary: string;
-  light: string;
-  dark: string;
-  glow: string;
-  bg: string;
-  accent: string;
-}> = {
-  int: {
-    primary: '#2563EB',
-    light: '#60A5FA',
-    dark: '#1E40AF',
-    glow: 'rgba(37, 99, 235, 0.6)',
-    bg: 'rgba(37, 99, 235, 0.18)',
-    accent: '#3B82F6'
-  },
-  float: {
-    primary: '#0891B2',
-    light: '#22D3EE',
-    dark: '#0E7490',
-    glow: 'rgba(8, 145, 178, 0.6)',
-    bg: 'rgba(8, 145, 178, 0.18)',
-    accent: '#06B6D4'
-  },
-  double: {
-    primary: '#7C3AED',
-    light: '#A78BFA',
-    dark: '#6D28D9',
-    glow: 'rgba(124, 58, 237, 0.6)',
-    bg: 'rgba(124, 58, 237, 0.18)',
-    accent: '#8B5CF6'
-  },
-  char: {
-    primary: '#EA580C',
-    light: '#FB923C',
-    dark: '#C2410C',
-    glow: 'rgba(234, 88, 12, 0.6)',
-    bg: 'rgba(234, 88, 12, 0.18)',
-    accent: '#F97316'
-  },
-  bool: {
-    primary: '#9333EA',
-    light: '#C084FC',
-    dark: '#7E22CE',
-    glow: 'rgba(147, 51, 234, 0.6)',
-    bg: 'rgba(147, 51, 234, 0.18)',
-    accent: '#A855F7'
-  },
-  string: {
-    primary: '#DB2777',
-    light: '#F472B6',
-    dark: '#BE185D',
-    glow: 'rgba(219, 39, 119, 0.6)',
-    bg: 'rgba(219, 39, 119, 0.18)',
-    accent: '#EC4899'
-  },
-  pointer: {
-    primary: '#DC2626',
-    light: '#F87171',
-    dark: '#B91C1C',
-    glow: 'rgba(220, 38, 38, 0.6)',
-    bg: 'rgba(220, 38, 38, 0.18)',
-    accent: '#F87171'
-  },
-  array: {
-    primary: '#10B981',
-    light: '#34D399',
-    dark: '#059669',
-    glow: 'rgba(16, 185, 129, 0.6)',
-    bg: 'rgba(16, 185, 129, 0.18)',
-    accent: '#34D399'
-  },
-  default: {
-    primary: '#64748B',
-    light: '#94A3B8',
-    dark: '#475569',
-    glow: 'rgba(100, 116, 139, 0.6)',
-    bg: 'rgba(100, 116, 139, 0.18)',
-    accent: '#94A3B8'
-  }
+const normalizeTypeKey = (raw: string): string => {
+  const t = String(raw ?? "").toLowerCase();
+  if (t.includes("void")) return "void";
+  if (t.includes("auto")) return "auto";
+  if (t.includes("*") || t.includes("ptr") || t.includes("point")) return "ptr";
+  if (t.includes("string") || t.includes("std::string")) return "str";
+  if (t.includes("bool")) return "bool";
+  if (t.includes("char")) return "char";
+  if (t.includes("double")) return "dbl";
+  if (t.includes("float")) return "float";
+  if (t.includes("int") || t.includes("long") || t.includes("short"))
+    return "int";
+  return "auto";
 };
 
-const STATE_CONFIGS = {
-  declared: {
-    label: 'DECLARED',
-    dotColor: '#94A3B8',
-    labelBg: 'rgba(148, 163, 184, 0.25)',
-    labelStroke: '#94A3B8',
-    glowEnabled: false,
-    borderDash: [8, 4],
-    bgOpacity: 0.6
-  },
-  initialized: {
-    label: 'INITIALIZED',
-    dotColor: '#10B981',
-    labelBg: 'rgba(16, 185, 129, 0.25)',
-    labelStroke: '#10B981',
-    glowEnabled: true,
-    borderDash: [],
-    bgOpacity: 0.2
-  },
-  updated: {
-    label: 'UPDATED',
-    dotColor: '#F59E0B',
-    labelBg: 'rgba(245, 158, 11, 0.25)',
-    labelStroke: '#F59E0B',
-    glowEnabled: true,
-    borderDash: [],
-    bgOpacity: 0.2
-  }
+const formatValue = (val: any): string => {
+  if (val === null || val === undefined || val === "") return "—";
+  if (typeof val === "string") return clampText(val, 18);
+  if (typeof val === "boolean") return val ? "true" : "false";
+  if (typeof val === "number") return clampText(String(val), 18);
+  return clampText(String(val), 18);
 };
-
-const BOX_WIDTH = 360;
-const BASE_HEIGHT = 140;
-const EXPLANATION_HEIGHT = 35;
-const PADDING = 16;
-const CORNER_RADIUS = 12;
 
 export const VariableBox: React.FC<VariableBoxProps> = ({
   id,
@@ -159,210 +78,236 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
   address,
   x,
   y,
-  width,
-  height,
-  section,
   isNew = false,
   isUpdated = false,
   previousValue,
   expression,
   onClick,
-  state: varState = 'initialized',
+  state: varState = "initialized",
   stepNumber,
   enterDelay = 0,
-  color,
-  explanation
+  explanation,
+  isActive = false,
+  section,
 }) => {
+  const { theme } = useThemeStore();
+  const dark = theme === 'dark';
   const groupRef = useRef<Konva.Group>(null);
-  const glowRef = useRef<Konva.Rect>(null);
+
+  const outlineRef = useRef<Konva.Rect>(null);
+  const beamRef = useRef<Konva.Rect>(null);
   const dotRef = useRef<Konva.Circle>(null);
-  const tweenRef = useRef<Konva.Tween | null>(null);
-  const dotTweenRef = useRef<Konva.Tween | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
-  const isInitialMount = useRef(true);
-  const [showingExplanation, setShowingExplanation] = useState(!!explanation);
 
-  const stateConfig = STATE_CONFIGS[varState];
-  
-  const normalizeType = (t: string): string => {
-    const lower = t.toLowerCase();
-    if (lower.includes('int')) return 'int';
-    if (lower.includes('float')) return 'float';
-    if (lower.includes('double')) return 'double';
-    if (lower.includes('char')) return 'char';
-    if (lower.includes('bool')) return 'bool';
-    if (lower.includes('string')) return 'string';
-    if (lower.includes('*') || lower.includes('ptr') || lower.includes('point')) return 'pointer';
-    if (lower.includes('[]') || lower.includes('array')) return 'array';
-    return 'default';
-  };
 
-  const typeKey = normalizeType(type);
-  const colors = TYPE_COLORS[typeKey];
+  const typeKey = normalizeTypeKey(type);
+  const chip = useMemo(() => {
+    const clr = getCssVar(`--type-${typeKey}-clr`, "#94A3B8");
+    const bg = getCssVar(`--type-${typeKey}-bg`, "rgba(148,163,184,0.12)");
+    const bd = getCssVar(`--type-${typeKey}-bd`, "rgba(148,163,184,0.3)");
+    return { clr, bg, bd };
+  }, [dark, typeKey]);
 
-  const formatValue = (val: any): string => {
-    if (val === null || val === undefined) return '—';
-    if (typeof val === 'string') {
-      if (val.length > 15) return `"${val.slice(0, 13)}..."`;
-      return `"${val}"`;
+  const tokens = useMemo(() => {
+    return {
+      header: chip.clr || getCssVar("--var-hdr", dark ? "#1A3FA0" : "#1D4ED8"),
+      body: getCssVar("--var-body", dark ? "#0A1320" : "#EFF6FF"),
+      border: getCssVar(
+        "--var-border",
+        dark ? "rgba(96,165,250,0.4)" : "rgba(37,99,235,0.3)",
+      ),
+      glow: getCssVar(
+        "--var-glow",
+        dark ? "rgba(96,165,250,0.12)" : "rgba(37,99,235,0.07)",
+      ),
+      accent: getCssVar("--var-accent", dark ? "#60A5FA" : "#2563EB"),
+      text: getCssVar("--var-text", dark ? "#DBEAFE" : "#1E3A8A"),
+      beam: getCssVar("--var-beam", "rgba(96,165,250,0.06)"),
+      sep: getCssVar(
+        "--sep",
+        dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)",
+      ),
+      badgeBg: dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
+      badgeText: "#FFFFFF",
+    };
+  }, [dark, chip.clr]);
+
+  const valueText =
+    varState === "declared" ? "—" : formatValue(value ?? "");
+  const prevText =
+    previousValue === undefined || previousValue === null
+      ? undefined
+      : formatValue(previousValue);
+
+  const stateLabel =
+    varState === "declared"
+      ? "DECLARED"
+      : isUpdated || varState === "updated"
+        ? "UPDATED"
+        : "ASSIGNMENT";
+
+  const hintText = useMemo(() => {
+    const parts: string[] = [];
+
+    if (
+      prevText !== undefined &&
+      prevText !== "—" &&
+      formatValue(value) !== "—" &&
+      prevText !== formatValue(value)
+    ) {
+      parts.push(`prev: ${clampText(prevText, 8)} → ${clampText(valueText, 8)}`);
+    } else if (expression && expression.trim().length > 0) {
+      parts.push(`expr: ${clampText(expression.trim(), 26)}`);
+    } else if (explanation && explanation.trim().length > 0) {
+      parts.push(clampText(explanation.trim(), 34));
+    } else {
+      parts.push(`${name} = ${valueText}`);
     }
-    if (typeof val === 'boolean') return val ? 'true' : 'false';
-    if (typeof val === 'number') {
-      const str = String(val);
-      if (str.length > 15) return val.toExponential(2);
-      return str;
+
+    const addr = String(address || "").trim();
+    if (addr.length > 0 && addr !== "0x0") {
+      parts.push(`@${clampText(addr, 12)}`);
     }
-    return String(val).slice(0, 15);
-  };
 
-  const displayValue = varState === 'declared' ? '—' : formatValue(value);
+    return clampText(parts.join(" · "), 46);
+  }, [address, explanation, expression, name, prevText, valueText]);
 
-  const hasExplanation = !!explanation;
-  
-  const bgColor = varState === 'declared' 
-    ? 'rgba(51, 65, 85, 0.5)'
-    : (hasExplanation && showingExplanation) 
-      ? 'rgba(16, 185, 129, 0.15)'
-      : colors.bg;
-  
-  const borderColor = varState === 'declared' 
-    ? '#64748B'
-    : (hasExplanation && showingExplanation)
-      ? '#10B981'
-      : colors.primary;
-  
-  const borderWidth = varState === 'declared' ? 2 : 3;
-
-  const totalHeight = BASE_HEIGHT;
-
+  // Entrance: slide-in + fade
   useEffect(() => {
     const group = groupRef.current;
-    const glow = glowRef.current;
-    const dot = dotRef.current;
-    
     if (!group) return;
 
-    if (tweenRef.current) {
-      tweenRef.current.destroy();
-      tweenRef.current = null;
-    }
-    if (dotTweenRef.current) {
-      dotTweenRef.current.destroy();
-      dotTweenRef.current = null;
-    }
+    group.opacity(1);
+    group.x(x);
+    group.y(y);
 
-    if (isNew && isInitialMount.current) {
-      group.opacity(0);
-      group.scaleX(0.01);
-      group.scaleY(0.01);
-      const origY = group.y();
-      group.y(origY + 25);
+    if (!isNew) return;
 
-      const playAnim = () => {
-        if (!group.getLayer()) return;
-        const tween = new Konva.Tween({
-          node: group,
-          opacity: 1,
-          scaleX: 1,
-          scaleY: 1,
-          y: origY,
-          duration: 0.6,
-          easing: Konva.Easings.BackEaseOut,
-          onFinish: () => {
-            if (glow && varState !== 'declared' && glow.getLayer()) {
-              glow.to({ opacity: 0.7, duration: 0.4 });
-            }
+    group.opacity(0);
+    group.x(x - 12);
 
-            if (dot && dot.getLayer()) {
-              const dotTween = new Konva.Tween({
-                node: dot,
-                scaleX: 1.6,
-                scaleY: 1.6,
-                duration: 0.25,
-                onFinish: () => {
-                  if (dot && dot.getLayer()) {
-                    dot.to({ scaleX: 1, scaleY: 1, duration: 0.25 });
-                  }
-                }
-              });
-              dotTweenRef.current = dotTween;
-              dotTween.play();
-            }
-          }
-        });
-        tweenRef.current = tween;
-        tween.play();
+    let tween: Konva.Tween | null = null;
+    const play = () => {
+      if (!group.getLayer()) return;
+      tween = new Konva.Tween({
+        node: group,
+        opacity: 1,
+        x,
+        duration: 0.4,
+        easing: Konva.Easings.EaseOut,
+      });
+      tween.play();
+    };
+
+    if (enterDelay > 0) {
+      const t = setTimeout(play, enterDelay);
+      return () => {
+        clearTimeout(t);
+        try {
+          tween?.destroy();
+        } catch {
+          // ignore
+        }
       };
+    }
 
-      if (enterDelay > 0) {
-        const t = setTimeout(playAnim, enterDelay);
-        return () => {
-          clearTimeout(t);
-          if (tweenRef.current) {
-            tweenRef.current.destroy();
-            tweenRef.current = null;
-          }
-          if (dotTweenRef.current) {
-            dotTweenRef.current.destroy();
-            dotTweenRef.current = null;
-          }
-        };
-      } else {
-        playAnim();
+    play();
+    return () => {
+      try {
+        tween?.destroy();
+      } catch {
+        // ignore
       }
-    } else if (isInitialMount.current) {
-      group.opacity(1);
-      group.scaleX(1);
-      group.scaleY(1);
-      if (glow && varState !== 'declared') glow.opacity(0.7);
-      isInitialMount.current = false;
+    };
+  }, [enterDelay, isNew, x, y]);
+
+  // Header dot breathe (always-on)
+  useEffect(() => {
+    const dot = dotRef.current;
+    const group = groupRef.current;
+    if (!dot || !group) return;
+    const layer = group.getLayer();
+    if (!layer) return;
+
+    const t = gsap.to(dot, {
+      opacity: 1,
+      duration: 1.25,
+      yoyo: true,
+      repeat: -1,
+      ease: "sine.inOut",
+      onUpdate: () => layer.batchDraw(),
+    });
+    dot.opacity(0.4);
+
+    return () => {
+      t.kill();
+    };
+  }, []);
+
+  // Active effects: pulse + scan beam
+  useEffect(() => {
+    const group = groupRef.current;
+    const outline = outlineRef.current;
+    const beam = beamRef.current;
+    if (!group || !outline || !beam) return;
+    const layer = group.getLayer();
+    if (!layer) return;
+
+    beam.visible(false);
+
+    const draw = () => layer.batchDraw();
+    let ticker: (() => void) | null = null;
+    const tl = gsap.timeline({ paused: true });
+
+    if (isActive) {
+      beam.visible(true);
+      tl.to(
+        outline,
+        {
+          shadowBlur: 18,
+          shadowOpacity: 0.95,
+          duration: 1,
+          yoyo: true,
+          repeat: -1,
+          ease: "sine.inOut",
+        },
+        0,
+      );
+      tl.fromTo(
+        beam,
+        { x: -SUB_W * 0.55, opacity: 0 },
+        {
+          x: SUB_W * 1.15,
+          opacity: 1,
+          duration: 2,
+          repeat: -1,
+          ease: "sine.inOut",
+        },
+        0,
+      );
+
+      ticker = () => draw();
+      gsap.ticker.add(ticker);
+      tl.play(0);
+    } else {
+      outline.shadowBlur(12);
+      outline.shadowOpacity(0.75);
+      beam.visible(false);
+      draw();
     }
 
     return () => {
-      if (tweenRef.current) {
-        tweenRef.current.destroy();
-        tweenRef.current = null;
-      }
-      if (dotTweenRef.current) {
-        dotTweenRef.current.destroy();
-        dotTweenRef.current = null;
-      }
+      tl.kill();
+      if (ticker) gsap.ticker.remove(ticker);
+      beam.visible(false);
+      draw();
     };
-  }, [isNew, varState, enterDelay]);
+  }, [isActive]);
 
-  // Color transition for explanation
-  useEffect(() => {
-    if (explanation && showingExplanation) {
-      const timer = setTimeout(() => {
-        setShowingExplanation(false);
-        
-        // Transition to dark colors
-        const group = groupRef.current;
-        if (group) {
-          const mainBg = group.findOne('.main-bg');
-          if (mainBg) {
-            mainBg.to({
-              fill: 'rgba(5, 92, 64, 0.25)',
-              stroke: '#065F46',
-              duration: 0.5
-            });
-          }
-        }
-      }, 2000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [explanation, showingExplanation]);
+  const chipW = Math.min(Math.max(46, valueText.length * 9 + 18), 164);
+  const typeBadgeW = Math.min(Math.max(40, typeKey.length * 7 + 16), 80);
 
-  const handleMouseEnter = () => {
-    setIsHovered(true);
-    glowRef.current?.to({ shadowBlur: 28, opacity: 0.9, duration: 0.2 });
-  };
-
-  const handleMouseLeave = () => {
-    setIsHovered(false);
-    glowRef.current?.to({ shadowBlur: 20, opacity: varState === 'declared' ? 0 : 0.7, duration: 0.2 });
-  };
+  const headerKind =
+    section === "global" ? "GLOBAL" : section === "heap" ? "HEAP" : "VARIABLE";
 
   return (
     <Group
@@ -370,237 +315,191 @@ export const VariableBox: React.FC<VariableBoxProps> = ({
       id={id}
       x={x}
       y={y}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       onClick={onClick}
-      onTap={onClick}
+      listening={Boolean(onClick)}
     >
-      {stateConfig.glowEnabled && (
-        <Rect
-          ref={glowRef}
-          x={-4}
-          y={-4}
-          width={BOX_WIDTH + 8}
-          height={totalHeight + 8}
-          fill="transparent"
-          cornerRadius={CORNER_RADIUS + 3}
-          shadowColor={colors.primary}
-          shadowBlur={varState === 'updated' ? 25 : 20}
-          shadowOpacity={varState === 'updated' ? 1 : 0.8}
-          opacity={0}
-        />
-      )}
+      <Rect
+        ref={outlineRef}
+        width={SUB_W}
+        height={SUB_H}
+        cornerRadius={SUB_RADIUS}
+        fill="transparent"
+        stroke={tokens.border}
+        strokeWidth={1}
+        shadowColor={tokens.glow}
+        shadowBlur={12}
+        shadowOpacity={0.75}
+      />
 
       <Rect
-        name="main-bg"
-        width={BOX_WIDTH}
-        height={BASE_HEIGHT}
-        fill={bgColor}
-        stroke={borderColor}
-        strokeWidth={borderWidth}
-        dash={stateConfig.borderDash}
-        cornerRadius={CORNER_RADIUS}
-        shadowColor={varState === 'declared' ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.4)'}
-        shadowBlur={varState === 'declared' ? 4 : 12}
-        shadowOffsetY={varState === 'declared' ? 1 : 4}
-        opacity={varState === 'declared' ? 0.8 : 1}
+        x={0}
+        y={0}
+        width={SUB_W}
+        height={SUB_HEADER_H}
+        fill={tokens.header}
+        cornerRadius={[SUB_RADIUS, SUB_RADIUS, 0, 0]}
+      />
+      <Rect
+        x={0}
+        y={SUB_HEADER_H}
+        width={SUB_W}
+        height={SUB_BODY_MIN_H + SUB_HINT_H}
+        fill={tokens.body}
+        cornerRadius={[0, 0, SUB_RADIUS, SUB_RADIUS]}
       />
 
-      {varState !== 'declared' && (
-        <Line
-          points={[0, 0, 0, BASE_HEIGHT]}
-          stroke={colors.accent}
-          strokeWidth={5}
-          lineCap="round"
-          opacity={0.6}
-        />
-      )}
+      <Line
+        points={[
+          0,
+          SUB_HEADER_H + SUB_BODY_MIN_H,
+          SUB_W,
+          SUB_HEADER_H + SUB_BODY_MIN_H,
+        ]}
+        stroke={tokens.sep}
+        strokeWidth={1}
+      />
 
+      <Rect
+        ref={beamRef}
+        x={-SUB_W * 0.55}
+        y={0}
+        width={SUB_W * 0.55}
+        height={SUB_H}
+        opacity={0}
+        listening={false}
+        fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+        fillLinearGradientEndPoint={{ x: SUB_W * 0.55, y: 0 }}
+        fillLinearGradientColorStops={[
+          0,
+          "rgba(0,0,0,0)",
+          0.5,
+          tokens.beam,
+          1,
+          "rgba(0,0,0,0)",
+        ]}
+      />
+
+      {/* Header content */}
       <Circle
         ref={dotRef}
-        x={BOX_WIDTH - 12}
-        y={12}
-        radius={6}
-        fill={stateConfig.dotColor}
-        shadowColor={stateConfig.dotColor}
-        shadowBlur={10}
-        shadowOpacity={1}
+        x={SUB_PAD}
+        y={SUB_HEADER_H / 2}
+        radius={3}
+        fill="#FFFFFF"
+        opacity={0.8}
+      />
+      <Text
+        text={headerKind}
+        x={SUB_PAD + 10}
+        y={8}
+        fontSize={10}
+        fontStyle="bold"
+        fill="#FFFFFF"
+        letterSpacing={1}
+        fontFamily="'JetBrains Mono', monospace"
       />
 
-      <Group x={PADDING} y={8}>
-        <Rect
-          width={stateConfig.label.length * 6.5 + 14}
-          height={18}
-          fill={stateConfig.labelBg}
-          stroke={stateConfig.labelStroke}
-          strokeWidth={1.5}
-          cornerRadius={9}
-          shadowColor={stateConfig.labelStroke}
-          shadowBlur={varState === 'declared' ? 0 : 8}
-          shadowOpacity={0.5}
-        />
-        <Text
-          text={stateConfig.label}
-          y={3}
-          width={stateConfig.label.length * 6.5 + 14}
-          fontSize={9}
-          fontStyle="bold"
-          fill={varState === 'declared' ? '#94A3B8' : stateConfig.dotColor}
-          fontFamily="'SF Pro Display', system-ui, sans-serif"
-          align="center"
-          letterSpacing={0.5}
-        />
-      </Group>
-
-      <Group y={32}>
-        <Text
-          text="VAR:"
-          x={PADDING}
-          y={0}
-          fontSize={10}
-          fontStyle="bold"
-          fill="#64748B"
-          fontFamily="'SF Pro Display', system-ui, sans-serif"
-          letterSpacing={1}
-        />
-        <Text
-          text={name}
-          x={PADDING}
-          y={14}
-          width={BOX_WIDTH - PADDING * 2}
-          fontSize={name.length > 10 ? 20 : 24}
-          fontStyle="bold"
-          fill="#FFFFFF"
-          fontFamily="'SF Pro Display', system-ui, sans-serif"
-          ellipsis={true}
-        />
-      </Group>
-
-      <Group y={74}>
-        <Text
-          text="VALUE:"
-          x={PADDING}
-          y={0}
-          fontSize={10}
-          fontStyle="bold"
-          fill="#64748B"
-          fontFamily="'SF Pro Display', system-ui, sans-serif"
-          letterSpacing={1}
-        />
-        <Text
-          text={displayValue}
-          x={PADDING}
-          y={14}
-          width={BOX_WIDTH - PADDING * 2}
-          fontSize={displayValue.length > 10 ? 16 : 18}
-          fontStyle="bold"
-          fill={varState === 'declared' ? '#64748B' : colors.light}
-          fontFamily="'SF Mono', 'Courier New', monospace"
-          wrap="char"
-          ellipsis={true}
-        />
-      </Group>
-
-      {expression && (varState === 'updated' || varState === 'initialized') && (
-        <Group y={106}>
-          <Text
-            text="FROM:"
-            x={PADDING}
-            y={0}
-            fontSize={8}
-            fontStyle="bold"
-            fill="#64748B"
-            fontFamily="'SF Pro Display', system-ui, sans-serif"
-            letterSpacing={0.8}
-          />
-          <Text
-            text={expression.length > 20 ? expression.slice(0, 18) + '...' : expression}
-            x={PADDING + 32}
-            y={0}
-            width={BOX_WIDTH - PADDING * 2 - 32}
-            fontSize={9}
-            fill="#94A3B8"
-            fontFamily="'SF Mono', monospace"
-            fontStyle="italic"
-            ellipsis={true}
-          />
-        </Group>
-      )}
-
-      <Group y={BASE_HEIGHT - 20}>
-        <Rect
-          x={PADDING}
-          y={0}
-          width={type.length * 7 + 12}
-          height={16}
-          fill={colors.primary}
-          cornerRadius={8}
-          opacity={0.35}
-        />
-        <Text
-          text={type.toUpperCase()}
-          x={PADDING + 6}
-          y={2.5}
-          fontSize={10}
-          fontStyle="bold"
-          fill={colors.light}
-          fontFamily="'SF Pro Display', system-ui, sans-serif"
-          letterSpacing={0.5}
-        />
-
-        {address && address !== '0x0' && address !== '00000000' && (
-          <Text
-            text={address.slice(0, 10)}
-            x={BOX_WIDTH / 2 - 25}
-            y={2.5}
-            fontSize={9}
-            fill="#94A3B8"
-            fontFamily="'SF Mono', monospace"
-          />
-        )}
-
-        {stepNumber !== undefined && (
+      {typeof stepNumber === "number" && (
+        <Group x={SUB_W - 44} y={6}>
+          <Rect width={38} height={16} cornerRadius={3} fill={tokens.badgeBg} />
           <Text
             text={`#${stepNumber}`}
-            x={BOX_WIDTH - PADDING - 28}
-            y={2.5}
-            fontSize={10}
+            x={6}
+            y={4}
+            fontSize={9}
             fontStyle="bold"
-            fill="#64748B"
-            fontFamily="'SF Mono', monospace"
-          />
-        )}
-      </Group>
-
-      {explanation && (
-        <Group y={BASE_HEIGHT - EXPLANATION_HEIGHT - 8}>
-          <Rect
-            name="explanation-bg"
-            width={BOX_WIDTH}
-            height={EXPLANATION_HEIGHT}
-            fill={showingExplanation ? 
-                  'rgba(16, 185, 129, 0.3)' : 
-                  'rgba(5, 92, 64, 0.9)'}
-            stroke={showingExplanation ? '#10B981' : '#065F46'}
-            strokeWidth={1}
-            cornerRadius={8}
-            shadowColor="rgba(0,0,0,0.2)"
-            shadowBlur={4}
-            opacity={showingExplanation ? 1 : 0.9}
-          />
-          <Text
-            text={`💡 ${explanation}`}
-            x={12}
-            y={12}
-            width={BOX_WIDTH - 24}
-            fontSize={10}
-            fill={showingExplanation ? '#064E3B' : '#D1FAE5'}
-            fontFamily="'SF Pro Display', system-ui"
-            fontStyle="bold"
-            align="center"
+            fill={tokens.badgeText}
+            fontFamily="'JetBrains Mono', monospace"
           />
         </Group>
       )}
+
+      {/* Body */}
+      <Text
+        text={stateLabel}
+        x={SUB_PAD}
+        y={SUB_HEADER_H + 8}
+        fontSize={10}
+        fontStyle="bold"
+        fill={tokens.accent}
+        opacity={0.78}
+        fontFamily="'JetBrains Mono', monospace"
+      />
+
+      <Group x={SUB_PAD} y={SUB_HEADER_H + 26}>
+        <Text
+          text={clampText(name, 14)}
+          x={0}
+          y={2}
+          fontSize={12}
+          fontStyle="bold"
+          fill={tokens.accent}
+          fontFamily="'JetBrains Mono', monospace"
+        />
+        <Text
+          text="="
+          x={Math.min(120, Math.max(58, clampText(name, 14).length * 8 + 12))}
+          y={2}
+          fontSize={12}
+          fill="rgba(148,163,184,0.9)"
+          fontFamily="'JetBrains Mono', monospace"
+        />
+
+        <Group
+          x={Math.min(140, Math.max(72, clampText(name, 14).length * 8 + 24))}
+          y={-2}
+        >
+          <Rect
+            width={chipW}
+            height={22}
+            cornerRadius={5}
+            fill={chip.bg}
+            stroke={chip.bd}
+            strokeWidth={1}
+          />
+          <Text
+            text={valueText}
+            x={9}
+            y={5}
+            fontSize={12}
+            fontStyle="bold"
+            fill={chip.clr}
+            fontFamily="'JetBrains Mono', monospace"
+          />
+        </Group>
+
+        <Group x={SUB_W - SUB_PAD - typeBadgeW} y={-2}>
+          <Rect
+            width={typeBadgeW}
+            height={22}
+            cornerRadius={5}
+            fill={chip.bg}
+            stroke={chip.bd}
+            strokeWidth={1}
+            opacity={0.9}
+          />
+          <Text
+            text={typeKey === "str" ? "string" : typeKey}
+            x={8}
+            y={6}
+            fontSize={9}
+            fontStyle="bold"
+            fill={chip.clr}
+            fontFamily="'JetBrains Mono', monospace"
+          />
+        </Group>
+      </Group>
+
+      {/* Hint row */}
+      <Text
+        text={`💡 ${hintText}`}
+        x={SUB_PAD}
+        y={SUB_HEADER_H + SUB_BODY_MIN_H + 8}
+        fontSize={10}
+        fill={tokens.accent}
+        opacity={0.78}
+        fontFamily="'JetBrains Mono', monospace"
+      />
     </Group>
   );
 };

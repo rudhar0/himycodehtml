@@ -930,6 +930,8 @@ export default function VisualizationCanvas() {
             returnType={data?.returnType || "void"}
             x={x}
             y={y}
+            width={width}
+            height={height}
             isRecursive={data?.isRecursive || false}
             depth={data?.depth || 0}
             calledFrom={data?.calledFrom}
@@ -972,6 +974,7 @@ export default function VisualizationCanvas() {
             isNew={isNew}
             stepNumber={stepId}
             enterDelay={enterDelayMap.get(id) || 0}
+            isActive={stepId === currentStep}
           />
         );
       }
@@ -1083,11 +1086,14 @@ export default function VisualizationCanvas() {
             section="stack"
             isNew={effectiveIsNew}
             isUpdated={isUpdated}
+            previousValue={data?.previousValue}
+            expression={data?.expression}
             state={varState}
             stepNumber={stepId}
             enterDelay={enterDelayMap.get(id) || 0}
             color={getVarColor(data?.type || data?.primitive)}
             explanation={data?.explanation}
+            isActive={stepId === currentStep}
           />
         );
       }
@@ -1106,8 +1112,11 @@ export default function VisualizationCanvas() {
             width={width}
             height={height}
             isNew={isNew}
+            isActive={stepId === currentStep}
             subtype={element.subtype as any}
             explanation={data?.explanation}
+            stepNumber={stepId}
+            enterDelay={enterDelayMap.get(id) || 0}
           />
         );
 
@@ -1173,10 +1182,13 @@ export default function VisualizationCanvas() {
             section="global"
             isNew={effectiveGlobalIsNew}
             isUpdated={isUpdated}
+            previousValue={data?.previousValue}
+            expression={data?.expression}
             state={globalState}
             stepNumber={stepId}
             color={getVarColor(data?.type || data?.primitive)}
             explanation={data?.explanation}
+            isActive={stepId === currentStep}
           />
         );
 

@@ -1,6 +1,8 @@
 // frontend/src/components/memory/MemoryRegion.tsx
 import React from 'react';
 import { Rect, Text, Group } from 'react-konva';
+import { useThemeStore } from '../../store/slices/themeSlice';
+
 
 type RegionType = 'TEXT' | 'DATA' | 'HEAP' | 'STACK';
 
@@ -30,7 +32,10 @@ const MemoryRegion: React.FC<MemoryRegionProps> = ({
   startAddress,
   children,
 }) => {
+  const theme = useThemeStore((state) => state.theme);
+  const dark = theme === 'dark';
   const color = REGION_COLORS[name];
+
 
   return (
     <Group x={x} y={y}>
@@ -38,10 +43,11 @@ const MemoryRegion: React.FC<MemoryRegionProps> = ({
       <Rect
         width={width}
         height={height}
-        stroke="#475569" // slate-600
+        stroke={dark ? "#475569" : "#CBD5E1"} // slate-600 vs slate-300
         strokeWidth={1}
-        fill={`${color}1A`} // color with low opacity
+        fill={dark ? `${color}1A` : `${color}0D`} // color with low opacity
       />
+
       
       {/* Region Header */}
       <Rect width={width} height={24} fill={color} />

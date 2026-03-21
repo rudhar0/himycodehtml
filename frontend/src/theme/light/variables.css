@@ -1,56 +1,57 @@
-/* ── LIGHT THEME VARIABLES ── */
-/* Prototype palette — applied by default on :root (no extra class needed) */
+/* Light theme variables */
 
 :root {
   /* Backgrounds */
-  --bg0: #E8ECF2;   /* base */
-  --bg1: #FFFFFF;   /* surface — bars, sidebar */
-  --bg2: #F4F6FA;   /* panels */
-  --bg3: #EAECF4;   /* raised / hover */
+  --bg0: #e8ecf2;
+  --bg1: #ffffff;
+  --bg2: #f4f6fa;
+  --bg3: #eaecf4;
 
   /* Borders */
-  --bd:  #D8DCE8;
-  --bd2: #BEC4D6;
+  --bd: #d8dce8;
+  --bd2: #bec4d6;
+  --sep: rgba(0, 0, 0, 0.08);
 
   /* Text */
-  --t1:  #0F172A;
-  --t2:  #475569;
-  --t3:  #94A3B8;
+  --t1: #0f172a;
+  --t2: #475569;
+  --t3: #94a3b8;
 
   /* Accent */
-  --acc:  #7C3AED;
+  --acc: #7c3aed;
   --acc2: #059669;
-  --acc3: #2563EB;
-  --accL: #7C3AED;
+  --acc3: #2563eb;
+  --accl: #7c3aed;
 
   /* Semantic visualization colors */
-  --color-global:    #2DD4BF;
-  --color-stack:     #3B82F6;
-  --color-heap:      #10B981;
-  --color-pointer:   #EF4444;
-  --color-control:   #A855F7;
-  --color-optimized: #F59E0B;
+  --color-global: #2dd4bf;
+  --color-stack: #3b82f6;
+  --color-heap: #10b981;
+  --color-pointer: #ef4444;
+  --color-control: #a855f7;
+  --color-optimized: #f59e0b;
 
   /* Durations */
-  --duration-fast:   200ms;
+  --duration-fast: 200ms;
   --duration-normal: 500ms;
-  --duration-slow:   800ms;
+  --duration-slow: 800ms;
 
   /* Z-index layers */
-  --z-canvas-base:    1;
+  --z-canvas-base: 1;
   --z-canvas-arrows: 10;
-  --z-canvas-overlay:20;
-  --z-ui-controls:  100;
-  --z-modal:       1000;
+  --z-canvas-overlay: 20;
+  --z-ui-controls: 100;
+  --z-modal: 1000;
 
   /* Legacy aliases */
-  --bg-primary:    var(--bg0);
-  --bg-secondary:  var(--bg2);
-  --bg-tertiary:   var(--bg1);
-  --bg-elevated:   var(--bg3);
-  --text-primary:  var(--t1);
-  --text-secondary:var(--t2);
-  --text-muted:    var(--t3);
-  --border-color:  var(--bd);
-  --border-light:  var(--bd2);
+  --bg-primary: var(--bg0);
+  --bg-secondary: var(--bg2);
+  --bg-tertiary: var(--bg1);
+  --bg-elevated: var(--bg3);
+  --text-primary: var(--t1);
+  --text-secondary: var(--t2);
+  --text-muted: var(--t3);
+  --border-color: var(--bd);
+  --border-light: var(--bd2);
 }
+

@@ -1,6 +1,49 @@
-.light {
-  --var-bg: #FFFBEB;
-  --var-bd: #D97706;
-  --var-tx: #92400E;
-  --var-ac: #D97706;
+:root {
+  /* Variable card theme (blue) */
+  --var-hdr: #1d4ed8;
+  --var-body: #eff6ff;
+  --var-border: rgba(37, 99, 235, 0.3);
+  --var-glow: rgba(37, 99, 235, 0.07);
+  --var-accent: #2563eb;
+  --var-text: #1e3a8a;
+
+  /* Type chips */
+  --type-int-clr: #f59e0b;
+  --type-int-bg: rgba(245, 158, 11, 0.12);
+  --type-int-bd: rgba(245, 158, 11, 0.3);
+
+  --type-str-clr: #22c55e;
+  --type-str-bg: rgba(34, 197, 94, 0.12);
+  --type-str-bd: rgba(34, 197, 94, 0.3);
+
+  --type-float-clr: #38bdf8;
+  --type-float-bg: rgba(56, 189, 248, 0.12);
+  --type-float-bd: rgba(56, 189, 248, 0.3);
+
+  --type-dbl-clr: #38bdf8;
+  --type-dbl-bg: rgba(56, 189, 248, 0.12);
+  --type-dbl-bd: rgba(56, 189, 248, 0.3);
+
+  --type-bool-clr: #a78bfa;
+  --type-bool-bg: rgba(167, 139, 250, 0.12);
+  --type-bool-bd: rgba(167, 139, 250, 0.3);
+
+  --type-char-clr: #fb923c;
+  --type-char-bg: rgba(251, 146, 60, 0.12);
+  --type-char-bd: rgba(251, 146, 60, 0.3);
+
+  --type-ptr-clr: #f472b6;
+  --type-ptr-bg: rgba(244, 114, 182, 0.12);
+  --type-ptr-bd: rgba(244, 114, 182, 0.3);
+
+  --type-auto-clr: #94a3b8;
+  --type-auto-bg: rgba(148, 163, 184, 0.12);
+  --type-auto-bd: rgba(148, 163, 184, 0.3);
+
+  --type-void-clr: #6b7280;
+  --type-void-bg: rgba(107, 114, 128, 0.12);
+  --type-void-bd: rgba(107, 114, 128, 0.3);
+
+  --var-beam: rgba(96, 165, 250, 0.06);
 }
+

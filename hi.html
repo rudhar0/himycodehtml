@@ -3,593 +3,1910 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Loop Visualization — Prototype v2</title>
+<title>CodeViz — Extended UI</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@600;700;800&display=swap');
+/* ═══════════════════════════════════════
+   RESET & ROOT
+═══════════════════════════════════════ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#070c18;--surface:#0b1425;--border:#182338;--border2:#1e2d4a;
-  --for:#F59E0B;--for-l:#FCD34D;--for-glow:rgba(245,158,11,.5);--for-bg:rgba(245,158,11,.07);
-  --while:#8B5CF6;--while-l:#C084FC;--while-bg:rgba(139,92,246,.07);
-  --cond:#FF7A18;--fn:#06B6D4;--green:#10B981;--red:#EF4444;
-  --muted:#475569;--dim:#64748B;--text:#E2E8F0;--textd:#94A3B8;
+  --titlebar-h:44px;
+  --bottombar-h:44px;
+  --sidebar-w:220px;
+  --editor-w:290px;
+  --tabbar-h:40px;
+  --font-ui:'Geist',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --radius:8px;
+  --radius-sm:5px;
 }
-body{background:var(--bg);font-family:'JetBrains Mono',monospace;color:var(--text);min-height:100vh;overflow-x:hidden}
-body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(rgba(30,45,74,.4) 1px,transparent 1px);background-size:28px 28px;pointer-events:none;z-index:0}
 
-/* topbar */
-.tb{position:sticky;top:0;z-index:200;background:rgba(7,12,24,.93);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);padding:9px 24px;display:flex;align-items:center;gap:14px}
-.tb-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--dim)}
-.tb-sep{width:1px;height:14px;background:var(--border2)}
-.tb-tag{font-size:8px;font-weight:700;letter-spacing:1.5px;color:var(--for);opacity:.75}
+/* ═══════════════════════════════════════
+   DARK THEME
+═══════════════════════════════════════ */
+.dark{
+  --bg0:#08070F;
+  --bg1:#0F0E1E;
+  --bg2:#141228;
+  --bg3:#1A1830;
+  --bg4:#201D38;
+  --bd1:#252240;
+  --bd2:#302D50;
+  --bd3:#3D3960;
+  --t1:#F1F0FF;
+  --t2:#9A96BC;
+  --t3:#4E4A6E;
+  --t4:#2E2A48;
+  --acc:#7C3AED;
+  --acc2:#10B981;
+  --acc3:#3B82F6;
+  --acc4:#F59E0B;
+  --acc5:#EC4899;
+  --acc6:#06B6D4;
+  --red:#EF4444;
+  --acc-dim:rgba(124,58,237,.12);
+  --acc2-dim:rgba(16,185,129,.12);
+  --run-shadow:rgba(16,185,129,.35);
+}
 
-/* viewport */
-.vp{position:relative;z-index:1;overflow:hidden;height:calc(100vh - 42px)}
-.cs{padding:32px 0 140px;will-change:transform;transition:transform .5s cubic-bezier(.4,0,.2,1)}
+/* ═══════════════════════════════════════
+   LIGHT THEME
+═══════════════════════════════════════ */
+.light{
+  --bg0:#E8ECF4;
+  --bg1:#FFFFFF;
+  --bg2:#F4F6FA;
+  --bg3:#EAECF4;
+  --bg4:#E4E7F0;
+  --bd1:#D8DCE8;
+  --bd2:#C8CCD8;
+  --bd3:#B4B8CC;
+  --t1:#0F1020;
+  --t2:#475569;
+  --t3:#94A3B8;
+  --t4:#CBD5E1;
+  --acc:#7C3AED;
+  --acc2:#059669;
+  --acc3:#2563EB;
+  --acc4:#D97706;
+  --acc5:#DB2777;
+  --acc6:#0891B2;
+  --red:#DC2626;
+  --acc-dim:rgba(124,58,237,.08);
+  --acc2-dim:rgba(5,150,105,.08);
+  --run-shadow:rgba(5,150,105,.25);
+}
 
-/* trace two-column */
-.trace{display:grid;grid-template-columns:216px 1fr;max-width:860px;margin:0 auto;padding:0 22px;gap:0}
-.ch{font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:9px;border-bottom:1px solid var(--border);margin-bottom:13px}
-.ccol{padding-right:10px}
-.bcol{padding-left:14px;border-left:1px solid var(--border)}
+/* ═══════════════════════════════════════
+   BASE
+═══════════════════════════════════════ */
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg0);
+  font-family:var(--font-ui);
+  font-size:13px;
+  color:var(--t1);
+  display:flex;
+  flex-direction:column;
+  transition:background .2s,color .2s;
+}
 
-/* caller block */
-.caller{display:flex;align-items:center;height:44px;margin-bottom:9px;border-radius:8px;border:1.8px solid;overflow:hidden;cursor:pointer;transition:filter .12s,box-shadow .15s;position:relative;background:rgba(11,20,37,.97)}
-.caller:hover{filter:brightness(1.08)}
-.caller.ft{border-color:rgba(245,158,11,.45);background:linear-gradient(90deg,rgba(11,20,37,.98),rgba(245,158,11,.05))}
-.caller.wt{border-color:rgba(139,92,246,.45);background:linear-gradient(90deg,rgba(11,20,37,.98),rgba(139,92,246,.05))}
-.caller.ft.act{border-color:var(--for);box-shadow:0 0 14px var(--for-glow)}
-.caller.wt.act{border-color:var(--while);box-shadow:0 0 14px rgba(139,92,246,.4)}
-.stripe{width:4px;align-self:stretch;flex-shrink:0;border-radius:8px 0 0 8px}
-.ft .stripe{background:var(--for)}.wt .stripe{background:var(--while)}
-.ci{display:flex;align-items:center;gap:6px;padding:0 8px;flex:1;min-width:0}
-.ce{font-size:10px;color:#FFF0D9;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bdg{padding:2px 8px;border-radius:99px;font-size:8px;font-weight:700;white-space:nowrap;flex-shrink:0}
-.b-for{background:rgba(15,23,42,.5);border:1px solid rgba(252,211,77,.7);color:#FCD34D}
-.b-whl{background:rgba(15,23,42,.5);border:1px solid rgba(192,132,252,.7);color:#C084FC}
-.b-run{color:#10B981;border:1px solid rgba(16,185,129,.5);background:rgba(16,185,129,.08)}
-.b-don{color:#64748B;border:1px solid rgba(100,116,139,.4);background:rgba(100,116,139,.07)}
-.b-cnt{background:rgba(30,45,74,.55);border:1px solid rgba(255,255,255,.1);color:var(--textd)}
-.pls{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:pls 1.3s ease-in-out infinite}
-.ft .pls{background:var(--for)}.wt .pls{background:var(--while)}
-@keyframes pls{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(245,158,11,.6)}60%{transform:scale(1.2);box-shadow:0 0 0 5px rgba(245,158,11,0)}}
-.skp{padding:2px 7px;border-radius:5px;font-size:10px;font-family:inherit;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);cursor:pointer;flex-shrink:0;color:#FCA5A5;transition:background .12s}
-.skp:hover{background:rgba(239,68,68,.3)}
+/* ═══════════════════════════════════════
+   TITLEBAR
+═══════════════════════════════════════ */
+.titlebar{
+  height:var(--titlebar-h);
+  background:var(--bg1);
+  border-bottom:1px solid var(--bd1);
+  display:flex;
+  align-items:center;
+  padding:0 12px;
+  gap:8px;
+  flex-shrink:0;
+  z-index:100;
+}
+.tb-winbtn{
+  width:12px;height:12px;border-radius:50%;flex-shrink:0;
+}
+.tb-winbtns{display:flex;gap:6px;margin-right:6px}
+.tb-logo{
+  width:26px;height:26px;border-radius:7px;
+  background:linear-gradient(135deg,#7C3AED,#4F46E5);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.tb-brand{display:flex;flex-direction:column;gap:1px}
+.tb-name{font-size:13px;font-weight:700;color:var(--t1);line-height:1;letter-spacing:-.01em}
+.tb-sub{font-size:9px;color:var(--t3);line-height:1}
+.tb-space{flex:1}
+.tb-run{
+  background:var(--acc2);
+  color:#fff;border:none;
+  border-radius:var(--radius);
+  padding:0 16px;height:28px;
+  font-family:var(--font-ui);
+  font-size:12px;font-weight:600;
+  cursor:pointer;
+  display:flex;align-items:center;gap:6px;
+  box-shadow:0 2px 12px var(--run-shadow);
+  transition:all .15s;
+}
+.tb-run:hover{filter:brightness(1.1)}
+.tb-file{
+  background:transparent;color:var(--t2);
+  border:1px solid var(--bd2);border-radius:var(--radius);
+  padding:0 12px;height:28px;
+  font-family:var(--font-ui);font-size:12px;
+  cursor:pointer;transition:all .15s;
+}
+.tb-file:hover{border-color:var(--bd3);color:var(--t1)}
+.tb-div{width:1px;height:20px;background:var(--bd1)}
+.tb-connected{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--acc2)}
+.connected-dot{width:7px;height:7px;border-radius:50%;background:var(--acc2);animation:breathe 2s infinite}
+.tb-icon{
+  width:28px;height:28px;border-radius:var(--radius-sm);
+  background:transparent;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t3);transition:all .15s;
+}
+.tb-icon:hover{background:var(--bg3);color:var(--t2)}
+.tb-icon svg{width:16px;height:16px}
 
-/* loop container */
-.loop{border-radius:10px;background:rgba(11,20,37,.97);border:2px solid;margin-bottom:13px;overflow:hidden;transition:box-shadow .2s,border-color .2s}
-.loop.ft{border-color:rgba(245,158,11,.45)}
-.loop.wt{border-color:rgba(139,92,246,.45)}
-.loop.ft.act{border-color:var(--for);box-shadow:0 0 28px rgba(245,158,11,.22)}
-.loop.wt.act{border-color:var(--while);box-shadow:0 0 28px rgba(139,92,246,.22)}
+/* ═══════════════════════════════════════
+   MAIN LAYOUT
+═══════════════════════════════════════ */
+.main-row{
+  flex:1;display:flex;overflow:hidden;
+}
 
-/* header */
-.lhdr{position:relative;overflow:hidden;padding:9px 14px 7px}
-.lhdr::before{content:'';position:absolute;inset:0;opacity:.88}
-.ft .lhdr::before{background:linear-gradient(120deg,#F59E0B,#FCD34D)}
-.wt .lhdr::before{background:linear-gradient(120deg,#8B5CF6,#C084FC)}
-.hfl{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:3;transition:opacity .06s}
-.hst{position:absolute;left:0;top:0;bottom:0;width:5px;z-index:2}
-.ft .hst{background:var(--for)}.wt .hst{background:var(--while)}
-.hr1,.hr2{position:relative;z-index:2;display:flex;align-items:center;gap:7px;flex-wrap:nowrap}
-.hr1{margin-bottom:5px}
-.hx{font-size:11px;color:#FFF0D9;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.sn-h{font-size:9px;color:rgba(80,40,0,.8);font-weight:700;margin-left:auto;flex-shrink:0}
-.tgl,.skh{padding:2px 9px;border-radius:8px;font-size:8px;font-weight:700;font-family:inherit;cursor:pointer;transition:opacity .12s;flex-shrink:0}
-.tgl{background:rgba(15,23,42,.45);border:1px solid rgba(255,255,255,.3);color:rgba(255,255,255,.8)}
-.tgl:hover{background:rgba(15,23,42,.7)}
-.skh{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.5);color:#FCA5A5}
-.skh:hover{background:rgba(239,68,68,.3)}
+/* ═══════════════════════════════════════
+   LEFT SIDEBAR
+═══════════════════════════════════════ */
+.sidebar{
+  width:var(--sidebar-w);
+  background:var(--bg1);
+  border-right:1px solid var(--bd1);
+  display:flex;flex-direction:column;
+  flex-shrink:0;
+  overflow:hidden;
+}
+.sb-tabs{
+  display:flex;
+  border-bottom:1px solid var(--bd1);
+  flex-shrink:0;
+}
+.sbt{
+  flex:1;padding:9px 0;
+  text-align:center;font-size:11px;font-weight:500;
+  cursor:pointer;border:none;background:transparent;
+  font-family:var(--font-ui);color:var(--t3);
+  border-bottom:2px solid transparent;
+  transition:color .15s;
+}
+.sbt.on{color:var(--acc);border-bottom-color:var(--acc)}
+.sb-body{flex:1;overflow-y:auto;padding:8px}
+.sb-section{margin-bottom:12px}
+.sb-sec-hdr{
+  display:flex;align-items:center;gap:6px;
+  font-size:10px;font-weight:600;color:var(--t3);
+  letter-spacing:.06em;text-transform:uppercase;
+  padding:4px 4px;cursor:pointer;
+  border-radius:var(--radius-sm);
+  transition:color .15s;
+}
+.sb-sec-hdr:hover{color:var(--t2)}
+.sb-sec-hdr .count{
+  background:var(--bg3);color:var(--t3);
+  border-radius:10px;padding:0 6px;
+  font-size:9px;font-weight:600;margin-left:auto;
+}
+.sb-item{
+  display:flex;align-items:center;gap:7px;
+  padding:5px 8px;border-radius:var(--radius-sm);
+  cursor:pointer;font-size:11px;color:var(--t2);
+  transition:all .15s;
+  white-space:nowrap;overflow:hidden;
+}
+.sb-item:hover{background:var(--bg3);color:var(--t1)}
+.sb-item.on{background:var(--acc-dim);color:var(--acc)}
+.sb-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--acc2)}
+.sb-item-sub{
+  font-size:10px;color:var(--t3);
+  padding:2px 8px 2px 21px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  line-height:1.4;
+}
+.sb-empty{
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:6px;padding:32px 16px;
+  text-align:center;
+}
+.sb-empty svg{opacity:.25}
+.sb-empty p{font-size:11px;color:var(--t3)}
+.sb-empty span{font-size:10px;color:var(--t4)}
 
-/* header var chips — top-to-bottom rows of 4 */
-.hvars{position:relative;z-index:2;display:flex;flex-wrap:wrap;gap:4px;padding:5px 0 1px}
-.vc{display:flex;align-items:center;justify-content:space-between;width:78px;height:20px;padding:0 7px;border-radius:10px;background:rgba(51,65,85,.55);border:1px solid;transition:border-color .2s,background .2s}
-.ft .vc{border-color:rgba(252,211,77,.3)}.wt .vc{border-color:rgba(192,132,252,.3)}
-.vc.chg{animation:vf .5s ease forwards}
-@keyframes vf{0%{background:rgba(245,158,11,.4);border-color:rgba(245,158,11,.9)}100%{background:rgba(51,65,85,.55);border-color:rgba(252,211,77,.3)}}
-.wt .vc.chg{animation:vfw .5s ease forwards}
-@keyframes vfw{0%{background:rgba(139,92,246,.4);border-color:rgba(139,92,246,.9)}100%{background:rgba(51,65,85,.55);border-color:rgba(192,132,252,.3)}}
-.vn{font-size:8px;font-weight:700;opacity:.6;color:#FFF0D9}
-.vv{font-size:10px;font-weight:700;color:#FFF0D9}
-.ft .vc.chg .vv{color:#FCD34D}.wt .vc.chg .vv{color:#C084FC}
+/* ═══════════════════════════════════════
+   EDITOR PANEL
+═══════════════════════════════════════ */
+.editor-panel{
+  width:var(--editor-w);
+  display:flex;flex-direction:column;
+  border-right:1px solid var(--bd1);
+  flex-shrink:0;
+  background:var(--bg2);
+}
+.editor-hdr{
+  height:var(--tabbar-h);
+  background:var(--bg1);
+  border-bottom:1px solid var(--bd1);
+  border-top:2px solid var(--acc);
+  display:flex;align-items:center;
+  padding:0 12px;gap:8px;
+  flex-shrink:0;
+}
+.editor-title{font-size:12px;font-weight:500;color:var(--t1)}
+.lang-badge{
+  background:var(--bg0);color:var(--acc3);
+  border:1px solid var(--bd2);border-radius:4px;
+  padding:2px 7px;font-size:10px;font-weight:600;
+}
+.editor-body{
+  flex:1;background:var(--bg0);
+  padding:10px 0;overflow-y:auto;
+  font-family:var(--font-mono);
+}
+.code-line{
+  display:flex;align-items:baseline;
+  padding:0 10px;min-height:19px;
+}
+.code-line.hl{background:rgba(124,58,237,.07)}
+.ln{
+  width:34px;text-align:right;padding-right:12px;
+  font-size:11px;color:var(--t3);flex-shrink:0;
+  user-select:none;
+}
+.code{font-size:11px;white-space:pre;color:var(--t2)}
+.kw{color:#C084FC}.fn2{color:#60A5FA}.str{color:#34D399}.ns{color:#F59E0B}.cm{color:#4E4A6E;font-style:italic}
+.num{color:#FB923C}.op{color:var(--t2)}.type{color:#38BDF8}
 
-.ldiv{height:1px;background:rgba(255,255,255,.1)}
+/* ═══════════════════════════════════════
+   RIGHT PANEL (main content area)
+═══════════════════════════════════════ */
+.right-panel{
+  flex:1;display:flex;flex-direction:column;overflow:hidden;
+}
 
-/* ── body separator (expanded only — top-to-bottom boundary marker) */
-.bsep{display:flex;align-items:center;padding:5px 10px 3px}
-.sln{flex:1;height:1px}
-.ft .sln{background:repeating-linear-gradient(90deg,rgba(245,158,11,.35) 0px,rgba(245,158,11,.35) 4px,transparent 4px,transparent 7px)}
-.wt .sln{background:repeating-linear-gradient(90deg,rgba(139,92,246,.35) 0px,rgba(139,92,246,.35) 4px,transparent 4px,transparent 7px)}
-.slbl{padding:1px 8px;border-radius:7px;margin:0 6px;font-size:8px;font-weight:700;letter-spacing:1.5px;background:rgba(15,23,42,.7);flex-shrink:0}
-.ft .slbl{border:1px solid rgba(245,158,11,.28);color:rgba(245,158,11,.6)}
-.wt .slbl{border:1px solid rgba(139,92,246,.28);color:rgba(139,92,246,.6)}
+/* panel tab bar */
+.panel-tabs{
+  height:var(--tabbar-h);
+  background:var(--bg1);
+  border-bottom:1px solid var(--bd1);
+  display:flex;align-items:center;
+  padding:0 8px;gap:2px;
+  flex-shrink:0;overflow-x:auto;
+  scrollbar-width:none;
+}
+.panel-tabs::-webkit-scrollbar{display:none}
+.ptab{
+  display:flex;align-items:center;gap:5px;
+  padding:0 12px;height:28px;
+  border-radius:var(--radius-sm);
+  font-size:11px;font-weight:500;
+  cursor:pointer;border:none;
+  background:transparent;color:var(--t3);
+  font-family:var(--font-ui);
+  white-space:nowrap;
+  transition:all .15s;
+  position:relative;
+}
+.ptab:hover{background:var(--bg3);color:var(--t2)}
+.ptab.on{background:var(--acc-dim);color:var(--acc);font-weight:600}
+.ptab.on::after{
+  content:'';position:absolute;bottom:-8px;left:0;right:0;height:2px;
+  background:var(--acc);border-radius:1px;
+}
+.ptab-dot{
+  width:6px;height:6px;border-radius:50%;flex-shrink:0;
+}
+.ptab-count{
+  font-size:9px;
+  background:var(--bg4);color:var(--t3);
+  border-radius:9px;padding:1px 5px;
+}
+.ptab-new{
+  font-size:8px;font-weight:700;
+  background:var(--acc);color:#fff;
+  border-radius:3px;padding:1px 4px;
+  letter-spacing:.03em;
+}
+.pt-space{flex:1}
+.pt-zoom{font-size:11px;color:var(--t3);display:flex;align-items:center;gap:4px}
+.pt-zbtn{
+  width:24px;height:24px;border-radius:4px;
+  background:transparent;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t3);transition:all .15s;
+}
+.pt-zbtn:hover{background:var(--bg3);color:var(--t2)}
 
-/* body */
-.lbdy{padding:7px 10px 9px 12px}
-.bi{border-radius:8px;padding:7px 10px;min-height:60px}
-.ft .bi{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.15)}
-.wt .bi{background:rgba(139,92,246,.04);border:1px solid rgba(139,92,246,.15)}
-.ra{width:8px;height:8px;border-radius:50%;margin:0 0 7px 2px}
-.ft .ra{background:var(--for);box-shadow:0 0 6px var(--for-glow)}
-.wt .ra{background:var(--while);box-shadow:0 0 6px rgba(139,92,246,.5)}
+/* panel content */
+.panel-content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.panel-view{
+  flex:1;overflow:hidden;
+  display:none;
+}
+.panel-view.on{display:flex;flex-direction:column}
 
-/* steps — strictly top-to-bottom, no horizontal layout ever */
-.step{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:5px;background:rgba(15,23,42,.6);border:1px solid var(--border2);font-size:10px;color:var(--textd);transition:border-color .2s,background .2s}
-.step:last-child{margin-bottom:0}
-.step.act{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.06);color:var(--text)}
-.wt .step.act{border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.06)}
-.sn{font-size:8px;color:var(--muted);font-weight:700;flex-shrink:0}
-.rv{margin-left:auto;font-size:9px;opacity:.7;flex-shrink:0}
-.fn{color:var(--fn)}
+/* ═══════════════════════════════════════
+   CANVAS VIEW
+═══════════════════════════════════════ */
+.canvas-view{
+  flex:1;position:relative;overflow:hidden;
+  background:var(--bg2);
+}
+.dot-grid{
+  position:absolute;inset:0;
+  background-image:radial-gradient(circle,var(--bd1) 1px,transparent 1px);
+  background-size:20px 20px;opacity:.5;
+  pointer-events:none;
+}
+.canvas-inner{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+}
 
-/* nested condition inside body */
-.nc{border-radius:8px;background:rgba(15,23,42,.8);border:1.5px solid rgba(255,122,24,.32);margin-bottom:5px;overflow:hidden}
-.nc:last-child{margin-bottom:0}
-.nch{display:flex;align-items:center;gap:7px;padding:5px 9px;background:linear-gradient(90deg,rgba(255,122,24,.22),rgba(255,122,24,.05));font-size:10px}
-.ifb{padding:2px 7px;border-radius:99px;font-size:8px;font-weight:700;background:rgba(15,23,42,.45);border:1px solid rgba(255,220,170,.5);color:#FFF0D9;flex-shrink:0}
-.res-t{padding:2px 7px;border-radius:99px;font-size:8px;font-weight:700;border:1.2px solid rgba(255,209,102,.6);color:#FFD166;background:rgba(255,209,102,.07);flex-shrink:0}
-.res-f{padding:2px 7px;border-radius:99px;font-size:8px;font-weight:700;border:1.2px solid rgba(255,107,107,.6);color:#FF6B6B;background:rgba(255,107,107,.07);flex-shrink:0}
-.ncb{padding:5px 9px}
-.cx{font-size:10px;color:#FFF0D9;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The main card shown in canvas */
+.main-card-preview{
+  width:420px;
+  border-radius:14px;
+  border:1px solid rgba(124,58,237,.55);
+  overflow:hidden;
+  box-shadow:0 0 0 4px rgba(124,58,237,.1),0 8px 32px rgba(0,0,0,.3);
+  animation:cardRise .55s cubic-bezier(.22,1,.36,1) both;
+}
+.mc-hdr{
+  background:linear-gradient(148deg,#5B21B6 0%,#7C3AED 52%,#6D28D9 100%);
+  padding:14px 16px 11px 18px;
+  display:flex;flex-direction:column;gap:10px;
+  position:relative;overflow:hidden;
+}
+.mc-hdr::before{
+  content:'';position:absolute;inset:0;
+  background-image:repeating-linear-gradient(90deg,rgba(255,255,255,.04) 0,rgba(255,255,255,.04) 1px,transparent 1px,transparent 22px),
+  repeating-linear-gradient(0deg,rgba(255,255,255,.04) 0,rgba(255,255,255,.04) 1px,transparent 1px,transparent 22px);
+  pointer-events:none;
+}
+.mc-hdr::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.07) 50%,transparent);
+  background-size:200% 100%;animation:shimmer 4s ease-in-out infinite;
+  pointer-events:none;
+}
+.mc-top{display:flex;align-items:center;gap:11px;position:relative}
+.mc-icon{
+  width:34px;height:34px;border-radius:9px;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;
+}
+.mc-names{flex:1;display:flex;flex-direction:column;gap:2px}
+.mc-fn{font-size:17px;font-weight:700;color:#fff;letter-spacing:-.02em;line-height:1}
+.mc-sig{font-size:9px;color:rgba(255,255,255,.5);line-height:1}
+.mc-bdgs{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.mc-bdg{font-size:9px;font-weight:700;border-radius:4px;padding:2px 7px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.1);color:rgba(255,255,255,.75);letter-spacing:.05em}
+.mc-bdg.run{background:rgba(34,197,94,.22);color:#6EE7B7;border-color:rgba(34,197,94,.4);animation:runBlink 1.4s infinite}
+.mc-meta{display:flex;align-items:center;gap:7px;position:relative;padding-top:9px;border-top:1px solid rgba(255,255,255,.1)}
+.mmp{background:rgba(0,0,0,.2);border-radius:5px;padding:3px 9px;font-size:10px;color:rgba(255,255,255,.5);font-family:var(--font-mono)}
+.mmp.grow{flex:1}.mmp b{color:rgba(255,255,255,.8)}
+.mc-body{background:#0F0E24;padding:10px;display:flex;flex-direction:column;gap:7px}
+.sub-preview{
+  width:100%;border-radius:8px;border:1px solid;overflow:hidden;
+}
+.sp-hdr{height:26px;padding:0 10px;display:flex;align-items:center;gap:6px}
+.sp-dot{width:5px;height:5px;border-radius:50%;animation:breathe 2.5s infinite;flex-shrink:0}
+.sp-kind{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;flex:1}
+.sp-step{background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);font-size:9px;border-radius:3px;padding:1px 5px;font-family:var(--font-mono)}
+.sp-bdy{padding:7px 10px;display:flex;flex-direction:column;gap:3px}
+.sp-lbl{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.7}
+.sp-val{font-size:12px;font-weight:600;font-family:var(--font-mono)}
+.sub-preview.out{border-color:rgba(34,197,94,.4)}
+.sub-preview.out .sp-hdr{background:#145228}
+.sub-preview.out .sp-bdy{background:#0A1B0E}
+.sub-preview.out .sp-dot,.sub-preview.out .sp-kind,.sub-preview.out .sp-lbl{color:#22C55E}
+.sub-preview.out .sp-val{color:#86EFAC}
+.sub-preview.ret{border-color:rgba(248,113,113,.4)}
+.sub-preview.ret .sp-hdr{background:#7F1D1D}
+.sub-preview.ret .sp-bdy{background:#150909}
+.sub-preview.ret .sp-dot,.sub-preview.ret .sp-kind,.sub-preview.ret .sp-lbl{color:#F87171}
+.sub-preview.ret .sp-val{color:#FECACA}
+.mc-foot{
+  background:rgba(0,0,0,.2);border-top:1px solid rgba(124,58,237,.3);
+  padding:7px 14px;display:flex;align-items:center;gap:8px;
+  font-family:var(--font-mono);
+}
+.mf-g{display:flex;align-items:center;gap:5px;flex:1}
+.mf-dot2{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.mf-l{font-size:10px;color:rgba(255,255,255,.4)}
+.mf-v{font-size:10px;font-weight:600;color:rgba(255,255,255,.7)}
+.mf-s{width:1px;height:12px;background:rgba(124,58,237,.4)}
+.mf-ok{display:flex;align-items:center;gap:4px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);border-radius:5px;padding:2px 8px}
+.mf-okd{width:5px;height:5px;border-radius:50%;background:#22C55E;animation:breathe 2s infinite}
+.mf-okt{font-size:10px;font-weight:700;color:#22C55E}
 
-/* collapsed summary lane */
-.sum{margin:6px 10px;padding:8px 13px;border-radius:8px;min-height:80px;display:flex;flex-direction:column;gap:7px}
-.ft .sum{background:var(--for-bg);border:1px solid rgba(245,158,11,.18)}
-.wt .sum{background:var(--while-bg);border:1px solid rgba(139,92,246,.18)}
-.tk{display:flex;align-items:center;gap:7px}
-.td{width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:pls 1.2s ease-in-out infinite}
-.ft .td{background:var(--for)}.wt .td{background:var(--while)}
-.tt{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ft .tt{color:var(--for-l)}.wt .tt{color:var(--while-l)}
-.dr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-.dl{font-size:9px;color:var(--dim);flex-shrink:0}
-.dc{padding:2px 8px;border-radius:9px;font-size:9px;background:rgba(51,65,85,.55);color:#CBD5E1;border:1px solid;transition:all .25s}
-.ft .dc{border-color:rgba(245,158,11,.22)}.wt .dc{border-color:rgba(139,92,246,.22)}
-.dc.fl{animation:df .45s ease}
-@keyframes df{0%{background:rgba(245,158,11,.35);border-color:rgba(245,158,11,.9);color:#FFF0D9}100%{background:rgba(51,65,85,.55);border-color:rgba(245,158,11,.22);color:#CBD5E1}}
-.sr{display:flex;gap:5px;flex-wrap:wrap}
-.sb{padding:2px 8px;border-radius:9px;font-size:9px;font-weight:600;background:rgba(15,23,42,.55);white-space:nowrap}
-.sb.sc{border:1px solid rgba(255,122,24,.4);color:rgba(255,122,24,.9)}
-.sb.sl{border:1px solid rgba(139,92,246,.4);color:rgba(139,92,246,.9)}
-.sb.sf{border:1px solid rgba(6,182,212,.4);color:rgba(6,182,212,.9)}
+/* step indicator on canvas */
+.step-pill{
+  position:absolute;top:12px;left:12px;
+  background:var(--bg1);border:1px solid var(--bd2);
+  border-radius:20px;padding:4px 14px;
+  font-size:12px;font-weight:600;color:var(--t1);
+  box-shadow:0 4px 12px rgba(0,0,0,.2);
+}
+.step-pill span{color:var(--acc)}
+.step-pill b{color:var(--t2);font-weight:400}
+/* pan controls */
+.canvas-controls{
+  position:absolute;top:12px;right:12px;
+  display:flex;gap:4px;
+  background:var(--bg1);border:1px solid var(--bd2);
+  border-radius:var(--radius);padding:4px;
+  box-shadow:0 4px 12px rgba(0,0,0,.15);
+}
+.cc-btn{
+  width:28px;height:28px;border-radius:5px;
+  background:transparent;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t2);transition:all .15s;
+}
+.cc-btn:hover{background:var(--bg3)}
+.cc-btn.on{background:var(--acc3);color:#fff}
+.cc-btn svg{width:14px;height:14px}
 
-/* footer */
-.lftr{display:flex;align-items:center;justify-content:space-between;padding:6px 13px;background:rgba(5,10,20,.5);border-top:1px solid var(--border)}
-.upd{padding:3px 10px;border-radius:10px;font-size:10px;background:rgba(15,23,42,.5)}
-.ft .upd{border:1px solid rgba(245,158,11,.25);color:var(--for-l)}
-.wt .upd{border:1px solid rgba(139,92,246,.25);color:var(--while-l)}
-.cs{padding:3px 10px;border-radius:10px;font-size:9px;font-weight:700}
-.cok{background:rgba(16,185,129,.1);border:1.2px solid rgba(16,185,129,.5);color:#34D399}
-.cex{background:rgba(239,68,68,.1);border:1.2px solid rgba(239,68,68,.5);color:#FCA5A5}
+/* ═══════════════════════════════════════
+   TOKENS VIEW
+═══════════════════════════════════════ */
+.tokens-view{flex:1;overflow:auto;padding:16px;background:var(--bg2)}
+.tokens-toolbar{
+  display:flex;align-items:center;gap:8px;
+  margin-bottom:14px;padding-bottom:12px;
+  border-bottom:1px solid var(--bd1);
+}
+.tv-search{
+  flex:1;background:var(--bg3);border:1px solid var(--bd1);
+  border-radius:var(--radius-sm);padding:5px 10px;
+  font-family:var(--font-mono);font-size:11px;color:var(--t1);
+  outline:none;
+}
+.tv-search:focus{border-color:var(--acc)}
+.tv-filter{
+  display:flex;gap:4px;
+}
+.tvf{
+  font-size:10px;font-weight:600;border-radius:4px;padding:3px 8px;
+  border:1px solid var(--bd2);background:transparent;
+  color:var(--t3);cursor:pointer;font-family:var(--font-ui);
+  transition:all .15s;
+}
+.tvf:hover{border-color:var(--bd3);color:var(--t2)}
+.tvf.on{background:var(--acc-dim);border-color:var(--acc);color:var(--acc)}
+.token-grid{
+  display:grid;gap:6px;
+}
+.token-row{
+  display:grid;grid-template-columns:40px 90px 1fr 90px;
+  gap:0;
+  border-radius:var(--radius-sm);
+  border:1px solid var(--bd1);
+  overflow:hidden;
+  font-family:var(--font-mono);
+  font-size:11px;
+  transition:border-color .15s;
+}
+.token-row:hover{border-color:var(--bd3)}
+.tc{padding:5px 8px;background:var(--bg1)}
+.tc.ln2{color:var(--t3);text-align:right;border-right:1px solid var(--bd1);background:var(--bg0)}
+.tc.type{font-weight:700;border-right:1px solid var(--bd1)}
+.tc.val{font-weight:500}
+.tc.pos{color:var(--t3);text-align:right;border-left:1px solid var(--bd1)}
+/* token type colors */
+.tok-keyword{color:#C084FC}
+.tok-ident  {color:#60A5FA}
+.tok-string {color:#34D399}
+.tok-number {color:#FB923C}
+.tok-punct  {color:var(--t2)}
+.tok-op     {color:#F59E0B}
+.tok-ws     {color:var(--t3)}
+.tok-comment{color:var(--t3);font-style:italic}
 
-/* plain step */
-.ps{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:9px;background:rgba(11,20,37,.7);border:1px solid var(--border);font-size:10px;color:var(--textd)}
 
-/* camera flash overlay */
-.cf{position:fixed;inset:0;pointer-events:none;z-index:500;background:rgba(245,158,11,.07);opacity:0;transition:opacity .18s}
-.cf.on{opacity:1}
+/* ═══════════════════════════════════════
+   AST TREE CANVAS VIEW
+═══════════════════════════════════════ */
+.ast-view{
+  flex:1;overflow:hidden;background:var(--bg2);
+  display:flex;flex-direction:column;
+  position:relative;
+}
 
-/* controls */
-.cbar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:300;background:rgba(11,20,37,.97);border:1px solid var(--border2);border-radius:12px;padding:8px 16px;display:flex;align-items:center;gap:9px;backdrop-filter:blur(16px);box-shadow:0 8px 40px rgba(0,0,0,.55);font-size:10px}
-.clb{font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
-.cb{padding:5px 11px;border-radius:7px;border:1px solid var(--border2);background:rgba(24,35,56,.6);color:var(--text);font-size:9px;font-family:inherit;cursor:pointer;transition:background .12s,border-color .12s}
-.cb:hover{background:rgba(24,35,56,1);border-color:var(--for);color:var(--for-l)}
-.csep{width:1px;height:18px;background:var(--border)}
-#msg{font-size:9px;color:var(--for-l);min-width:128px;text-align:center}
+/* toolbar */
+.ast-toolbar{
+  height:36px;background:var(--bg1);border-bottom:1px solid var(--bd1);
+  display:flex;align-items:center;padding:0 12px;gap:8px;
+  flex-shrink:0;z-index:10;
+}
+.ast-title{font-size:12px;font-weight:600;color:var(--t1)}
+
+/* the main zoomable/pannable canvas area */
+.ast-canvas-wrap{
+  flex:1;overflow:hidden;position:relative;cursor:grab;
+  user-select:none;
+}
+.ast-canvas-wrap.dragging{cursor:grabbing}
+
+/* the SVG tree layer + HTML nodes layer share same transform */
+.ast-stage{
+  position:absolute;
+  top:0;left:0;
+  transform-origin:0 0;
+  /* width/height set by JS to fit the tree */
+}
+
+/* SVG lines layer — sits behind nodes */
+.ast-svg{
+  position:absolute;top:0;left:0;
+  pointer-events:none;
+  overflow:visible;
+}
+
+/* HTML node container */
+.ast-nodes{
+  position:absolute;top:0;left:0;
+}
+
+/* ── SINGLE TREE NODE ── */
+.ast-node{
+  position:absolute;
+  transform:translate(-50%,-50%);
+  cursor:pointer;
+}
+
+/* node box */
+.ast-nbox{
+  border-radius:8px;
+  border:1.5px solid;
+  overflow:hidden;
+  min-width:110px;
+  transition:box-shadow .15s, transform .12s;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+.ast-node:hover .ast-nbox{
+  transform:translateY(-2px);
+  box-shadow:0 6px 18px rgba(0,0,0,.35);
+}
+.ast-node.selected .ast-nbox{
+  box-shadow:0 0 0 2px var(--acc),0 6px 18px rgba(124,58,237,.3);
+}
+
+/* node header — colored band at top */
+.ast-nhdr{
+  padding:4px 9px;
+  display:flex;align-items:center;gap:5px;
+}
+.ast-nhdr-dot{
+  width:5px;height:5px;border-radius:50%;flex-shrink:0;
+}
+.ast-nhdr-kind{
+  font-size:9px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;flex:1;
+  font-family:var(--font-mono);
+}
+.ast-nhdr-step{
+  font-size:8px;font-family:var(--font-mono);
+  background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);
+  border-radius:3px;padding:1px 4px;
+}
+
+/* node body */
+.ast-nbdy{
+  padding:5px 9px 6px;
+  display:flex;flex-direction:column;gap:2px;
+}
+.ast-nname{
+  font-size:12px;font-weight:700;
+  font-family:var(--font-mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:140px;
+}
+.ast-nsig{
+  font-size:9px;
+  font-family:var(--font-mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:140px;
+  opacity:.65;
+}
+
+/* Left/Right indicator under node (like the image) */
+.ast-nfeet{
+  display:flex;border-top:1px solid;
+}
+.ast-nfoot{
+  flex:1;padding:2px 6px;
+  font-size:8px;font-weight:600;text-align:center;
+  font-family:var(--font-mono);
+  letter-spacing:.04em;
+}
+.ast-nfoot:first-child{border-right:1px solid}
+
+/* NULL leaf node */
+.ast-null{
+  position:absolute;
+  transform:translate(-50%,-50%);
+  font-size:10px;font-weight:600;
+  font-family:var(--font-mono);
+  color:var(--t3);
+  background:var(--bg1);
+  border:1px solid var(--bd2);
+  border-radius:4px;padding:2px 8px;
+  white-space:nowrap;
+  cursor:default;
+}
+
+/* node color variants */
+/* fn — purple */
+.ast-nbox.fn{border-color:rgba(192,132,252,.5)}
+.fn .ast-nhdr{background:linear-gradient(90deg,#3B0764,#6D28D9)}
+.dark  .fn .ast-nbdy{background:#1A1030}
+.light .fn .ast-nbdy{background:#F5F0FF}
+.fn .ast-nfeet{border-color:rgba(192,132,252,.25)}
+.fn .ast-nfoot{color:#C084FC}
+.dark  .fn .ast-nfoot{border-color:rgba(192,132,252,.2)}
+.light .fn .ast-nfoot{border-color:rgba(192,132,252,.15)}
+.dark  .fn .ast-nname{color:#DDD6FE}
+.light .fn .ast-nname{color:#4C1D95}
+.fn .ast-nsig{color:#A78BFA}
+
+/* out — green */
+.ast-nbox.out{border-color:rgba(34,197,94,.45)}
+.out .ast-nhdr{background:linear-gradient(90deg,#145228,#15803D)}
+.dark  .out .ast-nbdy{background:#0A1B0E}
+.light .out .ast-nbdy{background:#F0FDF4}
+.out .ast-nfeet{border-color:rgba(34,197,94,.25)}
+.out .ast-nfoot{color:#22C55E}
+.dark  .out .ast-nfoot{border-color:rgba(34,197,94,.2)}
+.light .out .ast-nfoot{border-color:rgba(34,197,94,.15)}
+.dark  .out .ast-nname{color:#86EFAC}
+.light .out .ast-nname{color:#14532D}
+.out .ast-nsig{color:#22C55E}
+
+/* var — blue */
+.ast-nbox.var{border-color:rgba(96,165,250,.45)}
+.var .ast-nhdr{background:linear-gradient(90deg,#1A3FA0,#1D4ED8)}
+.dark  .var .ast-nbdy{background:#0A1320}
+.light .var .ast-nbdy{background:#EFF6FF}
+.var .ast-nfeet{border-color:rgba(96,165,250,.25)}
+.var .ast-nfoot{color:#60A5FA}
+.dark  .var .ast-nfoot{border-color:rgba(96,165,250,.2)}
+.light .var .ast-nfoot{border-color:rgba(96,165,250,.15)}
+.dark  .var .ast-nname{color:#BAE6FD}
+.light .var .ast-nname{color:#1E3A8A}
+.var .ast-nsig{color:#60A5FA}
+
+/* ret — red */
+.ast-nbox.ret{border-color:rgba(248,113,113,.45)}
+.ret .ast-nhdr{background:linear-gradient(90deg,#7F1D1D,#B91C1C)}
+.dark  .ret .ast-nbdy{background:#150909}
+.light .ret .ast-nbdy{background:#FFF5F5}
+.ret .ast-nfeet{border-color:rgba(248,113,113,.25)}
+.ret .ast-nfoot{color:#F87171}
+.dark  .ret .ast-nfoot{border-color:rgba(248,113,113,.2)}
+.light .ret .ast-nfoot{border-color:rgba(248,113,113,.15)}
+.dark  .ret .ast-nname{color:#FECACA}
+.light .ret .ast-nname{color:#7F1D1D}
+.ret .ast-nsig{color:#F87171}
+
+/* cond — orange */
+.ast-nbox.cond{border-color:rgba(251,146,60,.45)}
+.cond .ast-nhdr{background:linear-gradient(90deg,#7C2D12,#C2410C)}
+.dark  .cond .ast-nbdy{background:#1A0D04}
+.light .cond .ast-nbdy{background:#FFF7ED}
+.cond .ast-nfeet{border-color:rgba(251,146,60,.25)}
+.cond .ast-nfoot{color:#FB923C}
+.dark  .cond .ast-nfoot{border-color:rgba(251,146,60,.2)}
+.light .cond .ast-nfoot{border-color:rgba(251,146,60,.15)}
+.dark  .cond .ast-nname{color:#FED7AA}
+.light .cond .ast-nname{color:#7C2D12}
+.cond .ast-nsig{color:#FB923C}
+
+/* call — violet */
+.ast-nbox.call{border-color:rgba(167,139,250,.45)}
+.call .ast-nhdr{background:linear-gradient(90deg,#2E1065,#4C1D95)}
+.dark  .call .ast-nbdy{background:#0D0A1E}
+.light .call .ast-nbdy{background:#F5F3FF}
+.call .ast-nfeet{border-color:rgba(167,139,250,.25)}
+.call .ast-nfoot{color:#A78BFA}
+.dark  .call .ast-nfoot{border-color:rgba(167,139,250,.2)}
+.light .call .ast-nfoot{border-color:rgba(167,139,250,.15)}
+.dark  .call .ast-nname{color:#DDD6FE}
+.light .call .ast-nname{color:#3B0764}
+.call .ast-nsig{color:#A78BFA}
+
+/* loop — teal */
+.ast-nbox.loop{border-color:rgba(52,211,153,.45)}
+.loop .ast-nhdr{background:linear-gradient(90deg,#064E3B,#065F46)}
+.dark  .loop .ast-nbdy{background:#031F17}
+.light .loop .ast-nbdy{background:#ECFDF5}
+.loop .ast-nfeet{border-color:rgba(52,211,153,.25)}
+.loop .ast-nfoot{color:#34D399}
+.dark  .loop .ast-nfoot{border-color:rgba(52,211,153,.2)}
+.light .loop .ast-nfoot{border-color:rgba(52,211,153,.15)}
+.dark  .loop .ast-nname{color:#A7F3D0}
+.light .loop .ast-nname{color:#064E3B}
+.loop .ast-nsig{color:#34D399}
+
+/* ── ZOOM CONTROLS (overlaid on canvas) ── */
+.ast-zoom-ctrl{
+  position:absolute;bottom:14px;right:14px;
+  display:flex;gap:4px;
+  background:var(--bg1);border:1px solid var(--bd2);
+  border-radius:var(--radius);padding:4px;
+  box-shadow:0 4px 12px rgba(0,0,0,.2);
+  z-index:20;
+}
+.azb{
+  width:28px;height:28px;border-radius:5px;
+  background:transparent;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t2);font-size:13px;font-weight:700;
+  transition:all .15s;font-family:var(--font-mono);
+}
+.azb:hover{background:var(--bg3);color:var(--t1)}
+.az-pct{
+  font-size:10px;font-family:var(--font-mono);
+  color:var(--t3);padding:0 6px;
+  display:flex;align-items:center;
+}
+
+/* ── INSPECTOR PANEL (overlaid bottom-left) ── */
+.ast-inspector{
+  position:absolute;bottom:14px;left:14px;
+  width:210px;
+  background:var(--bg1);border:1px solid var(--bd2);
+  border-radius:var(--radius);padding:11px;
+  box-shadow:0 4px 16px rgba(0,0,0,.25);
+  z-index:20;
+  animation:fadeUp .2s both;
+}
+.ast-insp-title{
+  font-size:10px;font-weight:700;color:var(--t3);
+  letter-spacing:.06em;text-transform:uppercase;
+  margin-bottom:8px;
+}
+.ast-insp-row{
+  display:flex;align-items:baseline;gap:6px;
+  margin-bottom:5px;
+}
+.ast-insp-k{font-size:9px;font-weight:700;color:var(--t3);width:52px;flex-shrink:0;text-transform:uppercase;letter-spacing:.04em}
+.ast-insp-v{font-size:11px;color:var(--t2);font-family:var(--font-mono);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* hint text top-center */
+.ast-hint{
+  position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  font-size:10px;color:var(--t3);pointer-events:none;
+  background:var(--bg1);border:1px solid var(--bd2);
+  border-radius:20px;padding:3px 12px;
+  white-space:nowrap;z-index:20;
+  opacity:.7;
+}
+
+/* ═══════════════════════════════════════
+   IR / OPT IR VIEW
+═══════════════════════════════════════ */
+.ir-view{flex:1;overflow:hidden;display:flex;flex-direction:column;background:var(--bg2)}
+.ir-toolbar{
+  height:36px;background:var(--bg1);border-bottom:1px solid var(--bd1);
+  display:flex;align-items:center;padding:0 12px;gap:8px;flex-shrink:0;
+}
+.ir-badge{
+  font-size:10px;font-weight:700;border-radius:4px;padding:2px 8px;
+  border:1px solid;
+}
+.ir-llvm{color:#A78BFA;border-color:rgba(167,139,250,.4);background:rgba(167,139,250,.1)}
+.ir-opt {color:#34D399;border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}
+.ir-x86 {color:#FB923C;border-color:rgba(251,146,60,.4);background:rgba(251,146,60,.1)}
+.ir-toolbar-r{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ir-copy{
+  font-size:10px;font-weight:600;
+  background:transparent;border:1px solid var(--bd2);
+  border-radius:4px;padding:3px 8px;
+  color:var(--t3);cursor:pointer;font-family:var(--font-ui);
+  transition:all .15s;
+}
+.ir-copy:hover{border-color:var(--bd3);color:var(--t2)}
+.ir-code{
+  flex:1;overflow:auto;padding:14px;
+  background:var(--bg0);
+  font-family:var(--font-mono);font-size:11px;line-height:1.65;
+}
+.ir-line{display:flex;gap:0}
+.ir-ln{
+  width:36px;text-align:right;padding-right:12px;
+  color:var(--t3);flex-shrink:0;user-select:none;font-size:10px;
+}
+.ir-text{color:var(--t2);white-space:pre}
+.ir-fn   {color:#C084FC}
+.ir-kw   {color:#60A5FA}
+.ir-type {color:#38BDF8}
+.ir-val  {color:#34D399}
+.ir-label{color:#F59E0B}
+.ir-num  {color:#FB923C}
+.ir-cm2  {color:var(--t3);font-style:italic}
+.ir-hl   .ir-text{background:rgba(124,58,237,.08);display:block;width:100%}
+
+/* ═══════════════════════════════════════
+   SYMBOLS VIEW
+═══════════════════════════════════════ */
+.sym-view{flex:1;overflow:auto;padding:16px;background:var(--bg2)}
+.sym-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bd1)}
+.sym-search{
+  flex:1;background:var(--bg3);border:1px solid var(--bd1);
+  border-radius:var(--radius-sm);padding:5px 10px;
+  font-family:var(--font-mono);font-size:11px;color:var(--t1);outline:none;
+}
+.sym-search:focus{border-color:var(--acc)}
+.sym-table{width:100%;border-collapse:collapse}
+.sym-th{
+  text-align:left;padding:6px 10px;
+  font-size:10px;font-weight:700;color:var(--t3);
+  letter-spacing:.06em;text-transform:uppercase;
+  border-bottom:1px solid var(--bd1);background:var(--bg1);
+  position:sticky;top:0;
+}
+.sym-td{
+  padding:6px 10px;font-size:11px;
+  border-bottom:1px solid var(--bd1);
+  font-family:var(--font-mono);
+  transition:background .1s;
+}
+.sym-tr:hover .sym-td{background:var(--bg3)}
+.sym-kind{
+  font-size:9px;font-weight:700;border-radius:3px;
+  padding:1px 5px;text-transform:uppercase;letter-spacing:.04em;
+}
+.sk-fn  {color:#C084FC;background:rgba(192,132,252,.12)}
+.sk-var {color:#60A5FA;background:rgba(96,165,250,.12)}
+.sk-glob{color:#34D399;background:rgba(52,211,153,.12)}
+.sk-type{color:#F59E0B;background:rgba(245,158,11,.12)}
+.sk-cls {color:#F472B6;background:rgba(244,114,182,.12)}
+.sym-name{color:var(--t1);font-weight:600}
+.sym-addr{color:var(--t3)}
+.sym-scope{color:var(--acc3)}
+
+/* ═══════════════════════════════════════
+   METRICS VIEW
+═══════════════════════════════════════ */
+.metrics-view{flex:1;overflow:auto;padding:16px;background:var(--bg2)}
+.met-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+  gap:10px;margin-bottom:18px;
+}
+.met-card{
+  background:var(--bg1);border:1px solid var(--bd1);
+  border-radius:var(--radius);padding:14px 16px;
+  display:flex;flex-direction:column;gap:6px;
+  transition:border-color .15s;
+}
+.met-card:hover{border-color:var(--bd3)}
+.met-label{font-size:10px;font-weight:600;color:var(--t3);letter-spacing:.06em;text-transform:uppercase}
+.met-value{font-size:22px;font-weight:700;color:var(--t1);font-family:var(--font-mono);line-height:1}
+.met-unit{font-size:12px;color:var(--t3);font-weight:400}
+.met-badge{font-size:10px;font-weight:600;border-radius:4px;padding:2px 6px;width:fit-content}
+.met-up  {color:#22C55E;background:rgba(34,197,94,.12)}
+.met-down{color:#EF4444;background:rgba(239,68,68,.12)}
+.met-neut{color:var(--t3);background:var(--bg3)}
+.met-bar-wrap{
+  background:var(--bg1);border:1px solid var(--bd1);
+  border-radius:var(--radius);padding:14px 16px;
+  margin-bottom:10px;
+}
+.met-bar-title{font-size:11px;font-weight:600;color:var(--t1);margin-bottom:12px}
+.met-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.met-bar-lbl{font-size:11px;color:var(--t2);width:110px;flex-shrink:0;font-family:var(--font-mono)}
+.met-bar-track{flex:1;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.met-bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.met-bar-val{font-size:10px;color:var(--t3);width:40px;text-align:right;font-family:var(--font-mono)}
+
+/* ═══════════════════════════════════════
+   BOTTOMBAR
+═══════════════════════════════════════ */
+.bottombar{
+  height:var(--bottombar-h);
+  background:var(--bg1);
+  border-top:1px solid var(--bd1);
+  display:flex;align-items:center;
+  padding:0 12px;gap:6px;
+  flex-shrink:0;
+}
+.bb-nav{
+  width:28px;height:28px;border-radius:var(--radius-sm);
+  background:transparent;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--t3);transition:all .15s;
+}
+.bb-nav:hover{background:var(--bg3);color:var(--t2)}
+.bb-nav svg{width:13px;height:13px}
+.bb-play{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--acc2);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 0 var(--run-shadow);
+  animation:playPulse 2.5s infinite;
+  transition:all .15s;
+}
+.bb-play:hover{filter:brightness(1.1)}
+.bb-space{flex:1}
+.bb-step{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg2);border:1px solid var(--bd1);
+  border-radius:20px;padding:4px 12px;
+  font-size:12px;font-weight:600;color:var(--t1);
+}
+.bb-step span{color:var(--acc)}
+.bb-step em{color:var(--t3);font-style:normal;font-weight:400}
+.bb-update{
+  background:var(--acc);color:#fff;border:none;
+  border-radius:var(--radius);padding:0 14px;height:28px;
+  font-family:var(--font-ui);font-size:11px;font-weight:600;
+  cursor:pointer;display:flex;align-items:center;gap:5px;
+  position:relative;overflow:hidden;
+  transition:all .15s;
+}
+.bb-update:hover{filter:brightness(1.1)}
+.bb-update::after{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
+  background-size:200% 100%;animation:shimmer 2.5s infinite;
+}
+.bb-skip{
+  background:transparent;color:var(--t3);
+  border:1px solid var(--bd2);border-radius:var(--radius);
+  padding:0 10px;height:28px;
+  font-family:var(--font-ui);font-size:11px;cursor:pointer;
+  transition:all .15s;
+}
+.bb-skip:hover{border-color:var(--bd3);color:var(--t2)}
+.speed-grp{
+  background:var(--bg0);border-radius:var(--radius-sm);
+  padding:2px;display:flex;gap:2px;
+  border:1px solid var(--bd1);
+}
+.spb{
+  padding:2px 7px;font-size:10px;font-family:var(--font-mono);
+  color:var(--t3);border:none;background:transparent;
+  border-radius:4px;cursor:pointer;transition:all .12s;
+}
+.spb:hover{color:var(--t2)}
+.spb.on{background:var(--acc);color:#fff}
+
+/* ═══════════════════════════════════════
+   KEYFRAMES
+═══════════════════════════════════════ */
+@keyframes breathe{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes runBlink{0%,100%{opacity:1}50%{opacity:.5}}
+@keyframes playPulse{0%{box-shadow:0 0 0 0 var(--run-shadow)}100%{box-shadow:0 0 0 9px transparent}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes cardRise{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes slideIn{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ═══════════════════════════════════════
+   SCROLLBARS
+═══════════════════════════════════════ */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--bd3)}
 </style>
 </head>
-<body>
+<body class="dark" id="root">
 
-<div class="tb">
-  <span class="tb-title">Loop Visualization</span>
-  <div class="tb-sep"></div>
-  <span class="tb-tag">v2 — CAMERA CYCLE · LIVE VARS · BODY SEPARATOR · TOP-TO-BOTTOM</span>
+<!-- ══════════════════════════════
+     TITLEBAR
+══════════════════════════════ -->
+<div class="titlebar">
+  <div class="tb-winbtns">
+    <div class="tb-winbtn" style="background:#FF5F57"></div>
+    <div class="tb-winbtn" style="background:#FEBC2E"></div>
+    <div class="tb-winbtn" style="background:#28C840"></div>
+  </div>
+  <div class="tb-logo">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M4 3.5L8.5 7L4 10.5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="10.5" cy="7" r="1.5" fill="#9F67FF"/>
+    </svg>
+  </div>
+  <div class="tb-brand">
+    <div class="tb-name">CodeViz</div>
+    <div class="tb-sub">Visualize Every Step of Your Code</div>
+  </div>
+  <div class="tb-space"></div>
+  <button class="tb-run">
+    <svg width="9" height="10" viewBox="0 0 9 10" fill="white"><path d="M1 1L8 5L1 9V1Z"/></svg>
+    Run
+  </button>
+  <button class="tb-file">Open File</button>
+  <div class="tb-div"></div>
+  <div class="tb-connected"><div class="connected-dot"></div>Connected</div>
+  <button class="tb-icon" onclick="toggleTheme()" title="Toggle theme">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+      <circle cx="10" cy="10" r="3.5"/>
+      <line x1="10" y1="2" x2="10" y2="4"/><line x1="10" y1="16" x2="10" y2="18"/>
+      <line x1="2" y1="10" x2="4" y2="10"/><line x1="16" y1="10" x2="18" y2="10"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="14.36" y1="14.36" x2="15.78" y2="15.78"/>
+      <line x1="4.22" y1="15.78" x2="5.64" y2="14.36"/><line x1="14.36" y1="5.64" x2="15.78" y2="4.22"/>
+    </svg>
+  </button>
+  <button class="tb-icon">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="10" cy="10" r="2.5"/>
+      <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/>
+    </svg>
+  </button>
 </div>
 
-<div class="cf" id="cf"></div>
+<!-- ══════════════════════════════
+     MAIN ROW
+══════════════════════════════ -->
+<div class="main-row">
 
-<div class="vp" id="vp">
-<div class="cs" id="cs">
-<div class="trace">
-
-  <!-- ══════ CALLER ══════ -->
-  <div class="ccol">
-    <div class="ch">Caller Column</div>
-
-    <div class="ps"><span class="sn">#6</span><span>const arr = [3,7,1,9,2,8,4,6]</span></div>
-
-    <div class="caller ft act" id="c-for" onclick="tog('for')">
-      <div class="stripe"></div>
-      <div class="ci">
-        <span class="bdg b-for">FOR</span>
-        <span class="ce">i=0; i&lt;arr.length; i++</span>
-        <span class="bdg b-cnt" id="cc-for">3/8</span>
-        <span class="bdg b-run" id="cs-for">RUNNING</span>
-        <div class="pls ft"></div>
-        <button class="skp" onclick="skip(event,'for')">⏭</button>
+  <!-- LEFT SIDEBAR -->
+  <div class="sidebar">
+    <div class="sb-tabs">
+      <button class="sbt on">Symbols</button>
+      <button class="sbt">Lifetime</button>
+    </div>
+    <div class="sb-body">
+      <div class="sb-section">
+        <div class="sb-sec-hdr">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2v8l4-3 4 3V2z"/></svg>
+          Global Variables
+          <span class="count">0</span>
+        </div>
+        <div style="font-size:10px;color:var(--t3);padding:4px 8px">No global variables</div>
+      </div>
+      <div class="sb-section">
+        <div class="sb-sec-hdr">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="10" height="10" rx="2"/><path d="M4 4l4 2-4 2V4z"/></svg>
+          Functions
+          <span class="count">3</span>
+        </div>
+        <div class="sb-item on">
+          <div class="sb-dot"></div>
+          main()
+          <span style="font-size:9px;color:var(--acc2);margin-left:auto;font-weight:700">entry</span>
+        </div>
+        <div class="sb-item-sub">std::_1::basic_ostream&lt;char,</div>
+        <div class="sb-item-sub">std::_1::char_traits&lt;char&gt;&gt;&amp;</div>
+        <div class="sb-item-sub">(std::_1::basic_ostream&lt;char,</div>
+        <div class="sb-item-sub" style="margin-bottom:6px">const*)()</div>
+        <div class="sb-item">
+          <div class="sb-dot" style="background:var(--acc3)"></div>
+          factorial(n)
+        </div>
+        <div class="sb-item">
+          <div class="sb-dot" style="background:var(--acc4)"></div>
+          swap(a, b)
+        </div>
       </div>
     </div>
-
-    <div class="caller wt" id="c-whl" style="margin-top:6px" onclick="tog('while')">
-      <div class="stripe"></div>
-      <div class="ci">
-        <span class="bdg b-whl">WHILE</span>
-        <span class="ce">left &lt;= right</span>
-        <span class="bdg b-cnt">5/?</span>
-        <span class="bdg b-don">DONE</span>
-        <button class="skp" onclick="skip(event,'while')">⏭</button>
-      </div>
-    </div>
-
-    <div class="ps" style="margin-top:9px"><span class="sn">#34</span><span>return result</span></div>
   </div>
 
-  <!-- ══════ BODY ══════ -->
-  <div class="bcol">
-    <div class="ch">Body Column</div>
+  <!-- CODE EDITOR -->
+  <div class="editor-panel">
+    <div class="editor-hdr">
+      <span class="editor-title">Code Editor</span>
+      <span class="lang-badge">C++</span>
+    </div>
+    <div class="editor-body">
+      <div class="code-line"><span class="ln">1</span><span class="code"><span class="kw">#include</span> <span class="str">&lt;iostream&gt;</span></span></div>
+      <div class="code-line"><span class="ln">2</span><span class="code"></span></div>
+      <div class="code-line hl"><span class="ln">3</span><span class="code"><span class="kw">int</span> <span class="fn2">main</span><span class="op">() {</span></span></div>
+      <div class="code-line"><span class="ln">4</span><span class="code">    <span class="ns">std</span><span class="op">::</span><span class="fn2">cout</span> <span class="op">&lt;&lt;</span> <span class="str">"Hello, World!"</span> <span class="op">&lt;&lt;</span> <span class="ns">std</span><span class="op">::</span><span class="fn2">endl</span><span class="op">;</span></span></div>
+      <div class="code-line"><span class="ln">5</span><span class="code">    <span class="kw">return</span> <span class="num">0</span><span class="op">;</span></span></div>
+      <div class="code-line" style="border-left:3px solid var(--acc4)"><span class="ln">6</span><span class="code"><span class="op">}</span></span></div>
+      <div class="code-line"><span class="ln">7</span><span class="code"></span></div>
+      <div class="code-line"><span class="ln">8</span><span class="code"><span class="kw">int</span> <span class="fn2">factorial</span><span class="op">(</span><span class="kw">int</span> n<span class="op">) {</span></span></div>
+      <div class="code-line"><span class="ln">9</span><span class="code">    <span class="kw">if</span> <span class="op">(</span>n <span class="op">&lt;=</span> <span class="num">1</span><span class="op">)</span> <span class="kw">return</span> <span class="num">1</span><span class="op">;</span></span></div>
+      <div class="code-line"><span class="ln">10</span><span class="code">    <span class="kw">return</span> n <span class="op">*</span> <span class="fn2">factorial</span><span class="op">(</span>n <span class="op">-</span> <span class="num">1</span><span class="op">);</span></span></div>
+      <div class="code-line"><span class="ln">11</span><span class="code"><span class="op">}</span></span></div>
+      <div class="code-line"><span class="ln">12</span><span class="code"></span></div>
+      <div class="code-line"><span class="ln">13</span><span class="code"><span class="cm">// Utility function</span></span></div>
+      <div class="code-line"><span class="ln">14</span><span class="code"><span class="kw">void</span> <span class="fn2">swap</span><span class="op">(</span><span class="kw">int</span><span class="op">&amp;</span> a<span class="op">,</span> <span class="kw">int</span><span class="op">&amp;</span> b<span class="op">) {</span></span></div>
+      <div class="code-line"><span class="ln">15</span><span class="code">    <span class="kw">int</span> tmp <span class="op">=</span> a<span class="op">;</span></span></div>
+      <div class="code-line"><span class="ln">16</span><span class="code">    a <span class="op">=</span> b<span class="op">;</span> b <span class="op">=</span> tmp<span class="op">;</span></span></div>
+      <div class="code-line"><span class="ln">17</span><span class="code"><span class="op">}</span></span></div>
+    </div>
+  </div>
 
-    <!-- FOR loop -->
-    <div class="loop ft act" id="l-for">
-      <div class="lhdr">
-        <div class="hfl" id="hfl-for"></div>
-        <div class="hst"></div>
-        <div class="hr1">
-          <span class="bdg b-for" style="font-size:10px;padding:3px 11px">FOR</span>
-          <span class="hx">i = 0; i &lt; arr.length; i++</span>
-          <span class="bdg b-cnt" id="bc-for">3/8</span>
-          <span class="bdg b-run" id="bs-for">RUNNING</span>
-        </div>
-        <div class="hr2">
-          <button class="tgl" id="tgl-for" onclick="tog('for')">▾ COLLAPSE</button>
-          <button class="skh" onclick="skipB(event,'for')">⏭ SKIP</button>
-          <span class="sn-h">#7</span>
-        </div>
-        <!-- Live header vars: i, sum, count — any number supported, rows of 4 -->
-        <div class="hvars ft" id="hv-for">
-          <div class="vc ft chg" id="vc-i">
-            <span class="vn">i</span><span class="vv" id="vv-i">3</span>
-          </div>
-          <div class="vc ft" id="vc-sum">
-            <span class="vn">sum</span><span class="vv" id="vv-sum">21</span>
-          </div>
-          <div class="vc ft" id="vc-cnt">
-            <span class="vn">cnt</span><span class="vv" id="vv-cnt">3</span>
-          </div>
-          <div class="vc ft" id="vc-thr">
-            <span class="vn">thr</span><span class="vv" id="vv-thr">5</span>
-          </div>
-        </div>
-      </div>
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
 
-      <div class="ldiv"></div>
-
-      <!-- EXPANDED -->
-      <div id="exp-for">
-        <!-- Body separator — visual boundary for expanded state -->
-        <div class="bsep ft">
-          <div class="sln"></div>
-          <span class="slbl">BODY</span>
-          <div class="sln"></div>
-        </div>
-        <div class="lbdy">
-          <div class="ra ft"></div>
-          <div class="bi ft">
-            <!-- All child steps are STRICTLY top-to-bottom — no horizontal layout -->
-            <div class="nc">
-              <div class="nch">
-                <span class="ifb">IF</span>
-                <span class="cx">arr[i] &gt; threshold</span>
-                <span id="nr-for" class="res-t">TRUE</span>
-              </div>
-              <div class="ncb">
-                <div class="step act" id="st-sum">
-                  <span class="sn">#10</span>
-                  <span>sum += arr[i]</span>
-                  <span class="rv" style="color:#FFD166">sum=<span id="sv">21</span></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="step" id="st-cnt">
-              <span class="sn">#11</span><span>count++</span>
-            </div>
-
-            <div class="step" id="st-fn">
-              <span class="sn">#12</span>
-              <span class="fn">checkBoundary(i)</span>
-              <span class="rv" style="color:rgba(6,182,212,.7)">→ true</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- COLLAPSED summary -->
-      <div class="sum ft" id="sum-for" style="display:none">
-        <div class="tk">
-          <div class="td ft"></div>
-          <span class="tt" id="tk-for">currently: <strong>checkBoundary(i)</strong></span>
-        </div>
-        <div class="dr">
-          <span class="dl">Δ</span>
-          <span class="dc ft" id="dc-i">i: 2→<strong id="dv-i">3</strong></span>
-          <span class="dc ft" id="dc-sum">sum: 14→<strong id="dv-sum">21</strong></span>
-          <span class="dc ft" id="dc-cnt">cnt: 2→<strong id="dv-cnt">3</strong></span>
-        </div>
-        <div class="sr">
-          <span class="sb sc" id="sb-if">if arr[i]&gt;threshold: TRUE</span>
-          <span class="sb sf">checkBoundary(): true</span>
-        </div>
-      </div>
-
-      <div class="lftr ft">
-        <span class="upd ft">↺ i++</span>
-        <span class="cs cok" id="fs-for">✓ CONTINUE</span>
+    <!-- PANEL TABS -->
+    <div class="panel-tabs">
+      <button class="ptab on" onclick="switchTab('canvas',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="10" height="10" rx="2"/><circle cx="6" cy="6" r="1.5"/></svg>
+        Canvas
+      </button>
+      <button class="ptab" onclick="switchTab('ast',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="2" r="1.5"/><circle cx="2" cy="9" r="1.5"/><circle cx="10" cy="9" r="1.5"/><line x1="6" y1="3.5" x2="6" y2="6"/><line x1="6" y1="6" x2="2" y2="7.5"/><line x1="6" y1="6" x2="10" y2="7.5"/></svg>
+        AST
+        <span class="ptab-count">34</span>
+      </button>
+      <button class="ptab" onclick="switchTab('symbols',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 3h8M2 6h5M2 9h7"/></svg>
+        Symbols
+        <span class="ptab-count">8</span>
+      </button>
+      <button class="ptab" onclick="switchTab('ir',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h4l2 2v6H2z"/><path d="M6 2h4v8H8"/></svg>
+        IR
+        <span class="ptab-new">LLVM</span>
+      </button>
+      <button class="ptab" onclick="switchTab('optir',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 10L6 2l4 8M4 7h4"/></svg>
+        Opt IR
+      </button>
+      <button class="ptab" onclick="switchTab('x86',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="3" width="8" height="6" rx="1"/><path d="M4 3V2M8 3V2M4 9v1M8 9v1"/></svg>
+        x86-64
+        <span class="ptab-new" style="background:var(--acc4)">mac</span>
+      </button>
+      <button class="ptab" onclick="switchTab('tokens',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 2h6v2l-6 4v2h6"/></svg>
+        Tokens
+      </button>
+      <button class="ptab" onclick="switchTab('metrics',this)">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10V6M5 10V4M8 10V2M11 10V7"/></svg>
+        Metrics
+      </button>
+      <div class="pt-space"></div>
+      <div class="pt-zoom">
+        <span id="zoomLbl" style="font-family:var(--font-mono)">100%</span>
+        <button class="pt-zbtn" onclick="zoom(1)">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9.5" y1="9.5" x2="12" y2="12"/><line x1="6" y1="4" x2="6" y2="8"/><line x1="4" y1="6" x2="8" y2="6"/></svg>
+        </button>
+        <button class="pt-zbtn" onclick="zoom(-1)">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9.5" y1="9.5" x2="12" y2="12"/><line x1="4" y1="6" x2="8" y2="6"/></svg>
+        </button>
+        <button class="pt-zbtn">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5V2h3M12 5V2h-3M2 9v3h3M12 9v3h-3"/></svg>
+        </button>
       </div>
     </div>
 
-    <!-- WHILE loop -->
-    <div class="loop wt" id="l-whl">
-      <div class="lhdr">
-        <div class="hfl" id="hfl-whl"></div>
-        <div class="hst"></div>
-        <div class="hr1">
-          <span class="bdg b-whl" style="font-size:10px;padding:3px 11px">WHILE</span>
-          <span class="hx">left &lt;= right</span>
-          <span class="bdg b-cnt">5/?</span>
-          <span class="bdg b-don">DONE</span>
-        </div>
-        <div class="hr2">
-          <button class="tgl" id="tgl-whl" onclick="tog('while')">▾ COLLAPSE</button>
-          <button class="skh" onclick="skipB(event,'while')">⏭ SKIP</button>
-          <span class="sn-h">#18</span>
-        </div>
-        <div class="hvars wt">
-          <div class="vc wt"><span class="vn">left</span><span class="vv">5</span></div>
-          <div class="vc wt"><span class="vn">right</span><span class="vv">7</span></div>
-          <div class="vc wt"><span class="vn">mid</span><span class="vv">6</span></div>
-        </div>
-      </div>
-      <div class="ldiv"></div>
-      <div id="exp-whl">
-        <div class="bsep wt">
-          <div class="sln"></div>
-          <span class="slbl">BODY</span>
-          <div class="sln"></div>
-        </div>
-        <div class="lbdy">
-          <div class="ra wt"></div>
-          <div class="bi wt">
-            <div class="step"><span class="sn">#20</span><span>mid = Math.floor((left+right)/2)</span><span class="rv" style="color:#A78BFA">mid=6</span></div>
-            <div class="nc">
-              <div class="nch"><span class="ifb">IF</span><span class="cx">arr[mid] === target</span><span class="res-f">FALSE</span></div>
-              <div class="ncb">
-                <div class="nc">
-                  <div class="nch"><span class="ifb">ELSE IF</span><span class="cx">arr[mid] &lt; target</span><span class="res-t">TRUE</span></div>
-                  <div class="ncb">
-                    <div class="step act wt"><span class="sn">#25</span><span>left = mid + 1</span><span class="rv" style="color:#C084FC">left=7</span></div>
+    <!-- PANEL CONTENT -->
+    <div class="panel-content">
+
+      <!-- ── CANVAS ── -->
+      <div class="panel-view on" id="view-canvas">
+        <div class="canvas-view">
+          <div class="dot-grid"></div>
+          <div class="step-pill">Step <span>2</span> <b>/ 2</b></div>
+          <div class="canvas-controls">
+            <button class="cc-btn on" title="Pan">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 1v12M1 7h12M4 4l-3 3 3 3M10 4l3 3-3 3"/></svg>
+            </button>
+            <button class="cc-btn" title="Zoom in">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9.5" y1="9.5" x2="12" y2="12"/><line x1="6" y1="4" x2="6" y2="8"/><line x1="4" y1="6" x2="8" y2="6"/></svg>
+            </button>
+            <button class="cc-btn" title="Zoom out">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><line x1="9.5" y1="9.5" x2="12" y2="12"/><line x1="4" y1="6" x2="8" y2="6"/></svg>
+            </button>
+            <button class="cc-btn" title="Fit">
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5V2h3M12 5V2h-3M2 9v3h3M12 9v3h-3"/></svg>
+            </button>
+          </div>
+          <div class="canvas-inner">
+            <div class="main-card-preview">
+              <div class="mc-hdr">
+                <div class="mc-top">
+                  <div class="mc-icon">▶</div>
+                  <div class="mc-names">
+                    <div class="mc-fn">main()</div>
+                    <div class="mc-sig">int main(int argc, char* argv[])</div>
+                  </div>
+                  <div class="mc-bdgs">
+                    <div class="mc-bdg run">● RUNNING</div>
+                    <div class="mc-bdg">fn · int</div>
                   </div>
                 </div>
+                <div class="mc-meta">
+                  <div class="mmp grow">📄 <b>src/main.cpp</b></div>
+                  <div class="mmp">L:<b>3</b>–<b>6</b></div>
+                  <div class="mmp">step <b>2</b> / <b>2</b></div>
+                </div>
+              </div>
+              <div class="mc-body">
+                <div class="sub-preview out">
+                  <div class="sp-hdr"><span class="sp-dot" style="background:#22C55E"></span><span class="sp-kind" style="color:#22C55E">Output</span><span class="sp-step">#1</span></div>
+                  <div class="sp-bdy"><div class="sp-lbl" style="color:#22C55E">printf</div><div class="sp-val" style="color:#86EFAC">Hello, World!</div></div>
+                </div>
+                <div class="sub-preview ret">
+                  <div class="sp-hdr"><span class="sp-dot" style="background:#F87171"></span><span class="sp-kind" style="color:#F87171">Returns</span><span class="sp-step">#2</span></div>
+                  <div class="sp-bdy"><div class="sp-lbl" style="color:#F87171">Return value</div><div class="sp-val" style="color:#FECACA">0 · int · exit 0</div></div>
+                </div>
+              </div>
+              <div class="mc-foot">
+                <div class="mf-g"><div class="mf-dot2" style="background:#7C3AED"></div><span class="mf-l">steps</span><span class="mf-v">2</span></div>
+                <div class="mf-s"></div>
+                <div class="mf-g"><div class="mf-dot2" style="background:#60A5FA"></div><span class="mf-l">vars</span><span class="mf-v">0</span></div>
+                <div class="mf-s"></div>
+                <div class="mf-g"><div class="mf-dot2" style="background:#F87171"></div><span class="mf-l">ret</span><span class="mf-v">int 0</span></div>
+                <div class="mf-s"></div>
+                <div class="mf-ok"><div class="mf-okd"></div><span class="mf-okt">OK</span></div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div class="sum wt" id="sum-whl" style="display:none">
-        <div class="tk"><div class="td wt" style="background:#8B5CF6"></div><span class="tt" style="color:#C084FC">currently: <strong>left = mid + 1</strong></span></div>
-        <div class="dr"><span class="dl">Δ</span><span class="dc wt">left: 3→5</span><span class="dc wt">mid: 3→4</span></div>
-        <div class="sr"><span class="sb sc">if arr[mid]===target: FALSE</span><span class="sb sc">else if arr[mid]&lt;target: TRUE</span></div>
-      </div>
-      <div class="lftr wt">
-        <span class="upd wt">— (implicit)</span>
-        <span class="cs cex">✗ EXIT</span>
-      </div>
-    </div>
 
+      <!-- ── TOKENS ── -->
+      <div class="panel-view" id="view-tokens">
+        <div class="tokens-view">
+          <div class="tokens-toolbar">
+            <input class="tv-search" placeholder="Filter tokens..." value="">
+            <div class="tv-filter">
+              <button class="tvf on">All</button>
+              <button class="tvf">Keywords</button>
+              <button class="tvf">Identifiers</button>
+              <button class="tvf">Literals</button>
+              <button class="tvf">Operators</button>
+            </div>
+            <span style="font-size:11px;color:var(--t3);margin-left:4px">24 tokens</span>
+          </div>
+          <div class="token-grid">
+            <div class="token-row"><div class="tc ln2">1</div><div class="tc type tok-keyword">KEYWORD</div><div class="tc val tok-keyword">#include</div><div class="tc pos">1:1</div></div>
+            <div class="token-row"><div class="tc ln2">1</div><div class="tc type tok-string">STRING</div><div class="tc val tok-string">&lt;iostream&gt;</div><div class="tc pos">1:9</div></div>
+            <div class="token-row"><div class="tc ln2">3</div><div class="tc type tok-keyword">KEYWORD</div><div class="tc val tok-keyword">int</div><div class="tc pos">3:1</div></div>
+            <div class="token-row"><div class="tc ln2">3</div><div class="tc type tok-ident">IDENTIFIER</div><div class="tc val tok-ident">main</div><div class="tc pos">3:5</div></div>
+            <div class="token-row"><div class="tc ln2">3</div><div class="tc type tok-punct">PUNCTUATION</div><div class="tc val tok-punct">(</div><div class="tc pos">3:9</div></div>
+            <div class="token-row"><div class="tc ln2">3</div><div class="tc type tok-punct">PUNCTUATION</div><div class="tc val tok-punct">)</div><div class="tc pos">3:10</div></div>
+            <div class="token-row"><div class="tc ln2">3</div><div class="tc type tok-punct">PUNCTUATION</div><div class="tc val tok-punct">{</div><div class="tc pos">3:12</div></div>
+            <div class="token-row"><div class="tc ln2">4</div><div class="tc type tok-ident">IDENTIFIER</div><div class="tc val tok-ident">std</div><div class="tc pos">4:5</div></div>
+            <div class="token-row"><div class="tc ln2">4</div><div class="tc type tok-op">OPERATOR</div><div class="tc val tok-op">::</div><div class="tc pos">4:8</div></div>
+            <div class="token-row"><div class="tc ln2">4</div><div class="tc type tok-ident">IDENTIFIER</div><div class="tc val tok-ident">cout</div><div class="tc pos">4:10</div></div>
+            <div class="token-row"><div class="tc ln2">4</div><div class="tc type tok-op">OPERATOR</div><div class="tc val tok-op">&lt;&lt;</div><div class="tc pos">4:15</div></div>
+            <div class="token-row"><div class="tc ln2">4</div><div class="tc type tok-string">STRING_LIT</div><div class="tc val tok-string">"Hello, World!"</div><div class="tc pos">4:18</div></div>
+            <div class="token-row"><div class="tc ln2">5</div><div class="tc type tok-keyword">KEYWORD</div><div class="tc val tok-keyword">return</div><div class="tc pos">5:5</div></div>
+            <div class="token-row"><div class="tc ln2">5</div><div class="tc type tok-number">INTEGER</div><div class="tc val tok-number">0</div><div class="tc pos">5:12</div></div>
+            <div class="token-row"><div class="tc ln2">5</div><div class="tc type tok-punct">PUNCTUATION</div><div class="tc val tok-punct">;</div><div class="tc pos">5:13</div></div>
+            <div class="token-row"><div class="tc ln2">6</div><div class="tc type tok-punct">PUNCTUATION</div><div class="tc val tok-punct">}</div><div class="tc pos">6:1</div></div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ── AST ── -->
+      <div class="panel-view" id="view-ast">
+        <div class="ast-view">
+
+          <!-- toolbar -->
+          <div class="ast-toolbar">
+            <div class="ast-title">AST — Code Structure Tree</div>
+            <span style="font-size:10px;color:var(--t3)">3 functions · 12 nodes</span>
+            <div style="margin-left:auto;display:flex;gap:5px">
+              <button class="tvf" onclick="astResetView()">Reset View</button>
+              <button class="tvf" id="ast-expand-btn" onclick="astToggleAll()">Collapse All</button>
+            </div>
+          </div>
+
+          <!-- zoomable / pannable canvas -->
+          <div class="ast-canvas-wrap" id="astWrap">
+            <div class="ast-hint">🖱 Drag to pan · Scroll to zoom · Click node to inspect</div>
+
+            <!-- the stage holds both SVG lines and HTML nodes -->
+            <div class="ast-stage" id="astStage">
+
+              <!-- SVG edge lines -->
+              <svg class="ast-svg" id="astSvg"></svg>
+
+              <!-- HTML node elements -->
+              <div class="ast-nodes" id="astNodes"></div>
+
+            </div><!-- /stage -->
+
+            <!-- zoom controls -->
+            <div class="ast-zoom-ctrl">
+              <button class="azb" onclick="astZoom(0.15)" title="Zoom in">+</button>
+              <div class="az-pct" id="astZoomPct">100%</div>
+              <button class="azb" onclick="astZoom(-0.15)" title="Zoom out">−</button>
+              <button class="azb" onclick="astResetView()" title="Fit to screen" style="font-size:10px">⊡</button>
+            </div>
+
+            <!-- inspector -->
+            <div class="ast-inspector" id="astInspector" style="display:none">
+              <div class="ast-insp-title">Node Inspector</div>
+              <div class="ast-insp-row"><span class="ast-insp-k">Type</span><span class="ast-insp-v" id="iType" style="font-weight:700">—</span></div>
+              <div class="ast-insp-row"><span class="ast-insp-k">Name</span><span class="ast-insp-v" id="iName">—</span></div>
+              <div class="ast-insp-row"><span class="ast-insp-k">Value</span><span class="ast-insp-v" id="iVal">—</span></div>
+              <div class="ast-insp-row"><span class="ast-insp-k">Line</span><span class="ast-insp-v" id="iLine">—</span></div>
+              <div class="ast-insp-row"><span class="ast-insp-k">Parent</span><span class="ast-insp-v" id="iParent">—</span></div>
+            </div>
+
+          </div><!-- /canvas-wrap -->
+        </div>
+      </div>
+
+
+      <!-- ── IR ── -->
+      <div class="panel-view" id="view-ir">
+        <div class="ir-view">
+          <div class="ir-toolbar">
+            <span class="ir-badge ir-llvm">LLVM IR</span>
+            <span style="font-size:11px;color:var(--t3)">unoptimized · -O0</span>
+            <div class="ir-toolbar-r">
+              <button class="ir-copy">Copy</button>
+              <button class="ir-copy">Download</button>
+            </div>
+          </div>
+          <div class="ir-code">
+            <div class="ir-line"><span class="ir-ln">1</span><span class="ir-text"><span class="ir-cm2">; ModuleID = 'main.cpp'</span></span></div>
+            <div class="ir-line"><span class="ir-ln">2</span><span class="ir-text"><span class="ir-kw">source_filename</span> = <span class="ir-val">"main.cpp"</span></span></div>
+            <div class="ir-line"><span class="ir-ln">3</span><span class="ir-text"><span class="ir-kw">target datalayout</span> = <span class="ir-val">"e-m:o-p270:32:32-..."</span></span></div>
+            <div class="ir-line"><span class="ir-ln">4</span><span class="ir-text"><span class="ir-kw">target triple</span> = <span class="ir-val">"x86_64-apple-macosx13.0.0"</span></span></div>
+            <div class="ir-line"><span class="ir-ln">5</span><span class="ir-text"></span></div>
+            <div class="ir-line"><span class="ir-ln">6</span><span class="ir-text"><span class="ir-cm2">; Function main</span></span></div>
+            <div class="ir-line ir-hl"><span class="ir-ln">7</span><span class="ir-text"><span class="ir-kw">define</span> <span class="ir-type">i32</span> <span class="ir-fn">@main</span>(<span class="ir-type">i32</span> <span class="ir-val">%argc</span>, <span class="ir-type">ptr</span> <span class="ir-val">%argv</span>) {</span></div>
+            <div class="ir-line"><span class="ir-ln">8</span><span class="ir-text"><span class="ir-label">entry:</span></span></div>
+            <div class="ir-line"><span class="ir-ln">9</span><span class="ir-text">  <span class="ir-val">%retval</span> = <span class="ir-kw">alloca</span> <span class="ir-type">i32</span>, <span class="ir-kw">align</span> <span class="ir-num">4</span></span></div>
+            <div class="ir-line"><span class="ir-ln">10</span><span class="ir-text">  <span class="ir-kw">store</span> <span class="ir-type">i32</span> <span class="ir-num">0</span>, <span class="ir-kw">ptr</span> <span class="ir-val">%retval</span>, <span class="ir-kw">align</span> <span class="ir-num">4</span></span></div>
+            <div class="ir-line"><span class="ir-ln">11</span><span class="ir-text">  <span class="ir-val">%call</span> = <span class="ir-kw">call</span> <span class="ir-type">i32</span> <span class="ir-fn">@puts</span>(<span class="ir-kw">ptr</span> <span class="ir-val">@.str</span>)</span></div>
+            <div class="ir-line"><span class="ir-ln">12</span><span class="ir-text">  <span class="ir-kw">ret</span> <span class="ir-type">i32</span> <span class="ir-num">0</span></span></div>
+            <div class="ir-line"><span class="ir-ln">13</span><span class="ir-text">}</span></div>
+            <div class="ir-line"><span class="ir-ln">14</span><span class="ir-text"></span></div>
+            <div class="ir-line"><span class="ir-ln">15</span><span class="ir-text"><span class="ir-cm2">; String constant</span></span></div>
+            <div class="ir-line"><span class="ir-ln">16</span><span class="ir-text"><span class="ir-fn">@.str</span> = <span class="ir-kw">private unnamed_addr constant</span> [<span class="ir-num">14</span> x <span class="ir-type">i8</span>] c<span class="ir-val">"Hello, World!\00"</span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── OPT IR ── -->
+      <div class="panel-view" id="view-optir">
+        <div class="ir-view">
+          <div class="ir-toolbar">
+            <span class="ir-badge ir-opt">Opt IR</span>
+            <span style="font-size:11px;color:var(--t3)">-O2 optimized</span>
+            <span style="font-size:10px;color:var(--acc2);display:flex;align-items:center;gap:4px">
+              <span style="width:5px;height:5px;border-radius:50%;background:var(--acc2);display:inline-block"></span>
+              3 passes applied
+            </span>
+            <div class="ir-toolbar-r">
+              <button class="ir-copy">Diff with IR</button>
+              <button class="ir-copy">Copy</button>
+            </div>
+          </div>
+          <div class="ir-code">
+            <div class="ir-line"><span class="ir-ln">1</span><span class="ir-text"><span class="ir-cm2">; Optimized LLVM IR — -O2</span></span></div>
+            <div class="ir-line"><span class="ir-ln">2</span><span class="ir-text"><span class="ir-cm2">; Passes: mem2reg, instcombine, simplifycfg</span></span></div>
+            <div class="ir-line"><span class="ir-ln">3</span><span class="ir-text"></span></div>
+            <div class="ir-line ir-hl"><span class="ir-ln">4</span><span class="ir-text"><span class="ir-kw">define</span> <span class="ir-type">i32</span> <span class="ir-fn">@main</span>() {</span></div>
+            <div class="ir-line"><span class="ir-ln">5</span><span class="ir-text">  <span class="ir-val">%1</span> = <span class="ir-kw">tail call</span> <span class="ir-type">i32</span> <span class="ir-fn">@puts</span>(<span class="ir-kw">ptr</span> <span class="ir-kw">nonnull</span> <span class="ir-val">@.str</span>)</span></div>
+            <div class="ir-line"><span class="ir-ln">6</span><span class="ir-text">  <span class="ir-kw">ret</span> <span class="ir-type">i32</span> <span class="ir-num">0</span></span></div>
+            <div class="ir-line"><span class="ir-ln">7</span><span class="ir-text">}</span></div>
+            <div class="ir-line"><span class="ir-ln">8</span><span class="ir-text"><span class="ir-cm2">; Stack frame eliminated · argc/argv removed · store folded</span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── x86-64 ── -->
+      <div class="panel-view" id="view-x86">
+        <div class="ir-view">
+          <div class="ir-toolbar">
+            <span class="ir-badge ir-x86">x86-64</span>
+            <span style="font-size:11px;color:var(--t3)">macOS · Apple Silicon ABI</span>
+            <div class="ir-toolbar-r">
+              <button class="ir-copy">AT&amp;T syntax</button>
+              <button class="ir-copy">Intel syntax</button>
+              <button class="ir-copy">Copy</button>
+            </div>
+          </div>
+          <div class="ir-code">
+            <div class="ir-line"><span class="ir-ln">1</span><span class="ir-text"><span class="ir-cm2">; main — Apple x86-64 ABI</span></span></div>
+            <div class="ir-line"><span class="ir-ln">2</span><span class="ir-text"><span class="ir-label">_main:</span></span></div>
+            <div class="ir-line"><span class="ir-ln">3</span><span class="ir-text">  <span class="ir-kw">push</span>    <span class="ir-val">%rbp</span></span></div>
+            <div class="ir-line"><span class="ir-ln">4</span><span class="ir-text">  <span class="ir-kw">mov</span>     <span class="ir-val">%rsp</span>, <span class="ir-val">%rbp</span></span></div>
+            <div class="ir-line"><span class="ir-ln">5</span><span class="ir-text">  <span class="ir-kw">sub</span>     <span class="ir-num">$16</span>, <span class="ir-val">%rsp</span></span></div>
+            <div class="ir-line"><span class="ir-ln">6</span><span class="ir-text">  <span class="ir-kw">movl</span>    <span class="ir-num">$0</span>, <span class="ir-num">-4</span>(<span class="ir-val">%rbp</span>)</span></div>
+            <div class="ir-line ir-hl"><span class="ir-ln">7</span><span class="ir-text">  <span class="ir-kw">leaq</span>    <span class="ir-label">L_.str</span>(<span class="ir-val">%rip</span>), <span class="ir-val">%rdi</span></span></div>
+            <div class="ir-line ir-hl"><span class="ir-ln">8</span><span class="ir-text">  <span class="ir-kw">callq</span>   <span class="ir-fn">_puts</span></span></div>
+            <div class="ir-line"><span class="ir-ln">9</span><span class="ir-text">  <span class="ir-kw">xorl</span>    <span class="ir-val">%eax</span>, <span class="ir-val">%eax</span></span></div>
+            <div class="ir-line"><span class="ir-ln">10</span><span class="ir-text">  <span class="ir-kw">addq</span>    <span class="ir-num">$16</span>, <span class="ir-val">%rsp</span></span></div>
+            <div class="ir-line"><span class="ir-ln">11</span><span class="ir-text">  <span class="ir-kw">pop</span>     <span class="ir-val">%rbp</span></span></div>
+            <div class="ir-line"><span class="ir-ln">12</span><span class="ir-text">  <span class="ir-kw">retq</span></span></div>
+            <div class="ir-line"><span class="ir-ln">13</span><span class="ir-text"></span></div>
+            <div class="ir-line"><span class="ir-ln">14</span><span class="ir-text"><span class="ir-label">L_.str:</span></span></div>
+            <div class="ir-line"><span class="ir-ln">15</span><span class="ir-text">  <span class="ir-kw">.asciz</span>  <span class="ir-val">"Hello, World!"</span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SYMBOLS ── -->
+      <div class="panel-view" id="view-symbols">
+        <div class="sym-view">
+          <div class="sym-toolbar">
+            <input class="sym-search" placeholder="Search symbols..." value="">
+            <button class="tvf on">All</button>
+            <button class="tvf">Functions</button>
+            <button class="tvf">Variables</button>
+            <button class="tvf">Types</button>
+            <span style="font-size:11px;color:var(--t3)">8 symbols</span>
+          </div>
+          <table class="sym-table">
+            <thead>
+              <tr><th class="sym-th">Kind</th><th class="sym-th">Name</th><th class="sym-th">Type / Signature</th><th class="sym-th">Scope</th><th class="sym-th">Address</th></tr>
+            </thead>
+            <tbody>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-fn">fn</span></td><td class="sym-td"><span class="sym-name">main</span></td><td class="sym-td" style="color:var(--t3)">int(int, char**)</td><td class="sym-td"><span class="sym-scope">global</span></td><td class="sym-td"><span class="sym-addr">0x100003f30</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-fn">fn</span></td><td class="sym-td"><span class="sym-name">factorial</span></td><td class="sym-td" style="color:var(--t3)">int(int)</td><td class="sym-td"><span class="sym-scope">global</span></td><td class="sym-td"><span class="sym-addr">0x100003f60</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-fn">fn</span></td><td class="sym-td"><span class="sym-name">swap</span></td><td class="sym-td" style="color:var(--t3)">void(int&amp;, int&amp;)</td><td class="sym-td"><span class="sym-scope">global</span></td><td class="sym-td"><span class="sym-addr">0x100003fa0</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-var">var</span></td><td class="sym-td"><span class="sym-name">argc</span></td><td class="sym-td" style="color:var(--t3)">int</td><td class="sym-td"><span class="sym-scope">main</span></td><td class="sym-td"><span class="sym-addr">rbp-4</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-var">var</span></td><td class="sym-td"><span class="sym-name">argv</span></td><td class="sym-td" style="color:var(--t3)">char**</td><td class="sym-td"><span class="sym-scope">main</span></td><td class="sym-td"><span class="sym-addr">rbp-8</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-var">var</span></td><td class="sym-td"><span class="sym-name">n</span></td><td class="sym-td" style="color:var(--t3)">int</td><td class="sym-td"><span class="sym-scope">factorial</span></td><td class="sym-td"><span class="sym-addr">rbp-4</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-glob">glob</span></td><td class="sym-td"><span class="sym-name">__str</span></td><td class="sym-td" style="color:var(--t3)">char[14]</td><td class="sym-td"><span class="sym-scope">rodata</span></td><td class="sym-td"><span class="sym-addr">0x100004000</span></td></tr>
+              <tr class="sym-tr"><td class="sym-td"><span class="sym-kind sk-type">type</span></td><td class="sym-td"><span class="sym-name">ostream</span></td><td class="sym-td" style="color:var(--t3)">std::basic_ostream</td><td class="sym-td"><span class="sym-scope">std</span></td><td class="sym-td"><span class="sym-addr">—</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── METRICS ── -->
+      <div class="panel-view" id="view-metrics">
+        <div class="metrics-view">
+          <div class="met-grid">
+            <div class="met-card"><div class="met-label">Instructions</div><div class="met-value">12 <span class="met-unit">asm</span></div><div class="met-badge met-neut">+0 vs opt</div></div>
+            <div class="met-card"><div class="met-label">Stack Frame</div><div class="met-value">16 <span class="met-unit">bytes</span></div><div class="met-badge met-down">+16 vs O2</div></div>
+            <div class="met-card"><div class="met-label">IR Lines</div><div class="met-value">16 <span class="met-unit">lines</span></div><div class="met-badge met-down">→8 after opt</div></div>
+            <div class="met-card"><div class="met-label">Functions</div><div class="met-value">3 <span class="met-unit">decl</span></div><div class="met-badge met-neut">no change</div></div>
+            <div class="met-card"><div class="met-label">AST Nodes</div><div class="met-value">34 <span class="met-unit">nodes</span></div><div class="met-badge met-up">parsed OK</div></div>
+            <div class="met-card"><div class="met-label">Tokens</div><div class="met-value">24 <span class="met-unit">tok</span></div><div class="met-badge met-up">lex OK</div></div>
+            <div class="met-card"><div class="met-label">Compile Time</div><div class="met-value">42 <span class="met-unit">ms</span></div><div class="met-badge met-up">fast</div></div>
+            <div class="met-card"><div class="met-label">Binary Size</div><div class="met-value">8.4 <span class="met-unit">KB</span></div><div class="met-badge met-neut">debug</div></div>
+          </div>
+          <div class="met-bar-wrap">
+            <div class="met-bar-title">Instruction Mix — x86-64</div>
+            <div class="met-bar-row"><div class="met-bar-lbl">data movement</div><div class="met-bar-track"><div class="met-bar-fill" style="width:45%;background:#60A5FA"></div></div><div class="met-bar-val">45%</div></div>
+            <div class="met-bar-row"><div class="met-bar-lbl">control flow</div><div class="met-bar-track"><div class="met-bar-fill" style="width:25%;background:#C084FC"></div></div><div class="met-bar-val">25%</div></div>
+            <div class="met-bar-row"><div class="met-bar-lbl">arithmetic</div><div class="met-bar-track"><div class="met-bar-fill" style="width:18%;background:#34D399"></div></div><div class="met-bar-val">18%</div></div>
+            <div class="met-bar-row"><div class="met-bar-lbl">stack ops</div><div class="met-bar-track"><div class="met-bar-fill" style="width:12%;background:#F59E0B"></div></div><div class="met-bar-val">12%</div></div>
+          </div>
+          <div class="met-bar-wrap">
+            <div class="met-bar-title">Optimization Impact — -O0 → -O2</div>
+            <div class="met-bar-row"><div class="met-bar-lbl">IR lines</div><div class="met-bar-track"><div class="met-bar-fill" style="width:50%;background:#F87171"></div></div><div class="met-bar-val">−50%</div></div>
+            <div class="met-bar-row"><div class="met-bar-lbl">instructions</div><div class="met-bar-track"><div class="met-bar-fill" style="width:35%;background:#FB923C"></div></div><div class="met-bar-val">−35%</div></div>
+            <div class="met-bar-row"><div class="met-bar-lbl">stack frame</div><div class="met-bar-track"><div class="met-bar-fill" style="width:100%;background:#22C55E"></div></div><div class="met-bar-val">elim</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /panel-content -->
+  </div><!-- /right-panel -->
+</div><!-- /main-row -->
+
+<!-- ══════════════════════════════
+     BOTTOMBAR
+══════════════════════════════ -->
+<div class="bottombar">
+  <button class="bb-nav" title="First step">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="2" y2="12"/><path d="M12 2L5 7l7 5V2Z"/></svg>
+  </button>
+  <button class="bb-nav" title="Previous">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L4 7l7 5V2Z"/></svg>
+  </button>
+  <button class="bb-play">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="white"><path d="M2 1L11 6L2 11V1Z"/></svg>
+  </button>
+  <button class="bb-nav" title="Next">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2L10 7l-7 5V2Z"/></svg>
+  </button>
+  <button class="bb-nav" title="Last step">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="12"/><path d="M2 2l7 5-7 5V2Z"/></svg>
+  </button>
+  <div class="bb-step">Step <span id="curStep">2</span> <em>/ 2</em></div>
+  <div class="bb-space"></div>
+  <button class="bb-update">
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5A4 4 0 1 1 8.3 2.7"/><path d="M7 1l1.5 1.7L7 4.5"/></svg>
+    UPDATE
+  </button>
+  <button class="bb-skip">SKIP</button>
+  <div class="speed-grp">
+    <button class="spb">0.25x</button>
+    <button class="spb on">0.5x</button>
+    <button class="spb">1x</button>
+    <button class="spb">2x</button>
+    <button class="spb">5x</button>
+    <button class="spb">10x</button>
   </div>
-</div>
-</div>
-</div>
-
-<div class="cbar">
-  <span class="clb">Simulate</span>
-  <button class="cb" onclick="nextStep()">▶ Next Step</button>
-  <button class="cb" onclick="nextIter()">⤳ New Iteration</button>
-  <div class="csep"></div>
-  <button class="cb" onclick="tog('for')">⊡ FOR toggle</button>
-  <button class="cb" onclick="tog('while')">⊡ WHILE toggle</button>
-  <div class="csep"></div>
-  <span id="msg">iter 3/8  •  step 12</span>
 </div>
 
 <script>
-// ── State ───────────────────────────────────────────────────────────────
-const S = {
-  for:   { col:false, iter:3, total:8, v:{i:3,sum:21,cnt:3,thr:5}, pv:{i:2,sum:14,cnt:2,thr:5} },
-  while: { col:false }
+/* ── THEME ── */
+let theme = 'dark';
+function toggleTheme() {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  document.getElementById('root').className = theme;
+  setTimeout(renderAST, 40);
+}
+
+/* ── PANEL TABS ── */
+const tabMap = {
+  canvas:'view-canvas', ast:'view-ast', symbols:'view-symbols',
+  ir:'view-ir', optir:'view-optir', x86:'view-x86',
+  tokens:'view-tokens', metrics:'view-metrics'
+};
+let astInited = false;
+function switchTab(id, btn) {
+  document.querySelectorAll('.ptab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.panel-view').forEach(v => v.classList.remove('on'));
+  btn.classList.add('on');
+  const view = document.getElementById(tabMap[id]);
+  if (view) view.classList.add('on');
+  if (id === 'ast' && !astInited) { astInited = true; setTimeout(initAST, 60); }
+}
+
+/* ── SPEED ── */
+document.querySelectorAll('.spb').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.spb').forEach(b => b.classList.remove('on'));
+    this.classList.add('on');
+  });
+});
+
+/* ── ZOOM (top bar) ── */
+let zoomLevel = 100;
+function zoom(dir) {
+  zoomLevel = Math.min(200, Math.max(50, zoomLevel + dir * 10));
+  document.getElementById('zoomLbl').textContent = zoomLevel + '%';
+}
+
+/* ── SIDEBAR TABS ── */
+document.querySelectorAll('.sbt').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.sbt').forEach(t => t.classList.remove('on'));
+    this.classList.add('on');
+  });
+});
+
+/* ── CANVAS CONTROL BUTTONS ── */
+document.querySelectorAll('.cc-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.cc-btn').forEach(b => b.classList.remove('on'));
+    this.classList.add('on');
+  });
+});
+
+/* ════════════════════════════════════════════════════════
+   AST TREE ENGINE
+   Proper top-down tree diagram like the reference image.
+   Each node: header band (type+line) + body (name+sig)
+              + footer row (left child label | right child label)
+   Nodes connected by curved SVG lines with arrowheads.
+   Pan: drag background. Zoom: scroll wheel or buttons.
+════════════════════════════════════════════════════════ */
+const AST_TREE = {
+  id:'root', type:'fn', name:'Program', sig:'TranslationUnit', value:'', line:'L1–17',
+  footL:'main', footR:'factorial',
+  children:[
+    {
+      id:'main', type:'fn', name:'main()', sig:'int(int, char**)', value:'entry', line:'L3–6',
+      footL:'body', footR:'ret',
+      children:[
+        {
+          id:'main-out', type:'out', name:'Output', sig:'std::cout', value:'"Hello, World!"', line:'L4',
+          footL:'expr', footR:'null',
+          children:[
+            { id:'main-out-str', type:'out', name:'StringLit', sig:'const char*', value:'"Hello, World!"', line:'L4', footL:'null', footR:'null', children:[] }
+          ]
+        },
+        {
+          id:'main-ret', type:'ret', name:'ReturnStmt', sig:'int → 0', value:'exit 0', line:'L5',
+          footL:'expr', footR:'null',
+          children:[
+            { id:'main-ret-lit', type:'ret', name:'IntLiteral', sig:'int', value:'0', line:'L5', footL:'null', footR:'null', children:[] }
+          ]
+        }
+      ]
+    },
+    {
+      id:'fact', type:'fn', name:'factorial()', sig:'int(int n)', value:'recursive', line:'L8–11',
+      footL:'cond', footR:'call',
+      children:[
+        {
+          id:'fact-cond', type:'cond', name:'IfStmt', sig:'n <= 1', value:'FALSE→skip', line:'L9',
+          footL:'then', footR:'else',
+          children:[
+            { id:'fact-then', type:'ret', name:'ReturnStmt', sig:'int → 1', value:'base case', line:'L9', footL:'null', footR:'null', children:[] },
+            { id:'fact-else', type:'call', name:'null', sig:'', value:'', line:'', footL:'null', footR:'null', children:[], isNull:true }
+          ]
+        },
+        {
+          id:'fact-call', type:'call', name:'factorial()', sig:'n − 1', value:'recursive', line:'L10',
+          footL:'arg', footR:'null',
+          children:[
+            {
+              id:'fact-arg', type:'var', name:'BinaryExpr', sig:'n − 1', value:'n=5→4', line:'L10',
+              footL:'left', footR:'right',
+              children:[
+                { id:'fact-n', type:'var', name:'DeclRef', sig:'int n', value:'5', line:'L10', footL:'null', footR:'null', children:[] },
+                { id:'fact-1', type:'var', name:'IntLiteral', sig:'int', value:'1', line:'L10', footL:'null', footR:'null', children:[] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      id:'swap', type:'fn', name:'swap()', sig:'void(int& a, int& b)', value:'utility', line:'L14–17',
+      footL:'body', footR:'ret',
+      children:[
+        {
+          id:'swap-var', type:'var', name:'DeclStmt', sig:'int tmp = a', value:'tmp=10', line:'L15',
+          footL:'type', footR:'init',
+          children:[
+            { id:'swap-a', type:'var', name:'DeclRef', sig:'int& a', value:'10', line:'L15', footL:'null', footR:'null', children:[] }
+          ]
+        },
+        { id:'swap-ret', type:'ret', name:'ReturnStmt', sig:'void', value:'implicit', line:'L17', footL:'null', footR:'null', children:[] }
+      ]
+    }
+  ]
 };
 
-// Step sequence for FOR loop
-const STEPS = [
-  { i:3, sum:21, cnt:3, tk:'arr[i] > threshold', cr:true,  cl:'TRUE',  ok:true,  sv:21 },
-  { i:3, sum:21, cnt:4, tk:'count++',             cr:true,  cl:'TRUE',  ok:true,  sv:21 },
-  { i:3, sum:21, cnt:4, tk:'checkBoundary(i)',    cr:true,  cl:'TRUE',  ok:true,  sv:21 },
-  // ── new iteration ──
-  { i:4, sum:21, cnt:4, tk:'arr[i] > threshold', cr:false, cl:'FALSE', ok:true,  sv:21, ni:true },
-  { i:4, sum:21, cnt:5, tk:'count++',             cr:false, cl:'FALSE', ok:true,  sv:21 },
-  { i:5, sum:29, cnt:5, tk:'sum += arr[i]',       cr:true,  cl:'TRUE',  ok:true,  sv:29, ni:true },
-  { i:6, sum:38, cnt:6, tk:'sum += arr[i]',       cr:true,  cl:'TRUE',  ok:true,  sv:38, ni:true },
-  { i:7, sum:38, cnt:7, tk:'checkBoundary(i)',    cr:false, cl:'FALSE', ok:true,  sv:38, ni:true },
-  { i:8, sum:38, cnt:7, tk:'i < arr.length',      cr:false, cl:'FALSE', ok:false, sv:38, ni:true, done:true },
-];
-let si = 0;
+const NODE_W = 130, NODE_H = 68, FOOT_H = 20, H_GAP = 40, V_GAP = 90;
+let astZoomLvl = 1, astPanX = 0, astPanY = 0, astDragState = null;
+let astCollapsed = new Set(), astSelected = null, allExpanded = true;
 
-// ── Toggle ──────────────────────────────────────────────────────────────
-function tog(t) {
-  const s = S[t]; s.col = !s.col;
-  const isFor = t === 'for';
-  const exp = document.getElementById(`exp-${isFor?'for':'whl'}`);
-  const sum = document.getElementById(`sum-${isFor?'for':'whl'}`);
-  const btn = document.getElementById(`tgl-${isFor?'for':'whl'}`);
-  if (s.col) {
-    exp.style.display = 'none';
-    sum.style.display = 'flex'; sum.style.opacity = '0';
-    requestAnimationFrame(() => { sum.style.transition='opacity .2s'; sum.style.opacity='1'; });
-    btn.textContent = '▸ EXPAND';
-  } else {
-    sum.style.display = 'none';
-    exp.style.display = 'block'; exp.style.opacity = '0';
-    requestAnimationFrame(() => { exp.style.transition='opacity .2s'; exp.style.opacity='1'; });
-    btn.textContent = '▾ COLLAPSE';
-  }
+const TYPE_COLORS = {
+  fn:'#C084FC', out:'#22C55E', var:'#60A5FA',
+  ret:'#F87171', cond:'#FB923C', call:'#A78BFA',
+  loop:'#34D399', root:'#C084FC'
+};
+const TYPE_LABELS = {
+  fn:'Function', out:'Output', var:'Variable',
+  ret:'Return', cond:'Condition', call:'Call',
+  loop:'Loop', root:'Program'
+};
+
+function subW(node) {
+  if (astCollapsed.has(node.id) || !node.children.length) return NODE_W;
+  const s = node.children.map(subW);
+  return Math.max(NODE_W, s.reduce((a, b) => a + b, 0) + H_GAP * (s.length - 1));
 }
 
-// ── Camera cycle-back — smooth scroll viewport to loop header ──────────
-// Mirrors onIterationCycle() in LoopElement.tsx: fired when currentIteration changes.
-function camToHdr(loopKey) {
-  const hdrId  = loopKey === 'for' ? 'hfl-for' : 'hfl-whl';
-  const loopEl = document.getElementById(loopKey === 'for' ? 'l-for' : 'l-whl');
-  const scroll = document.getElementById('cs');
-  const vp     = document.getElementById('vp');
-  if (!loopEl || !scroll || !vp) return;
-
-  // Compute where the loop header is relative to the viewport
-  const loopRect = loopEl.getBoundingClientRect();
-  const vpRect   = vp.getBoundingClientRect();
-  const relTop   = loopRect.top - vpRect.top;
-
-  // Target: header sits at ~15% from top of viewport
-  const targetShift = relTop - vpRect.height * 0.15;
-
-  // Read current translateY
-  const cur = parseFloat(
-    (scroll.style.transform || 'translateY(0)').replace(/[^-\d.]/g, '') || '0'
-  );
-  const next = cur - targetShift;
-  scroll.style.transform = `translateY(${next}px)`;
-
-  // Screen flash
-  const cf = document.getElementById('cf');
-  cf.classList.add('on');
-  setTimeout(() => cf.classList.remove('on'), 220);
-
-  // Header white flash
-  const hfl = document.getElementById(hdrId);
-  if (hfl) {
-    hfl.style.transition = 'opacity .06s';
-    hfl.style.opacity = '.6';
-    setTimeout(() => {
-      hfl.style.transition = 'opacity .5s ease';
-      hfl.style.opacity = '0';
-    }, 80);
-  }
+function layoutNode(node, cx, cy, pos) {
+  pos[node.id] = { x: cx, y: cy };
+  if (astCollapsed.has(node.id) || !node.children.length) return;
+  const ws = node.children.map(subW);
+  const tot = ws.reduce((a, b) => a + b, 0) + H_GAP * (ws.length - 1);
+  let cur = cx - tot / 2;
+  node.children.forEach((c, i) => {
+    layoutNode(c, cur + ws[i] / 2, cy + NODE_H + FOOT_H + V_GAP, pos);
+    cur += ws[i] + H_GAP;
+  });
 }
 
-// ── Update var chip ─────────────────────────────────────────────────────
-function updVC(chipId, valId, val, flash) {
-  const c = document.getElementById(chipId);
-  const v = document.getElementById(valId);
-  if (v) v.textContent = val;
-  if (flash && c) {
-    c.classList.remove('chg');
-    void c.offsetWidth;
-    c.classList.add('chg');
-  }
-}
+function renderAST() {
+  const wrap = document.getElementById('astWrap');
+  const stage = document.getElementById('astStage');
+  const svgEl = document.getElementById('astSvg');
+  const nodesEl = document.getElementById('astNodes');
+  if (!wrap || !stage || !svgEl || !nodesEl) return;
 
-// ── Update delta chip ───────────────────────────────────────────────────
-function updDC(chipId, valId, prev, curr) {
-  const c = document.getElementById(chipId);
-  const v = document.getElementById(valId);
-  if (v) v.textContent = curr;
-  if (c && String(prev) !== String(curr)) {
-    c.classList.remove('fl');
-    void c.offsetWidth;
-    c.classList.add('fl');
-  }
-}
+  const pos = {};
+  layoutNode(AST_TREE, 0, 0, pos);
+  const xs = Object.values(pos).map(p => p.x);
+  const ys = Object.values(pos).map(p => p.y);
+  const minX = Math.min(...xs) - NODE_W / 2 - 50;
+  const minY = Math.min(...ys) - 40;
+  const maxX = Math.max(...xs) + NODE_W / 2 + 50;
+  const maxY = Math.max(...ys) + NODE_H + FOOT_H + 60;
+  const W = maxX - minX, H = maxY - minY;
+  const ox = -minX, oy = -minY;
 
-// ── Next step ───────────────────────────────────────────────────────────
-function nextStep() {
-  if (si >= STEPS.length) return;
-  const st = STEPS[si++];
-  const s  = S.for;
-  const pv = { ...s.v };
-  s.v = { i:st.i, sum:st.sum, cnt:st.cnt, thr:s.v.thr };
+  stage.style.width = W + 'px';
+  stage.style.height = H + 'px';
+  svgEl.setAttribute('width', W);
+  svgEl.setAttribute('height', H);
+  svgEl.innerHTML = '';
+  nodesEl.innerHTML = '';
 
-  if (st.ni) {
-    s.iter = Math.min(st.i + 1, s.total);
-    s.pv   = { ...pv };
+  const isDark = document.getElementById('root').classList.contains('dark');
+  const edgeColor = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.24)';
 
-    // ── Camera cycles back to header ──────────────────────────────────────
-    camToHdr('for');
+  /* draw curved bezier edges with arrowheads */
+  function drawEdges(node) {
+    if (astCollapsed.has(node.id)) return;
+    const p = pos[node.id];
+    if (!p) return;
+    node.children.forEach(child => {
+      const cp = pos[child.id];
+      if (!cp) return;
+      const px = p.x + ox,  py = p.y + oy + NODE_H + FOOT_H;
+      const cx2 = cp.x + ox, cy2 = cp.y + oy;
+      const midY = (py + cy2) / 2;
 
-    // ── Header var chips flash on change ──────────────────────────────────
-    updVC('vc-i',   'vv-i',   st.i,   st.i   !== pv.i);
-    updVC('vc-sum', 'vv-sum', st.sum, st.sum !== pv.sum);
-    updVC('vc-cnt', 'vv-cnt', st.cnt, st.cnt !== pv.cnt);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', `M ${px} ${py} C ${px} ${midY}, ${cx2} ${midY}, ${cx2} ${cy2}`);
+      path.setAttribute('stroke', edgeColor);
+      path.setAttribute('stroke-width', '1.5');
+      path.setAttribute('fill', 'none');
+      if (child.isNull) path.setAttribute('stroke-dasharray', '5 3');
+      svgEl.appendChild(path);
 
-    // Counters
-    document.getElementById('cc-for').textContent = `${s.iter}/${s.total}`;
-    document.getElementById('bc-for').textContent = `${s.iter}/${s.total}`;
-  }
+      /* arrowhead at child end */
+      const aw = 5;
+      const arr = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      arr.setAttribute('points', `${cx2},${cy2} ${cx2 - aw * 0.6},${cy2 - aw} ${cx2 + aw * 0.6},${cy2 - aw}`);
+      arr.setAttribute('fill', edgeColor);
+      svgEl.appendChild(arr);
 
-  // Nested cond badge
-  const nr = document.getElementById('nr-for');
-  if (nr) { nr.className = st.cr ? 'res-t' : 'res-f'; nr.textContent = st.cl; }
-  // Struct badge in summary
-  const sb = document.getElementById('sb-if');
-  if (sb) sb.textContent = `if arr[i]>threshold: ${st.cl}`;
-
-  // Ticker
-  const tk = document.getElementById('tk-for');
-  if (tk) tk.innerHTML = `currently: <strong>${st.tk}</strong>`;
-
-  // Delta chips
-  updDC('dc-i',   'dv-i',   pv.i,   st.i);
-  updDC('dc-sum', 'dv-sum', pv.sum, st.sum);
-  updDC('dc-cnt', 'dv-cnt', pv.cnt, st.cnt);
-
-  // Sum in body
-  const sv = document.getElementById('sv');
-  if (sv) sv.textContent = st.sum;
-
-  // Footer
-  const fs = document.getElementById('fs-for');
-  if (fs) {
-    fs.className = st.ok ? 'cs cok' : 'cs cex';
-    fs.textContent = st.ok ? '✓ CONTINUE' : '✗ EXIT';
-  }
-
-  // Done
-  if (st.done) {
-    ['cs-for','bs-for'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) { el.className='bdg b-don'; el.textContent='DONE'; }
+      drawEdges(child);
     });
-    document.getElementById('l-for')?.classList.remove('act');
-    document.getElementById('c-for')?.classList.remove('act');
-    document.querySelector('#c-for .pls')?.remove();
   }
+  drawEdges(AST_TREE);
 
-  document.getElementById('msg').textContent = `iter ${s.iter}/${s.total}  •  step ${si+6}`;
+  /* render HTML node boxes */
+  function drawNode(node) {
+    const p = pos[node.id];
+    if (!p) return;
+
+    /* null leaf — plain label */
+    if (node.isNull) {
+      const el = document.createElement('div');
+      el.className = 'ast-null';
+      el.textContent = 'null';
+      el.style.left = (p.x + ox) + 'px';
+      el.style.top  = (p.y + oy) + 'px';
+      nodesEl.appendChild(el);
+      return;
+    }
+
+    const isCollapsed = astCollapsed.has(node.id);
+    const hasKids = node.children.length > 0;
+    const tc = TYPE_COLORS[node.type] || '#94A3B8';
+    const tl = TYPE_LABELS[node.type] || node.type;
+
+    const el = document.createElement('div');
+    el.className = 'ast-node' + (astSelected === node.id ? ' selected' : '');
+    el.style.left = (p.x + ox) + 'px';
+    el.style.top  = (p.y + oy) + 'px';
+    el.dataset.id = node.id;
+
+    el.innerHTML = `
+      <div class="ast-nbox ${node.type}">
+        <div class="ast-nhdr">
+          <div class="ast-nhdr-dot" style="background:${tc}"></div>
+          <div class="ast-nhdr-kind">${tl}</div>
+          ${node.line ? `<div class="ast-nhdr-step">${node.line}</div>` : ''}
+          ${hasKids ? `<div class="ast-toggle-btn" data-nid="${node.id}">${isCollapsed ? '▸' : '▾'}</div>` : ''}
+        </div>
+        <div class="ast-nbdy">
+          <div class="ast-nname">${node.name}</div>
+          ${node.sig ? `<div class="ast-nsig">${node.sig}</div>` : ''}
+        </div>
+        ${(node.footL || node.footR) ? `
+        <div class="ast-nfeet">
+          <div class="ast-nfoot">${node.footL || ''}</div>
+          <div class="ast-nfoot">${node.footR || ''}</div>
+        </div>` : ''}
+      </div>`;
+
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      /* toggle collapse */
+      const tb = e.target.closest('.ast-toggle-btn');
+      if (tb) {
+        const nid = tb.dataset.nid;
+        if (astCollapsed.has(nid)) astCollapsed.delete(nid);
+        else astCollapsed.add(nid);
+        renderAST();
+        return;
+      }
+      /* select node → update inspector */
+      astSelected = node.id;
+      renderAST();
+      const insp = document.getElementById('astInspector');
+      if (insp) {
+        insp.style.display = 'block';
+        document.getElementById('iType').textContent = tl;
+        document.getElementById('iType').style.color = tc;
+        document.getElementById('iName').textContent = node.name;
+        document.getElementById('iVal').textContent  = node.value || '—';
+        document.getElementById('iLine').textContent = node.line  || '—';
+        document.getElementById('iParent').textContent = node.sig || '—';
+      }
+    });
+
+    nodesEl.appendChild(el);
+    if (!isCollapsed) node.children.forEach(drawNode);
+  }
+  drawNode(AST_TREE);
 }
 
-// ── Jump to next new-iteration step ────────────────────────────────────
-function nextIter() {
-  while (si < STEPS.length && !STEPS[si].ni) si++;
-  if (si < STEPS.length) nextStep();
+function applyAstTransform() {
+  const stage = document.getElementById('astStage');
+  if (stage) stage.style.transform = `translate(${astPanX}px,${astPanY}px) scale(${astZoomLvl})`;
+  const pct = document.getElementById('astZoomPct');
+  if (pct) pct.textContent = Math.round(astZoomLvl * 100) + '%';
 }
 
-// ── Skip ────────────────────────────────────────────────────────────────
-function skip(e, t)  { e.stopPropagation(); skipB(e, t); }
-function skipB(e, t) {
-  if (e) e.stopPropagation();
-  const el = document.getElementById(t === 'for' ? 'l-for' : 'l-whl');
-  if (!el) return;
-  el.style.transition='opacity .3s'; el.style.opacity='.4';
-  setTimeout(()=>el.style.opacity='1', 380);
-  document.getElementById('msg').textContent='⏭ skipped to end';
-  setTimeout(()=>document.getElementById('msg').textContent=`iter ${S.for.iter}/${S.for.total}`,2000);
+function astFitView() {
+  const wrap  = document.getElementById('astWrap');
+  const stage = document.getElementById('astStage');
+  if (!wrap || !stage) return;
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  const sw = parseInt(stage.style.width)  || 600;
+  const sh = parseInt(stage.style.height) || 400;
+  astZoomLvl = Math.min(0.9, Math.min((ww - 40) / sw, (wh - 40) / sh));
+  astPanX = (ww - sw * astZoomLvl) / 2;
+  astPanY = (wh - sh * astZoomLvl) / 2;
+  applyAstTransform();
+}
+
+function astZoom(d) {
+  astZoomLvl = Math.min(3, Math.max(0.15, astZoomLvl + d));
+  applyAstTransform();
+}
+
+function astResetView() { setTimeout(astFitView, 30); }
+
+function astToggleAll() {
+  const btn = document.getElementById('ast-expand-btn');
+  if (allExpanded) {
+    function col(n) { if (n.children.length) { astCollapsed.add(n.id); n.children.forEach(col); } }
+    AST_TREE.children.forEach(col);
+    if (btn) btn.textContent = 'Expand All';
+    allExpanded = false;
+  } else {
+    astCollapsed.clear();
+    if (btn) btn.textContent = 'Collapse All';
+    allExpanded = true;
+  }
+  renderAST();
+  setTimeout(astFitView, 50);
+}
+
+function initAST() {
+  renderAST();
+  const wrap = document.getElementById('astWrap');
+  if (!wrap) return;
+
+  wrap.addEventListener('mousedown', e => {
+    if (e.target.closest('.ast-node') || e.target.closest('.ast-zoom-ctrl') || e.target.closest('.ast-inspector')) return;
+    astDragState = { sx: e.clientX, sy: e.clientY, spx: astPanX, spy: astPanY };
+    wrap.classList.add('dragging');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!astDragState) return;
+    astPanX = astDragState.spx + (e.clientX - astDragState.sx);
+    astPanY = astDragState.spy + (e.clientY - astDragState.sy);
+    applyAstTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    if (astDragState) { astDragState = null; wrap.classList.remove('dragging'); }
+  });
+  wrap.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const d = e.deltaY < 0 ? 0.12 : -0.12;
+    const oldZ = astZoomLvl;
+    astZoomLvl = Math.min(3, Math.max(0.15, astZoomLvl + d));
+    astPanX = mx - (mx - astPanX) * (astZoomLvl / oldZ);
+    astPanY = my - (my - astPanY) * (astZoomLvl / oldZ);
+    applyAstTransform();
+  }, { passive: false });
+
+  setTimeout(astFitView, 80);
 }
 </script>
 </body>

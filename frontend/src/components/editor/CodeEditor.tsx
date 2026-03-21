@@ -283,20 +283,12 @@ const CodeEditor: React.FC = () => {
     originalHandleEditorDidMount(editorInstance);
   };
 
-  // Switch Monaco theme when app theme changes
-  useEffect(() => {
-    if (editor) {
-      const monaco = (window as any).monaco;
-      if (monaco) {
-        monaco.editor.setTheme(theme === 'dark' ? 'visualizer-dark' : 'visualizer-light');
-      }
-    }
-  }, [theme, editor]);
 
   return (
     <div style={{ position: 'relative', height: '100%' }}>
       <Editor
         height="100%"
+        theme={theme === 'dark' ? 'visualizer-dark' : 'visualizer-light'}
         language={language}
         path={language === 'cpp' ? 'main.cpp' : 'main.c'}
         value={code}

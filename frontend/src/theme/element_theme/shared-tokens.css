@@ -1,0 +1,10 @@
+:root {
+  /* Sub-element (child cards) sizing */
+  --sub-w: 378px;
+  --sub-header-h: 28px;
+  --sub-body-h: 58px;
+  --sub-hint-h: 28px;
+  --sub-radius: 9px;
+  --pad: 11px;
+}
+

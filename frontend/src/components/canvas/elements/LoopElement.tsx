@@ -7,6 +7,8 @@
 import React, { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { Group, Rect, Text, Line, Circle } from 'react-konva';
 import Konva from 'konva';
+import { useThemeStore } from '../../../store/slices/themeSlice';
+
 import { resizeContainer } from '../utils/resizeContainer';
 
 // ─────────────────────────────────────────────────────────────
@@ -245,11 +247,14 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
   isNew = false, stepNumber, enterDelay = 0,
   children, onSkip,
 }) => {
+  const { theme } = useThemeStore();
+  const dark = theme === 'dark';
   if (isConditionStep) {
     console.log(`[LoopElement] Render ID=${id} step=${stepNumber} isConditionStep=${isConditionStep} res=${conditionResult}`);
   }
 
   const groupRef    = useRef<Konva.Group>(null);
+
   const glowRef     = useRef<Konva.Rect>(null);
   const progressRef = useRef<Konva.Rect>(null);
 
@@ -486,8 +491,9 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
       <Rect
         name="main-bg"
         width={totalWidth} height={totalHeight}
-        fill="rgba(10,16,30,0.97)"
+        fill={dark ? "rgba(10,16,30,0.97)" : "rgba(255,255,255,0.97)"}
         stroke={border} strokeWidth={isActive ? 2.5 : 1.5}
+
         cornerRadius={CR}
         shadowColor="rgba(0,0,0,0.45)" shadowBlur={14} shadowOffsetY={3}
       />
@@ -656,9 +662,10 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
               fontSize={9} fontStyle="bold"
               fill={isConditionStep
                 ? (conditionResult ? C_TRUE_STROKE : C_FALSE_STROKE)
-                : '#3D5070'}
+                : (dark ? '#3D5070' : '#94A3B8')}
               align="center" fontFamily={SANS} letterSpacing={0.5}
             />
+
 
             {/* Condition expression — big, readable */}
             <Text
@@ -668,9 +675,10 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
               fontSize={14} fontStyle="bold"
               fill={isConditionStep
                 ? (conditionResult ? C_TRUE_STROKE : C_FALSE_STROKE)
-                : '#A8BECC'}
+                : (dark ? '#A8BECC' : '#475569')}
               fontFamily={MONO} ellipsis wrap="none"
             />
+
 
             {/* Result label — "TRUE ✓" or "FALSE ✗", fades in */}
             <Text

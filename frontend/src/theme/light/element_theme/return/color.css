@@ -1,6 +1,22 @@
-.light {
-  --ret-bg: #FEF2F2;
-  --ret-bd: #DC2626;
-  --ret-tx: #991B1B;
-  --ret-ac: #DC2626;
+:root {
+  --ret-hdr: #b91c1c;
+  --ret-body: #fff5f5;
+  --ret-border: rgba(185, 28, 28, 0.3);
+  --ret-glow: rgba(185, 28, 28, 0.07);
+  --ret-accent: #dc2626;
+  --ret-text: #7f1d1d;
+
+  --ret-chip-bg: rgba(0, 0, 0, 0.04);
+  --ret-chip-bd: rgba(185, 28, 28, 0.3);
+
+  --ret-ok-bg: rgba(34, 197, 94, 0.1);
+  --ret-ok-bd: rgba(34, 197, 94, 0.25);
+  --ret-ok-tx: #16a34a;
+
+  --ret-err-bg: rgba(248, 113, 113, 0.1);
+  --ret-err-bd: rgba(248, 113, 113, 0.25);
+  --ret-err-tx: #dc2626;
+
+  --ret-beam: rgba(248, 113, 113, 0.06);
 }
+

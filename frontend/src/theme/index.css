@@ -3,4 +3,16 @@
 @import './dark/animations.css';
 @import './light/animations.css';
 
-/* ── THEME MASTER ENTRY ── */
+/* Theme master entry */
+
+/* Element themes */
+@import './element_theme/shared-tokens.css';
+@import './light/element_theme/main/color.css';
+@import './light/element_theme/output/color.css';
+@import './light/element_theme/var/color.css';
+@import './light/element_theme/return/color.css';
+@import './dark/element_theme/main/color.css';
+@import './dark/element_theme/output/color.css';
+@import './dark/element_theme/var/color.css';
+@import './dark/element_theme/return/color.css';
+

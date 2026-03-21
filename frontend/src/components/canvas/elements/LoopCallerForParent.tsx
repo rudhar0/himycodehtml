@@ -5,6 +5,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Group, Rect, Text, Circle, Line } from 'react-konva';
 import Konva from 'konva';
+import { useThemeStore } from '../../../store/slices/themeSlice';
+
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
@@ -76,7 +78,10 @@ export const LoopCallerForParent: React.FC<LoopCallerForParentProps> = ({
   isNew = false, stepNumber,
   onClick, children,
 }) => {
+  const { theme } = useThemeStore();
+  const dark = theme === 'dark';
   const groupRef = useRef<Konva.Group>(null);
+
   const [isHovered, setIsHovered] = useState(false);
 
   const scheme = isComplete
@@ -125,11 +130,12 @@ export const LoopCallerForParent: React.FC<LoopCallerForParentProps> = ({
       {/* ── Card body ── */}
       <Rect
         width={width} height={CALLER_H}
-        fill="rgba(11,18,32,0.97)"
+        fill={dark ? "rgba(11,18,32,0.97)" : "rgba(255,255,255,0.97)"}
         stroke={isHovered ? scheme.primary : scheme.dim}
         strokeWidth={isHovered ? 2 : 1.5}
         cornerRadius={CR}
       />
+
 
       {/* ── Tinted header area ── */}
       <Rect

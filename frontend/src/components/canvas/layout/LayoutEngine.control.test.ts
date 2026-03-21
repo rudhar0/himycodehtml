@@ -27,6 +27,31 @@ const makeTrace = (steps: Array<Record<string, any>>): ExecutionTrace => ({
 });
 
 describe("LayoutEngine control caller/body layout", () => {
+  it("uses fixed sub-card sizing for variable/output/return", () => {
+    const trace = makeTrace([
+      { eventType: "var_declare", frameId: "main-0", name: "x", varType: "int", scopeDepth: 0, line: 1 },
+      { eventType: "var_assign", frameId: "main-0", name: "x", value: 42, expression: "x = 42", address: "0x1000", scopeDepth: 0, line: 2 },
+      { eventType: "output", frameId: "main-0", text: "\"Hello\"", scopeDepth: 0, line: 3 },
+      { eventType: "func_exit", frameId: "main-0", function: "main", returnValue: 0, scopeDepth: 0, line: 4 },
+    ]);
+
+    const layout = LayoutEngine.calculateLayout(trace, trace.steps.length - 1, 1400, 900);
+    const varEl = layout.elements.find((el) => el.type === "variable");
+    const outEl = layout.elements.find((el) => el.type === "output");
+    const retEl = layout.elements.find((el) => el.type === "function_return");
+
+    expect(varEl).toBeDefined();
+    expect(outEl).toBeDefined();
+    expect(retEl).toBeDefined();
+
+    expect(varEl!.width).toBe(378);
+    expect(varEl!.height).toBe(114);
+    expect(outEl!.width).toBe(378);
+    expect(outEl!.height).toBe(114);
+    expect(retEl!.width).toBe(378);
+    expect(retEl!.height).toBe(114);
+  });
+
   it("restores parent flow after if/else-if/else chain", () => {
     const trace = makeTrace([
       { eventType: "var_declare", frameId: "main-0", name: "a", scopeDepth: 0, line: 1 },

@@ -1,0 +1,11 @@
+.dark {
+  --out-hdr: #145228;
+  --out-body: #0a1b0e;
+  --out-border: rgba(34, 197, 94, 0.4);
+  --out-glow: rgba(34, 197, 94, 0.12);
+  --out-accent: #22c55e;
+  --out-text: #86efac;
+
+  --out-beam: rgba(34, 197, 94, 0.06);
+}
+
