@@ -462,7 +462,8 @@ class CodeInstrumenter {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const trimmed = line.trim();
+      const lineWithoutComments = this.stripLineComments(line);
+      const trimmed = lineWithoutComments.trim();
       const indent = line.match(/^\s*/)[0];
 
       // Prevent double-instrumentation: skip lines already containing tracer hooks
@@ -684,9 +685,8 @@ class CodeInstrumenter {
         continue;
       }
 
-      // FIX 2: Handle scanf/cin/getchar BEFORE the generic assignment / ++ regexes
-      // so they don't get mis-identified and receive a spurious __trace_assign.
       if (this.isStdinInputStatement(trimmed)) {
+        out.push(`${indent}__trace_control_flow("input_ready", ${i + 1});`);
         out.push(line);
         continue;
       }

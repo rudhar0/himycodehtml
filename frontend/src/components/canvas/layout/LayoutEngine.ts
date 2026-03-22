@@ -1112,6 +1112,10 @@ if (Layer3Result) {
     const nextName = nextStep.name || nextStep.symbol;
     if (nextName !== variableName) return false;
 
+    const currentLine = (executionTrace.steps[stepIndex] as any).line;
+    const nextLine = nextStep.line;
+    if (currentLine !== nextLine) return false;
+
     return (nextStep.frameId || "") === frameId;
   }
 
@@ -1928,11 +1932,6 @@ if (Layer3Result) {
         isControlNode: true,
       },
     };
-
-    if (!ownerFrame.children) {
-      ownerFrame.children = [];
-    }
-    ownerFrame.children.push(container);
 
     layout.elements.push(container);
     this.elementHistory.set(container.id, container);
@@ -3626,7 +3625,6 @@ const placement = this.getPlacementContext(parentFrame, parentFrameId, callScope
         baseScopeDepth: rawScopeDepth,
       });
 
-      this.appendElementToPlacement(ownerFrame, { ...placement, parent: ownerFrame }, loopElement);
       this.markEphemeralControlUsed(frameId, loopScopeDepth, placement.parent.id, stepIndex, stepLine);
       layout.elements.push(loopElement);
       this.elementHistory.set(loopElementId, loopElement);

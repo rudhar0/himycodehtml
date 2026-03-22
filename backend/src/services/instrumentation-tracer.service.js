@@ -748,17 +748,10 @@ class InstrumentationTracer {
 
             proc.stdout.on('data', d => {
                 const chunk = d.toString();
-                this._stdoutLineBuffer += chunk;
-
-                let newlineIndex;
-                while ((newlineIndex = this._stdoutLineBuffer.indexOf('\n')) !== -1) {
-                    const completeLine = this._stdoutLineBuffer.substring(0, newlineIndex + 1);
-                    this._stdoutLineBuffer = this._stdoutLineBuffer.substring(newlineIndex + 1);
-
-                    stdout += completeLine;
-                    stdoutChunks.push(completeLine);
-                    stdoutTimestamps.push(Date.now() * 1000);
-                }
+                stdout += chunk;
+                stdoutChunks.push(chunk);
+                // Use higher precision if available, or just Date.now() * 1000
+                stdoutTimestamps.push(Date.now() * 1000);
             });
             proc.stderr.on('data', d => stderr += d.toString());
 
@@ -923,43 +916,22 @@ class InstrumentationTracer {
                 pendingOutputQueue.push({ text, ts });
             }
             pendingOutputQueue.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        }
 
-            // FIX 3: Defensive merge pass (Part B)
-            // Combine chunks that do not end with a newline to ensure one printf => one step.
-            if (pendingOutputQueue.length > 1) {
-                const mergedQueue = [];
-                let currentChunk = null;
+        let outputTsOffset = 0;
+        const firstFlush = events.find(e => e.type === 'control_flow' && e.controlType === 'output_flush');
+        const hasOutputAnchors = !!firstFlush;
 
-                for (const item of pendingOutputQueue) {
-                    if (currentChunk === null) {
-                        currentChunk = { ...item };
-                    } else {
-                        currentChunk.text += item.text;
-                        // Keep the earlier timestamp
-                    }
-
-                    if (item.text.endsWith('\n')) {
-                        mergedQueue.push(currentChunk);
-                        currentChunk = null;
-                    }
-                }
-                if (currentChunk !== null) {
-                    mergedQueue.push(currentChunk);
-                }
-                pendingOutputQueue.length = 0;
-                pendingOutputQueue.push(...mergedQueue);
-            }
-        } else {
-            const normalizedLines = tracePlatformAdapter.normalizeOutputEvents(outputLines);
-            for (let idx = 0; idx < normalizedLines.length; idx++) {
-                const text = normalizedLines[idx];
-                if (typeof text !== 'string' || text.length === 0) continue;
-                pendingOutputQueue.push({ text, ts: idx });
+        if (pendingOutputQueue.length > 0) {
+            if (firstFlush) {
+                outputTsOffset = pendingOutputQueue[0].ts - Number(firstFlush.ts || 0);
+            } else if (events.length > 0) {
+                outputTsOffset = pendingOutputQueue[0].ts - Number(events[0].ts || 0);
             }
         }
 
-        // Use provided inputLinesMap (from original code) or scan instrumented file
         const inputLines = inputLinesMap || this.scanForInputOperations(sourceFile);
+
         const pendingInputQueue = Array.isArray(providedInputs)
             ? providedInputs.map(v => `${v ?? ''}`)
             : [];
@@ -1112,17 +1084,11 @@ class InstrumentationTracer {
         };
 
         // Precompute which input lines actually appear in trace events.
-        // If a line never appears in events (e.g., plain scanf line), we will
-        // emit the input step when we pass it.
         const eventLinesInUserFile = new Set();
         for (const ev of events) {
             if (!ev || !ev.line || !ev.file) continue;
             if (normalizeFile(ev.file) !== userSourceBase) continue;
             eventLinesInUserFile.add(ev.line);
-        }
-        const inputLinesWithEvents = new Set();
-        for (const line of inputLines.keys()) {
-            if (eventLinesInUserFile.has(line)) inputLinesWithEvents.add(line);
         }
 
         console.log(`🔍 User source file: ${userSourceBase}`);
@@ -1455,6 +1421,21 @@ class InstrumentationTracer {
             }
 
             // ==========================================
+            // INTERLEAVE OUTPUT: Fallback to timestamps ONLY if no flushes exist in trace
+            // ==========================================
+            if (!hasOutputAnchors) {
+                const currentEvTs = Number(ev.ts || 0);
+                while (pendingOutputQueue.length > 0 && (pendingOutputQueue[0].ts - outputTsOffset) <= currentEvTs) {
+                    emitOutputStep({
+                        line: info?.line || 0,
+                        functionName: currentFunction,
+                        frameMetadata: this.getCurrentFrameMetadata(),
+                        fileName: info?.file || sourceFile
+                    });
+                }
+            }
+
+            // ==========================================
             // STEP 2: Filter system/library code (skip for structural events)
             // ==========================================
             if (!isStructural && this.shouldFilterEvent(info, ev, sourceFile)) {
@@ -1549,31 +1530,8 @@ class InstrumentationTracer {
             // ===================================================================
             // Check if current position crosses an input operation and inject input
             // ===================================================================
-            if (mainStarted && info?.line && info?.file && normalizeFile(info.file) === userSourceBase && inputLines.size > 0) {
-                const linesToEmit = [];
-                for (const [line] of inputLines.entries()) {
-                    if (inputLinesWithEvents.has(line)) {
-                        if (line === info.line) linesToEmit.push(line);
-                    } else if (line < info.line) {
-                        linesToEmit.push(line);
-                    }
-                }
+            // REMOVED: ad-hoc input injection. Now using control_flow anchors for precision.
 
-                for (const line of linesToEmit) {
-                    const inputInfo = inputLines.get(line);
-                    emitInputStep({
-                        line,
-                        inputInfo,
-                        functionName: currentFunction,
-                        frameMetadata,
-                        fileName: info.file,
-                        nextIndex,
-                        nextTime,
-                        emit: pushStep
-                    });
-                    inputLines.delete(line);
-                }
-            }
 
             // ==========================================
             // Continue processing other event types
@@ -2138,12 +2096,36 @@ class InstrumentationTracer {
             } else if (ev.type === 'control_flow') {
                 const controlType = ev.controlType;
                 if (controlType === 'output_flush') {
-                    emitOutputStep({
-                        line: info.line,
-                        functionName: currentFunction,
-                        frameMetadata,
-                        fileName: info.file
-                    });
+                    // Recalibrate
+                    if (pendingOutputQueue.length > 0) {
+                        outputTsOffset = pendingOutputQueue[0].ts - ev.ts;
+                    }
+
+                    // Strict One-to-One mapping: One anchor pulls one chunk.
+                    // This prevents "clumping" of all loop output into the first iteration.
+                    if (pendingOutputQueue.length > 0) {
+                        emitOutputStep({
+                            line: info.line,
+                            functionName: currentFunction,
+                            frameMetadata,
+                            fileName: info.file
+                        });
+                    }
+                } else if (controlType === 'input_ready') {
+                    // Inject input step EXACTLY at the anchor point.
+                    const inputInfo = inputLines.get(info.line);
+                    if (inputInfo) {
+                        emitInputStep({
+                            line: info.line,
+                            inputInfo,
+                            functionName: currentFunction,
+                            frameMetadata,
+                            fileName: info.file,
+                            nextIndex,
+                            nextTime,
+                            emit: pushStep
+                        });
+                    }
                 } else if (controlType === 'break') {
                     pushStep({
                         stepIndex: nextIndex(),
