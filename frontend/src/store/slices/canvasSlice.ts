@@ -18,7 +18,10 @@ export interface CanvasState {
   // Interaction
   isPanning: boolean;
   isDragging: boolean;
-  
+  // View modes
+  viewMode: 'canvas' | 'ast' | 'tokens' | 'symbols';
+  setViewMode: (mode: 'canvas' | 'ast' | 'tokens' | 'symbols') => void;
+
   // Actions
   setZoom: (zoom: number) => void;
   zoomIn: () => void;
@@ -54,11 +57,17 @@ export const useCanvasStore = create<CanvasState>()(
     hoveredElement: null,
     isPanning: false,
     isDragging: false,
+    viewMode: 'canvas',
 
     // Actions
 
 
     
+    setViewMode: (mode: 'canvas' | 'ast' | 'tokens' | 'symbols') =>
+      set((state) => {
+        state.viewMode = mode;
+      }),
+
     setZoom: (zoom: number) =>
       set((state) => {
         // Clamp zoom between min and max

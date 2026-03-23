@@ -9,6 +9,7 @@ export const useAst = () => {
   const [ast, setAst] = useState<Parser.Tree | null>(null);
 
   useEffect(() => {
+    astService.setLastCode(code);
     if (astService.isInitialized()) {
       const tree = astService.parse(code);
       setAst(tree);

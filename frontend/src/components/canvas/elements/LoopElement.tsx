@@ -272,6 +272,10 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
 
   const baseW = width  || BOX_WIDTH;
   const baseH = height || 240;
+
+  // Add a ref to track previous base dimensions
+  const prevBaseDims = useRef({ width: baseW, height: baseH });
+
   const [autoSize, setAutoSize] = useState({ width: baseW, height: baseH });
   const totalWidth  = Math.max(baseW, autoSize.width);
   const totalHeight = Math.max(baseH, autoSize.height);
@@ -452,20 +456,36 @@ export const LoopElement: React.FC<LoopElementProps> = memo(({
   // ── AUTO-SIZE ─────────────────────────────────────────────
   const measure = useCallback(() => {
     const g = groupRef.current;
-    if (!g?.getLayer() || g.scaleX() < 0.9 || g.opacity() < 1) return;
+    if (!g?.getLayer()) return;
+
+    // STRICTER guard — require fully settled animation
+    if (g.scaleX() < 0.99 || g.scaleY() < 0.99 || g.opacity() < 0.95) return;
+
     const cb = g.findOne<Konva.Node>('.content-bounds');
     if (!cb) return;
     const b = cb.getClientRect({ relativeTo: g, skipTransform: true, skipShadow: true });
     setAutoSize(prev => {
       const nw = Math.max(baseW, Math.ceil(b.x + b.width)  + PADDING);
       const nh = Math.max(baseH, Math.ceil(b.y + b.height) + PADDING + 60);
-      return prev.width === nw && prev.height === nh ? prev : { width: nw, height: nh };
+      
+      const diffW = Math.abs(prev.width - nw);
+      const diffH = Math.abs(prev.height - nh);
+      
+      if (diffW < 1.5 && diffH < 1.5) return prev;
+      // Also prevent shrinking below current measured size — only grow, never collapse
+      if (nw < prev.width || nh < prev.height) return prev;
+      
+      return { width: nw, height: nh };
     });
   }, [baseW, baseH]);
 
   useEffect(() => {
-    setAutoSize(prev =>
-      prev.width === baseW && prev.height === baseH ? prev : { width: baseW, height: baseH });
+    const prev = prevBaseDims.current;
+    // Only reset if base dims truly changed (LayoutEngine gave new values)
+    if (prev.width !== baseW || prev.height !== baseH) {
+      prevBaseDims.current = { width: baseW, height: baseH };
+      setAutoSize({ width: baseW, height: baseH });
+    }
     const r = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(r);
   }, [baseW, baseH, measure, children, isConditionStep, conditionResult,

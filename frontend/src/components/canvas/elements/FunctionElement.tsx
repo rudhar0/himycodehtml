@@ -130,6 +130,9 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
   const headerHeight = isMain ? HEADER_HEIGHT : 55;
   const baseHeight = height || 150;
   
+  // Add a ref to track previous base dimensions
+  const prevBaseDims = useRef({ width: baseWidth, height: baseHeight });
+  
   const [autoSize, setAutoSize] = useState({ width: baseWidth, height: baseHeight });
   const totalWidth = Math.max(baseWidth, autoSize.width);
   const totalHeight = Math.max(baseHeight, autoSize.height);
@@ -316,7 +319,8 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
     const group = groupRef.current;
     if (!group || !group.getLayer()) return;
 
-    if (group.scaleX() < 0.9 || group.scaleY() < 0.9 || group.opacity() < 1) return;
+    // STRICTER guard — require fully settled animation
+    if (group.scaleX() < 0.99 || group.scaleY() < 0.99 || group.opacity() < 0.95) return;
 
     const content = group.findOne<Konva.Node>('.content-bounds');
     if (!content) return;
@@ -342,17 +346,21 @@ export const FunctionElement: React.FC<FunctionElementProps> = memo(({
       const diffW = Math.abs(prev.width - nextWidth);
       const diffH = Math.abs(prev.height - nextHeight);
       
-      if (diffW < 1.5 && diffH < 1.5) {
-        return prev;
-      }
+      if (diffW < 1.5 && diffH < 1.5) return prev;
+      // Also prevent shrinking below current measured size — only grow, never collapse
+      if (nextWidth < prev.width || nextHeight < prev.height) return prev;
+      
       return { width: nextWidth, height: nextHeight };
     });
   }, [baseWidth, baseHeight, isMain]);
 
   useEffect(() => {
-    // Initial size reset if props change fundamentally
-    setAutoSize({ width: baseWidth, height: baseHeight });
-    
+    const prev = prevBaseDims.current;
+    // Only reset if base dims truly changed (LayoutEngine gave new values)
+    if (prev.width !== baseWidth || prev.height !== baseHeight) {
+      prevBaseDims.current = { width: baseWidth, height: baseHeight };
+      setAutoSize({ width: baseWidth, height: baseHeight });
+    }
     const raf = requestAnimationFrame(measureContent);
     return () => cancelAnimationFrame(raf);
   }, [baseWidth, baseHeight, measureContent, parameters.length, localVarCount, isReturning]);

@@ -49,7 +49,10 @@ async function main() {
 
     // 1. Build frontend
     console.log('📦 Building frontend...');
-    await run('npm', ['run', 'build:ui'], { cwd: FRONTEND_ROOT });
+    await run('npm', ['run', 'build:ui'], { 
+        cwd: FRONTEND_ROOT,
+        env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=4096' }
+    });
 
     // 2. Prepare resources directory
     console.log('📂 Preparing resources directory...');
